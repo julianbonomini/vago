@@ -38,10 +38,11 @@ Alpha: point it at a Project and it picks up that Project's ready Tickets and pu
 - [How a Project defines its Workflow](issues/04-how-a-project-defines-its-workflow.md): `.punt/workflow.toml` holds a linear list of agent and shell Steps, frozen when Alpha starts a Goal. Prompts call your own skills, and include slots carry docs into prompts. All git work happens inside Steps, and Runs use the human's checkout as-is. `punt init` copies one starter Workflow. ADR 0002.
 - [Where Punt keeps Goals and Tickets](issues/08-where-punt-keeps-goals-and-tickets.md): Markdown files with a TOML header in `.punt/goals/<goal>/tickets/`, always untracked via `.git/info/exclude`. Only Alpha writes status (ready, running, done, stuck). `punt run <goal>` makes the Goal's Tickets fair game after a format check. `punt goal new` and `punt ticket add` are in scope. ADR 0003.
 - [What Alpha's runtime is](issues/11-what-alphas-runtime-is.md): there's no Punt sandbox. Steps run on the host in the human's checkout, and agent Steps run in their Harness's guarded mode, with an optional `args` key in `workflow.toml` to change the flags. Alpha uses the host's own credentials and kills the Run's process group on exit. `punt run` runs in the foreground only.
+- [How a Run fails and what Alpha does next](issues/12-how-a-run-fails-and-what-alpha-does-next.md): no retries. A Step fails on a non-zero exit or a 30-min idle timeout on the Harness's JSONL stream. The first `stuck` Ticket stops the Goal, and interrupted or lost Tickets go `stuck` too. `punt run` refuses to start while a Ticket is stuck, and the human fixes the checkout, then runs `punt ticket reset`. Each Step's session, outcome, tokens and cost are recorded as `[[runs]]` in the Ticket header.
 
 ## Not yet specified
 
-- **Seeing progress without a TUI**: Alpha has no viewer, but the human still needs some way to see what happened (logs, git history, ticket status). How the other tools handle this is in "How other orchestrators work". Settled in [Alpha kernel boundary and bootstrap](issues/06-alpha-kernel-boundary-and-bootstrap.md).
+- **Seeing progress without a TUI**: Alpha has no viewer, but the human still needs some way to see what happened (logs, git history, ticket status). How the other tools handle this is in "How other orchestrators work". Alpha already logs each Harness's JSONL stream and records `[[runs]]` in the Ticket header (see "How a Run fails and what Alpha does next"); what's left is where logs go and what `punt run` prints. Settled in [Alpha kernel boundary and bootstrap](issues/06-alpha-kernel-boundary-and-bootstrap.md).
 - **Bootstrap steps**: the concrete manual work, from building the kernel with ordinary developer tools (Sandcastle or manual sessions) to "Alpha takes over its own Goals". Includes: the explicit rebuild-and-reinstall step after Alpha merges changes to itself (Alpha runs a pinned binary), and writing Punt's own code-style file (plain TypeScript rules, *A Philosophy of Software Design*, *Designing Data-Intensive Applications*) and `bun run check`. Also writing the starter Workflow and its prompts, which `punt init` copies. Settled in [Alpha kernel boundary and bootstrap](issues/06-alpha-kernel-boundary-and-bootstrap.md).
 
 ## Out of scope
@@ -58,5 +59,6 @@ Alpha: point it at a Project and it picks up that Project's ready Tickets and pu
 - User docs for writing Workflows and bringing your own skills (after Alpha works).
 - A container sandbox for Steps (Docker or Podman, image, mounts, credential passing); it can be added later at the single point where Steps run.
 - Detaching `punt run` (daemon, `--detach`, keeping the machine awake); the human uses tmux and the like themselves.
+- Retrying provider errors (warren's one retry); it needs per-Harness error classification.
 - Gate and merge Step primitives, and a worktree per Goal (after Alpha).
 - Branding and the final name.
