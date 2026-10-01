@@ -19,7 +19,7 @@ Alpha: point it at a Project and it picks up that Project's ready Tickets and pu
   - **Goals are flat** (no nesting); Missions exist in the vocabulary but not in Alpha.
   - The human creates Goals and Tickets outside Punt and loads them through `punt goal new` and `punt ticket add`. Alpha only picks up ready Tickets.
   - **Workflow is per Project and editable**, including merge policy and what "done" means for a Ticket. A Goal is done when all its Tickets are done.
-  - **Must be Harness-agnostic** (Claude Code, Codex) and run on the human's machine.
+  - **Harness-agnostic by design**, running on the human's machine. Alpha ships the Claude Code Harness only; Codex comes once Alpha works.
   - **Parallelism**: whatever comes free; serial is fine.
   - **Name**: "Punt" is provisional until branding.
 - Standing preference: **lean**. Bare bones that can then improve itself; push everything else out of scope.
@@ -39,11 +39,11 @@ Alpha: point it at a Project and it picks up that Project's ready Tickets and pu
 - [Where Punt keeps Goals and Tickets](issues/08-where-punt-keeps-goals-and-tickets.md): Markdown files with a TOML header in `.punt/goals/<goal>/tickets/`, always untracked via `.git/info/exclude`. Only Alpha writes status (ready, running, done, stuck). `punt run <goal>` makes the Goal's Tickets fair game after a format check. `punt goal new` and `punt ticket add` are in scope. ADR 0003.
 - [What Alpha's runtime is](issues/11-what-alphas-runtime-is.md): there's no Punt sandbox. Steps run on the host in the human's checkout, and agent Steps run in their Harness's guarded mode, with an optional `args` key in `workflow.toml` to change the flags. Alpha uses the host's own credentials and kills the Run's process group on exit. `punt run` runs in the foreground only.
 - [How a Run fails and what Alpha does next](issues/12-how-a-run-fails-and-what-alpha-does-next.md): no retries. A Step fails on a non-zero exit or a 30-min idle timeout on the Harness's JSONL stream. The first `stuck` Ticket stops the Goal, and interrupted or lost Tickets go `stuck` too. `punt run` refuses to start while a Ticket is stuck, and the human fixes the checkout, then runs `punt ticket reset`. Each Step's session, outcome, tokens and cost are recorded as `[[runs]]` in the Ticket header.
+- [Alpha kernel boundary and bootstrap path](issues/06-alpha-kernel-boundary-and-bootstrap.md): all of Alpha is built by hand with Sandcastle and ships Claude Code only, behind a compiled-in Harness module. The starter Workflow ships inside the binary. `punt run` prints one line per Step start and end, and logs go to `goals/<goal>/logs/`. The bar is a 2-Ticket Goal on Punt's own repo going `done` one Ticket after the other.
 
 ## Not yet specified
 
-- **Seeing progress without a TUI**: Alpha has no viewer, but the human still needs some way to see what happened (logs, git history, ticket status). How the other tools handle this is in "How other orchestrators work". Alpha already logs each Harness's JSONL stream and records `[[runs]]` in the Ticket header (see "How a Run fails and what Alpha does next"); what's left is where logs go and what `punt run` prints. Settled in [Alpha kernel boundary and bootstrap](issues/06-alpha-kernel-boundary-and-bootstrap.md).
-- **Bootstrap steps**: the concrete manual work, from building the kernel with ordinary developer tools (Sandcastle or manual sessions) to "Alpha takes over its own Goals". Includes: the explicit rebuild-and-reinstall step after Alpha merges changes to itself (Alpha runs a pinned binary), and writing Punt's own code-style file (plain TypeScript rules, *A Philosophy of Software Design*, *Designing Data-Intensive Applications*) and `bun run check`. Also writing the starter Workflow and its prompts, which `punt init` copies. Settled in [Alpha kernel boundary and bootstrap](issues/06-alpha-kernel-boundary-and-bootstrap.md).
+_Nothing left: the way to the destination is clear. Hand off to `/to-spec`._
 
 ## Out of scope
 
@@ -62,3 +62,5 @@ Alpha: point it at a Project and it picks up that Project's ready Tickets and pu
 - Retrying provider errors (warren's one retry); it needs per-Harness error classification.
 - Gate and merge Step primitives, and a worktree per Goal (after Alpha).
 - Branding and the final name.
+- Harnesses other than Claude Code (Codex adapter, user-supplied Harness plugins); added once Alpha works.
+- A `punt status` command and similar small CLI extras.
