@@ -13,8 +13,9 @@ Alpha: point it at a Project and it picks up that Project's ready Tickets and pu
 - Skills to consult: `grilling` + `domain-modeling` for grilling tickets; `research` for research tickets. Research reports facts only, never what Punt should do: every "what do we take" call is the human's, made in a grilling ticket.
 - Settled while charting:
   - **Build our own**; don't adopt an existing tool. Borrow or copy ideas freely.
-  - **Sandcastle** (github.com/mattpocock/sandcastle) is the tool we use to build Alpha and one reference among many. Whether Alpha *depends* on it at runtime is open.
-  - **Other references**: Factory Missions (orchestration and validation ideas only), cyrus, vibe-kanban, openai/symphony, agent-orchestrator, warren (github.com/jayminwest/warren), awesome-agent-orchestrators.
+  - **References: Sandcastle, warren and Factory Missions only.** Borrow ideas, not code, in Punt's own opinionated way. warren (github.com/jayminwest/warren) is the closest match and the first place to look for "how". Sandcastle (github.com/mattpocock/sandcastle) is also the tool we build Alpha with; whether Alpha *depends* on it at runtime is open. Factory Missions: orchestration ideas only.
+  - **Alpha is self-contained to one Project's repo**: its own config and CLI live there; no view across Projects.
+  - **One Goal at a time per Project.**
   - **Goals are flat** (no nesting); Missions exist in the vocabulary but not in Alpha.
   - The human creates Goals and Tickets outside Punt (Wayfinder, `/to-spec`, `/to-tickets`). Alpha only picks up ready Tickets.
   - **Workflow is per Project and editable**, including merge policy and what "done" means for a Ticket. A Goal is done when all its Tickets are done.
@@ -30,10 +31,11 @@ Alpha: point it at a Project and it picks up that Project's ready Tickets and pu
 - [How Sandcastle runs work](issues/02-how-sandcastle-runs-work.md) (research): a library, not a daemon. The Workflow is a TypeScript script the user owns, chaining headless implement, review and merge Harness calls in a container per branch. It has no Ticket state, Gates, retries or detachment of its own.
 - [Where Goals and Tickets live](issues/01-where-goals-and-tickets-live.md) (research): tools use four places: hosted trackers, files in the repo, files outside the repo, or their own database. Most put a small tracker seam in front of the store. Hosted trackers need write access to repos the human may not own.
 - [How other orchestrators work](issues/03-how-other-orchestrators-work.md) (research): how Symphony, warren, Cyrus, agent-orchestrator, vibe-kanban and Factory Missions each define their Workflow, structure Runs per Ticket, and keep running detached.
+- [What Punt borrows from other orchestrators](issues/07-what-punt-borrows-from-other-orchestrators.md): only Sandcastle, warren and Missions are references. One fresh Run per Workflow step, no loops, no planner, the reviewer fixes the code itself. Terminal reasons and the planner come later.
 
 ## Not yet specified
 
-- **Run lifecycle and failure**: what happens when a Run fails, a review rejects, or a Ticket gets stuck (retry limits, parking it, surfacing it). How the other tools handle this is in "How other orchestrators work".
+- **Run lifecycle and failure**: what happens when a Run fails, a review rejects, or a Ticket gets stuck (retry limits, parking it, surfacing it). How the other tools handle this is in "How other orchestrators work". Pointers from warren to weigh: one retry only for provider errors, immutable Runs, Runs marked lost on restart, bad config fails closed. Explicit terminal reasons are deferred past Alpha.
 - **Seeing progress without a TUI**: Alpha has no viewer, but the human still needs some way to see what happened (logs, git history, ticket status). How the other tools handle this is in "How other orchestrators work".
 - **Harness and credentials in the sandbox**: how a Project picks its Harness and how auth reaches the sandbox. Likely falls out of the Sandcastle research.
 - **Bootstrap steps**: the concrete manual work, from "Sandcastle running on this repo" to "Alpha takes over its own Goals".
@@ -43,6 +45,8 @@ Alpha: point it at a Project and it picks up that Project's ready Tickets and pu
 - TUI or any viewer (comes after Alpha, built by Punt itself).
 - Creating Goals and Tickets inside Punt; decomposing Goals automatically.
 - Missions and nested Goals.
+- A view across Projects; running several Goals of one Project at once.
+- A planner that sequences Tickets; explicit terminal reasons for a Run.
 - Goal-level validation and Factory Missions' validation approach.
 - Notifications (ntfy, Slack, push).
 - iOS / macOS sandboxes; a macOS app.
