@@ -8,8 +8,8 @@ A personal software factory, provisionally called Punt: the human defines what g
 The whole system the human drives, spanning every Project it serves.
 _Avoid_: factory, orchestrator, platform, AFK
 
-**Alpha**:
-The first, kernel-only release of Punt: it takes a Project's ready Tickets through that Project's Workflow on a Harness without the human present.
+**Punt Alpha**:
+The first, kernel-only release of Punt: it takes a Project's ready Tickets through that Project's Workflow on a Harness without the human present. Inside Punt docs it may be shortened to "alpha".
 _Avoid_: v1, MVP
 
 **Project**:

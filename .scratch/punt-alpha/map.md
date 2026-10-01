@@ -34,17 +34,18 @@ Alpha: point it at a Project and it picks up that Project's ready Tickets and pu
 - [What Punt borrows from other orchestrators](issues/07-what-punt-borrows-from-other-orchestrators.md): only Sandcastle, warren and Missions are references. One fresh Run per Workflow step, no loops, no planner, the reviewer fixes the code itself. Terminal reasons and the planner come later.
 - [Does Alpha run on Sandcastle?](issues/05-does-alpha-run-on-sandcastle.md): no. Alpha owns its engine and copies Sandcastle's ideas, not its code. Sandcastle is at most a developer tool for building the kernel and has no effect on Alpha. The language question was split out into its own ticket.
 - [What Agent SDKs add over Harness CLIs](issues/09-what-agent-sdks-add-over-harness-clis.md) (research): official SDKs are Python and TypeScript only (pi: TypeScript only), and the Claude and Codex SDKs wrap the CLI binary. They add in-process callbacks (permissions, hooks, MCP tools) and mid-session control. Go has only community ports. Most orchestrators drive CLIs or Codex app-server directly.
+- [What Alpha is written in](issues/10-what-alpha-is-written-in.md): TypeScript on Bun, compiled to one binary. Harnesses are driven through their headless CLIs, Workflows are declarative, and Alpha runs a pinned binary. Punt's repo has `bun run check` and its own code-style file. ADR 0001.
 
 ## Not yet specified
 
 - **Run lifecycle and failure**: what happens when a Run fails, a review rejects, or a Ticket gets stuck (retry limits, parking it, surfacing it). How the other tools handle this is in "How other orchestrators work". Pointers from warren to weigh: one retry only for provider errors, immutable Runs, Runs marked lost on restart, bad config fails closed. Explicit terminal reasons are deferred past Alpha.
 - **Seeing progress without a TUI**: Alpha has no viewer, but the human still needs some way to see what happened (logs, git history, ticket status). How the other tools handle this is in "How other orchestrators work".
 - **Harness and credentials in the sandbox**: how a Project picks its Harness and how auth reaches the sandbox. Alpha implements this itself; the Sandcastle research shows a pattern to copy (env-file allowlist, `claude setup-token`).
-- **Bootstrap steps**: the concrete manual work, from building the kernel with ordinary developer tools (Sandcastle or manual sessions) to "Alpha takes over its own Goals".
+- **Bootstrap steps**: the concrete manual work, from building the kernel with ordinary developer tools (Sandcastle or manual sessions) to "Alpha takes over its own Goals". Includes: the explicit rebuild-and-reinstall step after Alpha merges changes to itself (Alpha runs a pinned binary), and writing Punt's own code-style file (plain TypeScript rules, *A Philosophy of Software Design*, *Designing Data-Intensive Applications*) and `bun run check`.
 
 ## Out of scope
 
-- TUI or any viewer (comes after Alpha, built by Punt itself).
+- TUI or any viewer (comes after Alpha, built by Punt itself), including watching a Run live; Alpha only logs the Harness event stream for it.
 - Creating Goals and Tickets inside Punt; decomposing Goals automatically.
 - Missions and nested Goals.
 - A view across Projects; running several Goals of one Project at once.
