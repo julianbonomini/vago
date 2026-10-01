@@ -17,8 +17,12 @@ One repository Punt builds for, such as a TUI, a mini project or an iOS app.
 _Avoid_: repo, app
 
 **Workflow**:
-A Project's own ordered steps that a Ticket passes through, defined inside that Project.
+A Project's own ordered Steps that a Ticket passes through, defined inside that Project.
 _Avoid_: pipeline, process
+
+**Step**:
+One entry in a Workflow, either an agent Step, which a Harness performs as one Run, or a shell Step, which runs a command.
+_Avoid_: stage, phase, task
 
 **Mission**:
 A large outcome made of several Goals, such as "build a Slack clone".
@@ -29,7 +33,7 @@ An outcome the human wants for a Project, from a one-Ticket feature to a whole a
 _Avoid_: epic, milestone
 
 **Run**:
-One Harness session performing one Workflow step on one Ticket, such as implement, review or discuss; a Ticket usually takes several.
+One Harness session performing one agent Step on one Ticket, such as implement, review or discuss; a Ticket usually takes several.
 _Avoid_: session, job, attempt
 
 **Ticket**:
@@ -37,7 +41,7 @@ One unit of work that belongs to a Goal; done when it reaches the end of its Pro
 _Avoid_: issue, task, story
 
 **Gate**:
-A Workflow step that pauses work until the human approves it.
+A Workflow Step that pauses work until the human approves it. Not part of Alpha.
 _Avoid_: checkpoint, approval step
 
 **Harness**:
