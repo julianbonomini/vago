@@ -33,6 +33,7 @@ Alpha: point it at a Project and it picks up that Project's ready Tickets and pu
 - [How other orchestrators work](issues/03-how-other-orchestrators-work.md) (research): how Symphony, warren, Cyrus, agent-orchestrator, vibe-kanban and Factory Missions each define their Workflow, structure Runs per Ticket, and keep running detached.
 - [What Punt borrows from other orchestrators](issues/07-what-punt-borrows-from-other-orchestrators.md): only Sandcastle, warren and Missions are references. One fresh Run per Workflow step, no loops, no planner, the reviewer fixes the code itself. Terminal reasons and the planner come later.
 - [Does Alpha run on Sandcastle?](issues/05-does-alpha-run-on-sandcastle.md): no. Alpha owns its engine and copies Sandcastle's ideas, not its code. Sandcastle is at most a developer tool for building the kernel and has no effect on Alpha. The language question was split out into its own ticket.
+- [What Agent SDKs add over Harness CLIs](issues/09-what-agent-sdks-add-over-harness-clis.md) (research): official SDKs are Python and TypeScript only (pi: TypeScript only), and the Claude and Codex SDKs wrap the CLI binary. They add in-process callbacks (permissions, hooks, MCP tools) and mid-session control. Go has only community ports. Most orchestrators drive CLIs or Codex app-server directly.
 
 ## Not yet specified
 
