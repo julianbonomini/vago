@@ -96,8 +96,7 @@ export async function runStep(
 				stderr: fd,
 				detached: true,
 			});
-			killGroupOnAbort(child.pid, interrupt.signal);
-			const code = await child.exited;
+			const code = await exitCodeOf(child, interrupt.signal);
 			outcome = outcomeOf(code);
 			// Read back from the log, so a review prompt sees stdout and stderr
 			// interleaved the way the Step wrote them.
@@ -143,12 +142,9 @@ async function runAgent(
 		stderr: fd,
 		detached: true,
 	});
-	killGroupOnAbort(child.pid, interrupt);
-	let idle = false;
-	const idleTimer = setTimeout(() => {
-		idle = true;
-		killGroup(child.pid);
-	}, step.idleTimeoutMs);
+	const idle = new AbortController();
+	const exit = exitCodeOf(child, AbortSignal.any([interrupt, idle.signal]));
+	const idleTimer = setTimeout(() => idle.abort(), step.idleTimeoutMs);
 	let session: HarnessSessionReport = {};
 	const decoder = new TextDecoder();
 	let partial = "";
@@ -169,13 +165,11 @@ async function runAgent(
 		...session,
 		...harness.readLine(partial + decoder.decode(), command),
 	};
-	const code = await child.exited;
-	// A session out of guarded mode is why its calls were denied, so the
-	// fallback is the reason to name.
+	const code = await exit;
 	// A session out of the mode asked for is why its calls were denied, so
 	// the fallback is the reason to name.
 	let outcome: RunOutcome;
-	if (idle) {
+	if (idle.signal.aborted) {
 		outcome = { kind: "idle-timeout" };
 	} else if (session.permissionModeFallback !== undefined) {
 		outcome = { kind: "permission-mode", mode: session.permissionModeFallback };
@@ -207,21 +201,58 @@ export function spellOutcome(outcome: RunOutcome): string {
 	return outcome.kind;
 }
 
-// At once when the signal came while the Step was still being set up.
-function killGroupOnAbort(leader: number, interrupt: AbortSignal): void {
-	if (interrupt.aborted) killGroup(leader);
-	else interrupt.addEventListener("abort", () => killGroup(leader));
+// Stops the child's group when `stop` aborts, at once if it already has, as
+// when the signal came while the Step was still being set up. Resolves to the
+// exit code once the child has exited and, if it was stopped, once its group
+// is gone too, since the leader can exit while the rest of its group still
+// ignores SIGTERM.
+async function exitCodeOf(
+	child: Bun.Subprocess,
+	stop: AbortSignal,
+): Promise<number> {
+	let stopping: Promise<void> | undefined;
+	const startStopping = () => {
+		stopping = stopGroup(child.pid);
+	};
+	if (stop.aborted) startStopping();
+	else stop.addEventListener("abort", startStopping, { once: true });
+	const code = await child.exited;
+	stop.removeEventListener("abort", startStopping);
+	await stopping;
+	return code;
 }
+
+// Long enough for a Harness to stop the tool commands it started.
+const stopGraceMs = 5_000;
 
 // The whole group, since a process the Step started would otherwise live on
 // and could hold the Harness's stdout open, so its stream would never end.
-// SIGKILL because a Step that ignores SIGTERM must still end. The group is
-// gone already when the signal comes just after the Step ended.
-function killGroup(leader: number): void {
+// SIGTERM first, because a Harness can run its tool commands in process groups
+// of their own, which no signal to this group reaches, and only the Harness
+// can stop them. SIGKILL after the grace period, because a Step that ignores
+// SIGTERM must still end. Resolves once the group is gone or has been sent
+// SIGKILL.
+async function stopGroup(leader: number): Promise<void> {
+	const deadline = Date.now() + stopGraceMs;
+	signalGroup(leader, "SIGTERM");
+	while (signalGroup(leader, 0)) {
+		if (Date.now() >= deadline) {
+			signalGroup(leader, "SIGKILL");
+			return;
+		}
+		await Bun.sleep(50);
+	}
+}
+
+// False when the group is gone, as it is already when the signal comes just
+// after the Step ended. Signal 0 only asks whether the group is alive.
+function signalGroup(leader: number, signal: NodeJS.Signals | 0): boolean {
 	try {
-		process.kill(-leader, "SIGKILL");
+		process.kill(-leader, signal);
+		return true;
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+		return false;
 	}
 }
 
