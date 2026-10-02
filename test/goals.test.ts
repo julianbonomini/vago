@@ -37,7 +37,7 @@ function startedTickets(stdout: string): string[] {
 	return stdout
 		.split("\n")
 		.filter((line) => line.endsWith(" started"))
-		.map((line) => line.split(" ")[1] ?? "");
+		.map((line) => line.split(/ +/)[1] ?? "");
 }
 
 test("a Ticket blocked by another runs after it and both end done", async () => {
@@ -103,9 +103,9 @@ test("the Goal summary is printed on exit", async () => {
 
 	const result = await runPunt(root, ["run", "hello"]);
 
-	expect(result.stdout).toEndWith(
-		"hello: 2 of 2 Tickets done\n  01-greet done\n  02-wave done\n",
-	);
+	expect(result.stdout).toContain("hello: 2 of 2 Tickets done\n");
+	expect(result.stdout).toMatch(/^01-greet +done +1 /m);
+	expect(result.stdout).toMatch(/^02-wave +done +1 /m);
 });
 
 test("a Goal left unfinished exits non-zero and its summary says so", async () => {
@@ -127,7 +127,7 @@ run  = "false"
 	expect(startedTickets(result.stdout)).toEqual(["01-greet"]);
 	expect(await statusOf(root, "02-wave")).toBe("ready");
 	expect(result.stdout).toMatch(/hello: 0 of 2 Tickets done\n/);
-	expect(result.stdout).toEndWith("  02-wave ready\n");
+	expect(result.stdout).toMatch(/^02-wave +ready +0 /m);
 });
 
 test("header rewrites leave every Ticket body byte for byte", async () => {

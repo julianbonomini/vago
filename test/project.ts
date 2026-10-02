@@ -97,3 +97,30 @@ export async function readTicketFile(
 		body: text.slice(end + "\n+++\n".length),
 	};
 }
+
+/**
+ * Runs `punt <args>` as `runPunt` does, but with a terminal for stdout, and
+ * resolves to everything it printed there once the terminal closes. The
+ * terminal writes each newline as `\r\n`.
+ */
+export function runPuntInTerminal(
+	root: string,
+	args: string[],
+	env: Record<string, string> = {},
+): Promise<string> {
+	const decoder = new TextDecoder();
+	let printed = "";
+	return new Promise((resolve) => {
+		Bun.spawn([process.execPath, cli, ...args], {
+			cwd: root,
+			env: { ...process.env, ...env },
+			terminal: {
+				cols: 200,
+				data: (_terminal, chunk) => {
+					printed += decoder.decode(chunk, { stream: true });
+				},
+				exit: () => resolve(printed),
+			},
+		});
+	});
+}

@@ -335,7 +335,7 @@ prompt = "prompts/implement.md"
 	const started = result.stdout
 		.split("\n")
 		.filter((line) => line.endsWith(" started"))
-		.map((line) => line.split(" ").slice(1, 3).join(" "));
+		.map((line) => line.split(/ +/).slice(1, 3).join(" "));
 	expect(started).toEqual([
 		"01-say-hello edit",
 		"01-say-hello implement",
