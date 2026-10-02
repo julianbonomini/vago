@@ -23,6 +23,10 @@ These are the coding standards `/implement`, `/tdd` and `/code-review` work agai
 
 When the ticket, the spec or an ADR looks wrong, stop and ask the human. If they're away, write the question under `## Comments` on the ticket and set `Status: needs-info`. The ticket's scope is the scope.
 
+### The installed `punt`
+
+`bun run reinstall` compiles `src/cli.ts`, with the starter embedded, to `~/.local/bin/punt`. The human runs it between Goals. Sessions and Workflow Steps never run it, so a bad merge can't replace the `punt` that is driving a Goal.
+
 ### Commits and PRs
 
 - A commit message is one plain phrase: imperative, lowercase, at most about 60 characters, like `parse workflow toml and reject unknown step types`. No prefix, no body, no trailing period, no colons, em dashes or emoji.

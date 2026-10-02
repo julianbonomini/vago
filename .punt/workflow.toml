@@ -1,0 +1,32 @@
+# The Steps every Ticket goes through, in order. `punt init` copied this
+# file from Punt's starter, and it's yours to change. Prompt paths resolve
+# from .punt/, include paths from the repo root.
+
+harness = "claude-code"
+model   = "opus"
+# args = []             # appended to the claude command; a Step can set its own
+# idle_timeout = "30m"  # how long claude may print nothing before the Run fails
+
+[include]
+style = ".punt/code-style.md"
+
+[[steps]]
+id     = "implement"
+type   = "agent"
+prompt = "prompts/implement.md"
+
+[[steps]]
+id      = "check"
+type    = "shell"
+run     = "bun run check"
+on_fail = "continue"   # review reads a failed check and fixes it
+
+[[steps]]
+id     = "review"
+type   = "agent"
+prompt = "prompts/review.md"
+
+[[steps]]
+id     = "merge"
+type   = "agent"
+prompt = "prompts/merge.md"
