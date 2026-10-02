@@ -4,7 +4,7 @@
 
 import { printGoalSummary, printStuck, printStuckRefusal } from "./progress.ts";
 import { runStep } from "./step-runner.ts";
-import { readGoal, setStatus, type Ticket } from "./tickets.ts";
+import { closeOpenRun, readGoal, setStatus, type Ticket } from "./tickets.ts";
 import { loadWorkflow, type Workflow } from "./workflow.ts";
 
 /** How `punt run` left the Goal: every Ticket `done`, or not. */
@@ -12,8 +12,10 @@ export type GoalEnd = "done" | "unfinished";
 
 /**
  * Runs `goal` of the Project at `root` until no Ticket is ready or a Ticket
- * goes stuck, then prints the Goal summary. While any Ticket of the Goal is
- * stuck it runs nothing and prints which ones instead. Throws an Error
+ * goes stuck, then prints the Goal summary. A Ticket found `running`, left so
+ * by a `punt run` that crashed or was killed, goes stuck with its open Run
+ * ended `lost`. While any Ticket of the Goal is stuck it runs nothing and
+ * prints which ones instead. Throws an Error
  * naming the problem when the Workflow or the Goal's format is bad. The Goal
  * is checked before the first Run and again after each Ticket, so a Ticket
  * file broken mid-Goal stops it there, without a summary.
@@ -21,6 +23,14 @@ export type GoalEnd = "done" | "unfinished";
 export async function runGoal(root: string, goal: string): Promise<GoalEnd> {
 	const workflow = await loadWorkflow(root);
 	let state = await readGoal(root, goal);
+	// The checkout may hold a lost Run's partial work, so its Ticket goes
+	// stuck for the human to look at instead of running again on top of it.
+	for (const { ticket, status } of state.tickets) {
+		if (status !== "running") continue;
+		await closeOpenRun(ticket, "lost", new Date());
+		await setStatus(ticket, "stuck");
+	}
+	state = await readGoal(root, goal);
 	const stuck = state.tickets
 		.filter(({ status }) => status === "stuck")
 		.map(({ ticket }) => ticket);
@@ -63,7 +73,8 @@ export async function resetTicket(
 
 // Returns whether the Ticket got to `done`. A failed Step leaves it `stuck`,
 // unless it's a shell Step whose failure the Workflow lets the Ticket go on
-// from.
+// from. `on_fail` covers a Step that exits non-zero, never one the human
+// interrupted.
 async function runTicket(workflow: Workflow, ticket: Ticket): Promise<boolean> {
 	await setStatus(ticket, "running");
 	const stepOutputs = new Map<string, string>();
@@ -72,7 +83,9 @@ async function runTicket(workflow: Workflow, ticket: Ticket): Promise<boolean> {
 		stepOutputs.set(step.id, run.output);
 		const goesOn =
 			run.outcome.kind === "ok" ||
-			(step.type === "shell" && step.onFail === "continue");
+			(run.outcome.kind === "exit" &&
+				step.type === "shell" &&
+				step.onFail === "continue");
 		if (!goesOn) {
 			await setStatus(ticket, "stuck");
 			printStuck(ticket, step.id, run.log, run.resumeHint);

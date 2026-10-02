@@ -253,6 +253,24 @@ export async function recordRunEnd(
 	});
 }
 
+/**
+ * Closes the Ticket's last `[[runs]]` entry with `outcome` and `ended` when
+ * it has no end yet, which is how a Run cut off by a crash leaves it. Does
+ * nothing when the Ticket has no such entry.
+ */
+export async function closeOpenRun(
+	ticket: Ticket,
+	outcome: string,
+	ended: Date,
+): Promise<void> {
+	await rewriteHeader(ticketFile(ticket), (header) => {
+		const last = header.runs?.at(-1);
+		if (last === undefined || last.ended !== undefined) return;
+		last.ended = ended;
+		last.outcome = outcome;
+	});
+}
+
 // Walks `blocked_by` depth first from the lowest number. Returns the Ticket
 // numbers of the first cycle found, starting and ending on the same Ticket.
 function findBlockerCycle(

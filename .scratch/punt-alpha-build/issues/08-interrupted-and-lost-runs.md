@@ -9,9 +9,9 @@ Spec: [Punt Alpha](../../punt-alpha/spec.md).
 
 **Blocked by:** 07 (A Step fails and the Ticket goes stuck).
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] SIGINT during an agent Step leaves no process from the fake's process group alive.
-- [ ] After SIGINT, the Ticket is `stuck`, its last `[[runs]]` entry has outcome `interrupted` and an end time, and the exit code is non-zero.
-- [ ] SIGTERM behaves the same way.
-- [ ] A Ticket that's already `running` before `punt run` ends `stuck` with outcome `lost`, and no Step runs.
+- [x] SIGINT during an agent Step leaves no process from the fake's process group alive.
+- [x] After SIGINT, the Ticket is `stuck`, its last `[[runs]]` entry has outcome `interrupted` and an end time, and the exit code is non-zero.
+- [x] SIGTERM behaves the same way.
+- [x] A Ticket that's already `running` before `punt run` ends `stuck` with outcome `lost`, and no Step runs.

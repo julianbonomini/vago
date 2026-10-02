@@ -17,13 +17,15 @@ import {
 import { type AgentStep, buildPrompt, type Step } from "./workflow.ts";
 
 /**
- * How a Run ended: it succeeded, its process exited non-zero, or its Harness
- * streamed nothing for the Step's `idle_timeout` and was killed.
+ * How a Run ended: it succeeded, its process exited non-zero, its Harness
+ * streamed nothing for the Step's `idle_timeout` and was killed, or `punt`
+ * got SIGINT or SIGTERM and killed it.
  */
 export type RunOutcome =
 	| { kind: "ok" }
 	| { kind: "exit"; code: number }
-	| { kind: "idle-timeout" };
+	| { kind: "idle-timeout" }
+	| { kind: "interrupted" };
 
 /** How a Run ended, and what's left of it for later Steps and the human. */
 export type FinishedRun = {
@@ -47,7 +49,9 @@ export type FinishedRun = {
  * gets a `[[runs]]` entry before it starts and its end filled in after, a
  * line on stdout at each, and a log of everything it wrote. An agent Step's
  * prompt reads `stepOutputs`, the outputs of the Steps already run on this
- * Ticket by Step id.
+ * Ticket by Step id. SIGINT or SIGTERM while the Step runs kills every
+ * process it started and ends the Run `interrupted`, instead of ending
+ * `punt`.
  */
 export async function runStep(
 	step: Step,
@@ -61,6 +65,12 @@ export async function runStep(
 	// One descriptor for both streams keeps stdout and stderr in the order the
 	// Step wrote them, which two separate pipes can't promise.
 	const fd = openSync(entry.log, "w");
+	// The Step runs in its own process group, out of reach of the terminal's
+	// Ctrl-C, so `punt` takes the signal and kills the group itself.
+	const interrupt = new AbortController();
+	const interruptRun = () => interrupt.abort();
+	process.on("SIGINT", interruptRun);
+	process.on("SIGTERM", interruptRun);
 	let outcome: RunOutcome;
 	let output: string;
 	let session: HarnessSessionReport | undefined;
@@ -72,6 +82,7 @@ export async function runStep(
 				ticket,
 				stepOutputs,
 				fd,
+				interrupt.signal,
 			));
 			output = session.resultText ?? "";
 		} else {
@@ -80,7 +91,9 @@ export async function runStep(
 				stdin: "ignore",
 				stdout: fd,
 				stderr: fd,
+				detached: true,
 			});
+			killGroupOnAbort(child.pid, interrupt.signal);
 			const code = await child.exited;
 			outcome = outcomeOf(code);
 			// Read back from the log, so a review prompt sees stdout and stderr
@@ -88,8 +101,11 @@ export async function runStep(
 			output = `exit code ${code}\n${await Bun.file(entry.log).text()}`;
 		}
 	} finally {
+		process.off("SIGINT", interruptRun);
+		process.off("SIGTERM", interruptRun);
 		closeSync(fd);
 	}
+	if (interrupt.signal.aborted) outcome = { kind: "interrupted" };
 	const ended = new Date();
 	// The header and the Step line spell the outcome the same way. Each kind
 	// is named as it's spelled, so only `exit` needs its code added.
@@ -107,6 +123,7 @@ async function runAgent(
 	ticket: Ticket,
 	stepOutputs: ReadonlyMap<string, string>,
 	fd: number,
+	interrupt: AbortSignal,
 ): Promise<{
 	outcome: RunOutcome;
 	session: HarnessSessionReport;
@@ -123,16 +140,13 @@ async function runAgent(
 		stdin: new Blob([prompt]),
 		stdout: "pipe",
 		stderr: fd,
-		// TODO(08): in its own process group the session misses the terminal's
-		// Ctrl-C, so `punt run` must kill the group on SIGINT and SIGTERM.
 		detached: true,
 	});
+	killGroupOnAbort(child.pid, interrupt);
 	let idle = false;
 	const idleTimer = setTimeout(() => {
 		idle = true;
-		// The whole process group, since a tool the Harness started would
-		// otherwise hold stdout open and the stream would never end.
-		process.kill(-child.pid, "SIGKILL");
+		killGroup(child.pid);
 	}, step.idleTimeoutMs);
 	let session: HarnessSessionReport = {};
 	const decoder = new TextDecoder();
@@ -160,6 +174,24 @@ async function runAgent(
 				? undefined
 				: harness.resumeHint(session.sessionId),
 	};
+}
+
+// At once when the signal came while the Step was still being set up.
+function killGroupOnAbort(leader: number, interrupt: AbortSignal): void {
+	if (interrupt.aborted) killGroup(leader);
+	else interrupt.addEventListener("abort", () => killGroup(leader));
+}
+
+// The whole group, since a process the Step started would otherwise live on
+// and could hold the Harness's stdout open, so its stream would never end.
+// SIGKILL because a Step that ignores SIGTERM must still end. The group is
+// gone already when the signal comes just after the Step ended.
+function killGroup(leader: number): void {
+	try {
+		process.kill(-leader, "SIGKILL");
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+	}
 }
 
 function outcomeOf(code: number): RunOutcome {

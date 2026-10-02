@@ -31,27 +31,47 @@ export type PuntExit = {
 	stderr: string;
 };
 
+/** A `punt` child started by `startPunt` and not yet waited for. */
+export type RunningPunt = {
+	/** Sends `signal` to the `punt` process alone, as `kill` would. */
+	kill(signal: NodeJS.Signals): void;
+	/** Resolves once `punt` has exited. */
+	exited: Promise<PuntExit>;
+};
+
 /**
- * Runs `punt <args>` with `root` as the working directory and waits for it.
- * `env` is added to this process's environment, overriding what it names.
+ * Starts `punt <args>` with `root` as the working directory without waiting
+ * for it. `env` is added to this process's environment, overriding what it
+ * names.
  */
-export async function runPunt(
+export function startPunt(
 	root: string,
 	args: string[],
 	env: Record<string, string> = {},
-): Promise<PuntExit> {
+): RunningPunt {
 	const child = Bun.spawn([process.execPath, cli, ...args], {
 		cwd: root,
 		env: { ...process.env, ...env },
 		stdout: "pipe",
 		stderr: "pipe",
 	});
-	const [stdout, stderr, exitCode] = await Promise.all([
-		new Response(child.stdout).text(),
-		new Response(child.stderr).text(),
-		child.exited,
-	]);
-	return { exitCode, stdout, stderr };
+	return {
+		kill: (signal) => child.kill(signal),
+		exited: Promise.all([
+			new Response(child.stdout).text(),
+			new Response(child.stderr).text(),
+			child.exited,
+		]).then(([stdout, stderr, exitCode]) => ({ exitCode, stdout, stderr })),
+	};
+}
+
+/** Starts `punt <args>` as `startPunt` does and waits for it to exit. */
+export function runPunt(
+	root: string,
+	args: string[],
+	env: Record<string, string> = {},
+): Promise<PuntExit> {
+	return startPunt(root, args, env).exited;
 }
 
 /** A Ticket file as the tests read it: its `+++` header parsed, and its body. */
