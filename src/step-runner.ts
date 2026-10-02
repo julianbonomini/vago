@@ -1,43 +1,99 @@
-// Runs one Step as a child process: the only module that spawns. Hides how
-// a Step's command is spawned and how its output reaches the log.
+// Runs one Step on a Ticket as one Run: the only module that spawns. Hides
+// how the Run is recorded and announced, how a Step's command is spawned, how
+// a Harness's stream is read and how output reaches the log.
 
-import { closeSync, openSync } from "node:fs";
+import { closeSync, openSync, writeSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { Step } from "./workflow.ts";
+import { findHarness, type HarnessSessionReport } from "./harness/registry.ts";
+import { printStepEnded, printStepStarted } from "./progress.ts";
+import {
+	readGoalBody,
+	readTicketBody,
+	recordRunEnd,
+	recordRunStart,
+	type Ticket,
+} from "./tickets.ts";
+import { type AgentStep, buildPrompt, type Step } from "./workflow.ts";
 
-/** How a Step ended: it succeeded, or its process exited non-zero. */
-export type Outcome = { kind: "ok" } | { kind: "exit"; code: number };
-
-/** The outcome as the Ticket header and the Step lines spell it: `ok`, `exit 1`. */
-export function outcomeText(outcome: Outcome): string {
-	return outcome.kind === "ok" ? "ok" : `exit ${outcome.code}`;
-}
+/** How a Run ended: it succeeded, or its process exited non-zero. */
+export type RunOutcome = { kind: "ok" } | { kind: "exit"; code: number };
 
 /**
- * Runs `step` with `root` as its working directory and waits for it to end.
- * Its stdout and stderr, interleaved as they were written, go to the file at
- * `log`, which is created along with its folder.
+ * Runs `step` on `ticket` in the repo root and waits for it to end. The Run
+ * gets a `[[runs]]` entry before it starts and its end filled in after, a
+ * line on stdout at each, and a log of everything it wrote. Returns how it
+ * ended.
  */
-export async function runStep(
-	step: Step,
-	root: string,
-	log: string,
-): Promise<Outcome> {
-	await mkdir(dirname(log), { recursive: true });
+export async function runStep(step: Step, ticket: Ticket): Promise<RunOutcome> {
+	const started = new Date();
+	const entry = await recordRunStart(ticket, step, started);
+	printStepStarted(ticket, step.id, started);
+	await mkdir(dirname(entry.log), { recursive: true });
 	// One descriptor for both streams keeps stdout and stderr in the order the
 	// Step wrote them, which two separate pipes can't promise.
-	const fd = openSync(log, "w");
+	const fd = openSync(entry.log, "w");
+	let outcome: RunOutcome;
+	let session: HarnessSessionReport | undefined;
 	try {
-		const child = Bun.spawn(["sh", "-c", step.run], {
-			cwd: root,
-			stdin: "ignore",
-			stdout: fd,
-			stderr: fd,
-		});
-		const code = await child.exited;
-		return code === 0 ? { kind: "ok" } : { kind: "exit", code };
+		if (step.type === "agent") {
+			({ outcome, session } = await runAgent(step, ticket, fd));
+		} else {
+			const child = Bun.spawn(["sh", "-c", step.run], {
+				cwd: ticket.root,
+				stdin: "ignore",
+				stdout: fd,
+				stderr: fd,
+			});
+			outcome = outcomeOf(await child.exited);
+		}
 	} finally {
 		closeSync(fd);
 	}
+	const ended = new Date();
+	// The header and the Step line spell the outcome the same way.
+	const spelled = outcome.kind === "ok" ? "ok" : `exit ${outcome.code}`;
+	await recordRunEnd(entry, spelled, ended, session);
+	printStepEnded(ticket, step.id, spelled, started, ended, session?.costUsd);
+	return outcome;
+}
+
+// The log gets the raw stream and stderr together, so a Harness that fails
+// before streaming (bad login, unknown model) still leaves its reason there.
+async function runAgent(
+	step: AgentStep,
+	ticket: Ticket,
+	fd: number,
+): Promise<{ outcome: RunOutcome; session: HarnessSessionReport }> {
+	const prompt = buildPrompt(step, {
+		ticket: await readTicketBody(ticket),
+		goal: await readGoalBody(ticket),
+	});
+	const harness = findHarness(step.harness);
+	const child = Bun.spawn(harness.command(step.model), {
+		cwd: ticket.root,
+		stdin: new Blob([prompt]),
+		stdout: "pipe",
+		stderr: fd,
+	});
+	let session: HarnessSessionReport = {};
+	const decoder = new TextDecoder();
+	let partial = "";
+	for await (const chunk of child.stdout) {
+		// Written as it arrives, so `tail -f` on the log follows the Run live.
+		writeSync(fd, chunk);
+		const lines = (partial + decoder.decode(chunk, { stream: true })).split(
+			"\n",
+		);
+		partial = lines.pop() ?? "";
+		for (const line of lines) {
+			session = { ...session, ...harness.readLine(line) };
+		}
+	}
+	session = { ...session, ...harness.readLine(partial + decoder.decode()) };
+	return { outcome: outcomeOf(await child.exited), session };
+}
+
+function outcomeOf(code: number): RunOutcome {
+	return code === 0 ? { kind: "ok" } : { kind: "exit", code };
 }
