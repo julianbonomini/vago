@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makeFakeClaude } from "./fake-claude.ts";
 import { makeProject, readTicketFile, runPunt } from "./project.ts";
@@ -26,6 +27,18 @@ function untrackedFiles(root: string): string[] {
 		.map((line) => line.replace(/^\?\? /, ""));
 }
 
+// Fails unless `.punt/` under `root` holds exactly the starter's files, byte
+// for byte.
+async function expectStarterIn(root: string): Promise<void> {
+	const starterFiles = await filesIn(starter);
+	expect(await filesIn(join(root, ".punt"))).toEqual(starterFiles);
+	for (const path of starterFiles) {
+		expect(await Bun.file(join(root, ".punt", path)).text()).toBe(
+			await Bun.file(join(starter, path)).text(),
+		);
+	}
+}
+
 async function excludeLines(root: string): Promise<string[]> {
 	const exclude = await Bun.file(join(root, ".git/info/exclude")).text();
 	return exclude.split("\n").filter((line) => !line.startsWith("#"));
@@ -38,19 +51,35 @@ test("init copies the starter into .punt/ verbatim and punt run accepts it", asy
 
 	expect(init.stderr).toBe("");
 	expect(init.exitCode).toBe(0);
-	const starterFiles = await filesIn(starter);
-	expect(await filesIn(join(root, ".punt"))).toEqual(starterFiles);
-	for (const path of starterFiles) {
-		expect(await Bun.file(join(root, ".punt", path)).text()).toBe(
-			await Bun.file(join(starter, path)).text(),
-		);
-	}
+	await expectStarterIn(root);
 
 	await runPunt(root, ["goal", "new", "hello"]);
 	const run = await runPunt(root, ["run", "hello"]);
 
 	expect(run.stderr).toBe("");
 	expect(run.exitCode).toBe(0);
+});
+
+test("the reinstalled binary's init copies the same starter as the source", async () => {
+	const root = await makeProject({});
+	const home = await mkdtemp(join(tmpdir(), "punt-home-"));
+	// A temp HOME keeps the script away from the human's own installed punt.
+	const reinstall = Bun.spawnSync([process.execPath, "run", "reinstall"], {
+		cwd: join(import.meta.dir, ".."),
+		env: { ...process.env, HOME: home },
+	});
+	expect(reinstall.exitCode).toBe(0);
+
+	const init = Bun.spawnSync([join(home, ".local/bin/punt"), "init"], {
+		cwd: root,
+		stdin: new Blob(["y\n"]),
+	});
+	// The binary is about 60 MB, too big to leave in the temp directory.
+	await rm(home, { recursive: true });
+
+	expect(init.stderr.toString()).toBe("");
+	expect(init.exitCode).toBe(0);
+	await expectStarterIn(root);
 });
 
 test("answering commit lets git see the Workflow but never the Goals", async () => {

@@ -6,9 +6,9 @@ Spec: [Punt Alpha](../../punt-alpha/spec.md).
 
 **Blocked by:** 10 (`punt init` and the starter Workflow).
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] `bun run reinstall` produces a working `punt` on `PATH`, and the binary has no runtime dependency on the repo.
-- [ ] The compiled binary's `punt init` writes the same starter files as the source.
-- [ ] Punt's repo has a committed `.punt/workflow.toml`, and `.punt/goals/` is excluded.
-- [ ] `bun run check` passes.
+- [x] `bun run reinstall` produces a working `punt` on `PATH`, and the binary has no runtime dependency on the repo.
+- [x] The compiled binary's `punt init` writes the same starter files as the source.
+- [x] Punt's repo has a committed `.punt/workflow.toml`, and `.punt/goals/` is excluded.
+- [x] `bun run check` passes.
