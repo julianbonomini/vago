@@ -93,13 +93,7 @@ export async function runStep(
 				stderr: fd,
 				detached: true,
 			});
-			let stopping: Promise<void> | undefined;
-			whenAborted(interrupt.signal, () => {
-				stopping = stopGroup(child.pid);
-			});
-			const code = await child.exited;
-			// `sh` can exit while the rest of its group still ignores SIGTERM.
-			await stopping;
+			const code = await exitCodeOf(child, interrupt.signal);
 			outcome = outcomeOf(code);
 			// Read back from the log, so a review prompt sees stdout and stderr
 			// interleaved the way the Step wrote them.
@@ -147,16 +141,9 @@ async function runAgent(
 		stderr: fd,
 		detached: true,
 	});
-	let stopping: Promise<void> | undefined;
-	const stop = () => {
-		stopping ??= stopGroup(child.pid);
-	};
-	whenAborted(interrupt, stop);
-	let idle = false;
-	const idleTimer = setTimeout(() => {
-		idle = true;
-		stop();
-	}, step.idleTimeoutMs);
+	const idle = new AbortController();
+	const exit = exitCodeOf(child, AbortSignal.any([interrupt, idle.signal]));
+	const idleTimer = setTimeout(() => idle.abort(), step.idleTimeoutMs);
 	let session: HarnessSessionReport = {};
 	const decoder = new TextDecoder();
 	let partial = "";
@@ -174,11 +161,9 @@ async function runAgent(
 	}
 	clearTimeout(idleTimer);
 	session = { ...session, ...harness.readLine(partial + decoder.decode()) };
-	const code = await child.exited;
-	// The Harness can exit while the rest of its group still ignores SIGTERM.
-	await stopping;
+	const code = await exit;
 	return {
-		outcome: idle ? { kind: "idle-timeout" } : outcomeOf(code),
+		outcome: idle.signal.aborted ? { kind: "idle-timeout" } : outcomeOf(code),
 		session,
 		resumeHint:
 			session.sessionId === undefined
@@ -187,14 +172,28 @@ async function runAgent(
 	};
 }
 
-// At once when the signal came while the Step was still being set up.
-function whenAborted(interrupt: AbortSignal, stop: () => void): void {
-	if (interrupt.aborted) stop();
-	else interrupt.addEventListener("abort", stop);
+// Stops the child's group when `stop` aborts, at once if it already has, as
+// when the signal came while the Step was still being set up. Resolves to the
+// exit code once the child has exited and, if it was stopped, once its group
+// is gone too, since the leader can exit while the rest of its group still
+// ignores SIGTERM.
+async function exitCodeOf(
+	child: Bun.Subprocess,
+	stop: AbortSignal,
+): Promise<number> {
+	let stopping: Promise<void> | undefined;
+	const startStopping = () => {
+		stopping = stopGroup(child.pid);
+	};
+	if (stop.aborted) startStopping();
+	else stop.addEventListener("abort", startStopping, { once: true });
+	const code = await child.exited;
+	stop.removeEventListener("abort", startStopping);
+	await stopping;
+	return code;
 }
 
-// Long enough for a Harness to stop its tool commands. Claude Code takes
-// under a second.
+// Long enough for a Harness to stop the tool commands it started.
 const stopGraceMs = 5_000;
 
 // The whole group, since a process the Step started would otherwise live on
@@ -202,7 +201,8 @@ const stopGraceMs = 5_000;
 // SIGTERM first, because a Harness can run its tool commands in process groups
 // of their own, which no signal to this group reaches, and only the Harness
 // can stop them. SIGKILL after the grace period, because a Step that ignores
-// SIGTERM must still end. Resolves once the group is gone.
+// SIGTERM must still end. Resolves once the group is gone or has been sent
+// SIGKILL.
 async function stopGroup(leader: number): Promise<void> {
 	const deadline = Date.now() + stopGraceMs;
 	signalGroup(leader, "SIGTERM");

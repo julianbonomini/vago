@@ -5,9 +5,9 @@ import { makeProject, readTicketFile, runPunt, startPunt } from "./project.ts";
 
 const goalDir = ".punt/goals/hello";
 
-function project(workflowHead: string): Promise<string> {
+function project(idleTimeout: string): Promise<string> {
 	return makeProject({
-		".punt/workflow.toml": `${workflowHead}
+		".punt/workflow.toml": `idle_timeout = "${idleTimeout}"
 harness = "claude-code"
 model   = "opus"
 
@@ -35,11 +35,12 @@ async function outcomesOf(root: string): Promise<unknown[]> {
 // Claude Code's Bash tool starts each command in a process group of its own,
 // out of reach of a signal to `claude`'s group, and stops it when `claude`
 // gets SIGTERM. `set -m` gives the fake's background job its own group, and
-// the trap waits for it so it's reaped before the fake exits.
+// the trap waits for it so it's reaped before the fake exits. The trap is set
+// before the pid file appears, since the tests signal as soon as it does.
 const startsToolCommand = `set -m
 sleep 60 > /dev/null 2>&1 &
-echo $! > tool.pid
 trap 'kill $!; wait $!; exit 143' TERM
+echo $! > tool.pid
 wait`;
 
 async function waitForPid(root: string, file: string): Promise<number> {
@@ -62,7 +63,7 @@ function alive(pid: number): boolean {
 }
 
 test("after an idle timeout, no command the agent started is alive", async () => {
-	const root = await project(`idle_timeout = "1s"`);
+	const root = await project("1s");
 	const claude = await makeFakeClaude(startsToolCommand);
 
 	const result = await runPunt(root, ["run", "hello"], claude.env);
@@ -74,7 +75,7 @@ test("after an idle timeout, no command the agent started is alive", async () =>
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
 	test(`after ${signal} to punt run, no command the agent started is alive`, async () => {
-		const root = await project("");
+		const root = await project("1h");
 		const claude = await makeFakeClaude(startsToolCommand);
 
 		const punt = startPunt(root, ["run", "hello"], claude.env);
@@ -89,13 +90,14 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 }
 
 test("an agent that ignores SIGTERM still ends within the grace period", async () => {
-	const root = await project(`idle_timeout = "1s"`);
+	const root = await project("1s");
 	// `sleep` inherits the ignored SIGTERM and holds the stream open, so only
 	// SIGKILL ends the Run.
 	const claude = await makeFakeClaude(
 		"trap '' TERM; echo $$ > claude.pid; sleep 60",
 	);
 
+	// The 1s idle timeout, Punt's 5s grace period, and slack for startup.
 	const started = Date.now();
 	const result = await runPunt(root, ["run", "hello"], claude.env);
 
