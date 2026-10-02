@@ -17,7 +17,7 @@ One repository Punt builds for, such as a TUI, a mini project or an iOS app.
 _Avoid_: repo, app
 
 **Workflow**:
-A Project's own ordered Steps that a Ticket passes through, defined inside that Project.
+One of a Project's named lists of ordered Steps, defined inside that Project. Each Goal names the Workflow its Tickets pass through.
 _Avoid_: pipeline, process
 
 **Step**:
