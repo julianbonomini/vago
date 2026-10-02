@@ -15,7 +15,7 @@ Spec: [Punt Alpha](../../punt-alpha/spec.md).
 
 - [ ] A fake `claude` exiting non-zero leaves the Ticket `stuck` with outcome `exit <n>`, and later Tickets stay `ready`.
 - [ ] A fake that goes silent past a tiny `idle_timeout` is killed, with outcome `idle-timeout`.
-- [ ] A failing shell Step with `on_fail = "continue"` records `exit <n>` and the Ticket goes on. With the default, the Ticket goes `stuck`.
+- [ ] A failing shell Step with `on_fail = "continue"` records `exit <n>`, the Ticket goes on, and a later prompt's `{{steps.<id>.output}}` shows the failure (left over from 06). With the default, the Ticket goes `stuck`.
 - [ ] The stuck message shows the log path, the resume command and the reset command.
 - [ ] `punt run` with a stuck Ticket refuses, naming it, and runs nothing.
 - [ ] After `punt ticket reset`, the Ticket is `ready`, its earlier `[[runs]]` and logs are kept, and its new Runs get new log files.
