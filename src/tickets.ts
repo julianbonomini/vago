@@ -80,19 +80,26 @@ export type GoalState = {
 type TicketHeader = { ticket: Ticket; header: Header };
 
 /**
- * Creates Goal `goal` with a `goal.md` titled with its name, for the human
- * to describe the outcome in, and an empty `tickets/`. Returns the path of
- * `goal.md`. Throws an Error naming the file when the Goal already exists,
- * or naming the problem when `goal` isn't a valid name.
+ * Creates Goal `goal` with an empty `tickets/` and a `goal.md` that is
+ * `body` exactly as given, which is what `{{goal}}` will be. Without `body`,
+ * `goal.md` is a `# <goal>` title for the human to fill in. Returns the path
+ * of `goal.md`. Throws an Error naming the problem, and creates nothing, when
+ * `body` is empty or only whitespace, the Goal already exists, or `goal`
+ * isn't a valid name.
  */
-export async function createGoal(root: string, goal: string): Promise<string> {
+export async function createGoal(
+	root: string,
+	goal: string,
+	body?: string,
+): Promise<string> {
 	const folder = goalFolder(root, goal);
+	if (body !== undefined) checkBody(`Goal ${goal}`, body);
 	const goalFile = join(folder, "goal.md");
 	if (await Bun.file(goalFile).exists()) {
 		throw new Error(`Goal ${goal} already exists: ${goalFile}`);
 	}
 	await mkdir(join(folder, "tickets"), { recursive: true });
-	await Bun.write(goalFile, `# ${goal}\n`);
+	await Bun.write(goalFile, body ?? `# ${goal}\n`);
 	return goalFile;
 }
 
@@ -177,19 +184,35 @@ export async function readGoal(root: string, goal: string): Promise<GoalState> {
 
 /**
  * Adds a Ticket named `slug` to `goal`, numbered one past its highest
- * Ticket, with status `ready`, blocked by the Tickets numbered in
- * `blockedBy` (each once, however often it's given), and a title for the
- * human to fill in. Returns the path of the new Ticket file. Throws an Error
- * naming the problem when the Goal doesn't exist or its format is bad, a
- * blocker isn't a Ticket of the Goal, or `goal` or `slug` isn't a valid name.
+ * Ticket, with status `ready` and blocked by the Tickets numbered in
+ * `blockedBy` (each once, however often it's given). The Ticket's body is
+ * `body` exactly as given, which is what `readTicketBody` will return.
+ * Without `body`, it's a `# <slug>` title for the human to fill in. Returns
+ * the path of the new Ticket file. Throws an Error naming the problem, and
+ * writes nothing, when `body` is empty or only whitespace, `body` starts with
+ * a `+++` header (only Punt writes a Ticket's header, ADR 0003), the Goal
+ * doesn't exist or its format is bad, a blocker isn't a Ticket of the Goal,
+ * or `goal` or `slug` isn't a valid name.
  */
 export async function addTicket(
 	root: string,
 	goal: string,
 	slug: string,
 	blockedBy: number[],
+	body?: string,
 ): Promise<string> {
 	checkName("Ticket slug", slug);
+	if (body !== undefined) {
+		checkBody(`Ticket ${slug}`, body);
+		// A header of the human's own could set status, which only Punt
+		// writes (ADR 0003). A +++ later in the body is fine: the header Punt
+		// writes closes before it.
+		if (/^\s*\+\+\+[ \t]*(\r?\n|$)/.test(body)) {
+			throw new Error(
+				`The body for Ticket ${slug} starts with a +++ header; only Punt writes a Ticket's header`,
+			);
+		}
+	}
 	const { tickets } = await readGoal(root, goal);
 	for (const blocker of blockedBy) {
 		if (!tickets.some(({ ticket }) => ticket.number === blocker)) {
@@ -205,7 +228,7 @@ export async function addTicket(
 			? { status: "ready", blocked_by: [...new Set(blockedBy)] }
 			: { status: "ready" };
 	const file = ticketFile(ticket);
-	await Bun.write(file, ticketText(header, `\n# ${slug}\n`));
+	await Bun.write(file, ticketText(header, body ?? `\n# ${slug}\n`));
 	return file;
 }
 
@@ -356,6 +379,11 @@ function checkName(label: string, name: string): void {
 			`${label} "${name}" may hold only letters, digits, - and _`,
 		);
 	}
+}
+
+// A file with no body gives the agent nothing to work from.
+function checkBody(label: string, body: string): void {
+	if (body.trim() === "") throw new Error(`The body for ${label} is empty`);
 }
 
 // Ticket files and logs number Tickets with at least two digits, so a folder
