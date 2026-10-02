@@ -22,27 +22,16 @@ export type Ticket = {
 };
 
 /**
- * A Run as `recordRunStart` wrote it to `[[runs]]`: started and not yet
- * ended. Pass it on unchanged, like a file descriptor, to `recordRunEnd` and
- * the Step lines.
+ * One entry in a Ticket's `[[runs]]`, as `recordRunStart` opened it. Pass it
+ * back to `recordRunEnd` unchanged, like an open file descriptor.
  */
-export type StartedRun = {
+export type TicketRunEntry = {
 	ticket: Ticket;
-	stepId: string;
-	started: Date;
 	/** The entry's 1-based position in the Ticket's `[[runs]]`. */
 	position: number;
-	/** Absolute path the Step's output must be written to. */
+	/** Absolute path the Run's log must be written to. */
 	log: string;
 };
-
-/** How a Run ended: it succeeded, or its process exited non-zero. */
-export type Outcome = { kind: "ok" } | { kind: "exit"; code: number };
-
-/** The outcome as `[[runs]]` and the Step lines spell it: `ok`, `exit 1`. */
-export function outcomeText(outcome: Outcome): string {
-	return outcome.kind === "ok" ? "ok" : `exit ${outcome.code}`;
-}
 
 // Loose objects, so header fields Alpha doesn't know survive a rewrite.
 const RunEntry = z.looseObject({
@@ -131,14 +120,14 @@ export async function setStatus(
 /**
  * Appends a `[[runs]]` entry for `step`, started at `started`, naming the
  * Harness and model for an agent Step. Call it before the Step starts, so a
- * crash mid-Step still leaves a trace. Returns the StartedRun, which carries the
- * path its log must be written to.
+ * crash mid-Step still leaves a trace. Returns the entry, which carries the
+ * path the Run's log must be written to.
  */
 export async function recordRunStart(
 	ticket: Ticket,
 	step: Step,
 	started: Date,
-): Promise<StartedRun> {
+): Promise<TicketRunEntry> {
 	const { position, log } = await rewriteHeader(
 		ticketFile(ticket),
 		(header) => {
@@ -164,34 +153,33 @@ export async function recordRunStart(
 	);
 	return {
 		ticket,
-		stepId: step.id,
-		started,
 		position,
 		log: join(goalFolder(ticket.root, ticket.goal), log),
 	};
 }
 
 /**
- * Fills in the Run's `[[runs]]` entry with when and how it ended and, for an
- * agent Step, what its Harness session reported.
+ * Closes `entry` with when its Run ended, its outcome as spelled in the
+ * header (`ok`, `exit 1`) and, for an agent Step, what its Harness session
+ * reported.
  */
 export async function recordRunEnd(
-	run: StartedRun,
-	outcome: Outcome,
+	entry: TicketRunEntry,
+	outcome: string,
 	ended: Date,
 	session?: HarnessSessionReport,
 ): Promise<void> {
-	const file = ticketFile(run.ticket);
+	const file = ticketFile(entry.ticket);
 	await rewriteHeader(file, (header) => {
-		const entry = header.runs?.[run.position - 1];
-		if (entry === undefined) {
-			throw new Error(`${file} has no [[runs]] entry ${run.position}`);
+		const table = header.runs?.[entry.position - 1];
+		if (table === undefined) {
+			throw new Error(`${file} has no [[runs]] entry ${entry.position}`);
 		}
-		entry.ended = ended;
-		entry.outcome = outcomeText(outcome);
-		if (session?.sessionId !== undefined) entry.session_id = session.sessionId;
-		if (session?.tokens !== undefined) entry.tokens = session.tokens;
-		if (session?.costUsd !== undefined) entry.cost_usd = session.costUsd;
+		table.ended = ended;
+		table.outcome = outcome;
+		if (session?.sessionId !== undefined) table.session_id = session.sessionId;
+		if (session?.tokens !== undefined) table.tokens = session.tokens;
+		if (session?.costUsd !== undefined) table.cost_usd = session.costUsd;
 	});
 }
 

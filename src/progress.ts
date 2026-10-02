@@ -2,31 +2,34 @@
 // starts and one when it ends. Hides the line formats and how durations and
 // costs read.
 
-import type { HarnessSessionReport } from "./harness/registry.ts";
-import { type Outcome, outcomeText, type StartedRun } from "./tickets.ts";
+import type { Ticket } from "./tickets.ts";
 
-/** Prints the line saying the Run's Step started on its Ticket. */
-export function printStepStarted(run: StartedRun): void {
-	console.log(
-		`${timestamp(run.started)} ${run.ticket.name} ${run.stepId} started`,
-	);
+/** Prints the line saying Step `stepId` started on `ticket` at `started`. */
+export function printStepStarted(
+	ticket: Ticket,
+	stepId: string,
+	started: Date,
+): void {
+	console.log(`${timestamp(started)} ${ticket.name} ${stepId} started`);
 }
 
 /**
- * Prints the line saying how the Run's Step ended, how long it took and,
- * when its Harness session reported one, what it cost.
+ * Prints the line saying how Step `stepId` on `ticket` ended, with `outcome`
+ * as spelled in the header (`ok`, `exit 1`), how long it took and, when the
+ * Harness reported one, what it cost.
  */
 export function printStepEnded(
-	run: StartedRun,
-	outcome: Outcome,
+	ticket: Ticket,
+	stepId: string,
+	outcome: string,
+	started: Date,
 	ended: Date,
-	session?: HarnessSessionReport,
+	costUsd?: number,
 ): void {
-	const took = duration(ended.getTime() - run.started.getTime());
-	const cost =
-		session?.costUsd === undefined ? "" : ` $${session.costUsd.toFixed(2)}`;
+	const took = duration(ended.getTime() - started.getTime());
+	const cost = costUsd === undefined ? "" : ` $${costUsd.toFixed(2)}`;
 	console.log(
-		`${timestamp(ended)} ${run.ticket.name} ${run.stepId} ${outcomeText(outcome)} ${took}${cost}`,
+		`${timestamp(ended)} ${ticket.name} ${stepId} ${outcome} ${took}${cost}`,
 	);
 }
 

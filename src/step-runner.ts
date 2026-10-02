@@ -8,7 +8,6 @@ import { dirname } from "node:path";
 import { findHarness, type HarnessSessionReport } from "./harness/registry.ts";
 import { printStepEnded, printStepStarted } from "./progress.ts";
 import {
-	type Outcome,
 	readGoalBody,
 	readTicketBody,
 	recordRunEnd,
@@ -17,20 +16,24 @@ import {
 } from "./tickets.ts";
 import { type AgentStep, buildPrompt, type Step } from "./workflow.ts";
 
+/** How a Run ended: it succeeded, or its process exited non-zero. */
+export type RunOutcome = { kind: "ok" } | { kind: "exit"; code: number };
+
 /**
  * Runs `step` on `ticket` in the repo root and waits for it to end. The Run
  * gets a `[[runs]]` entry before it starts and its end filled in after, a
  * line on stdout at each, and a log of everything it wrote. Returns how it
  * ended.
  */
-export async function runStep(step: Step, ticket: Ticket): Promise<Outcome> {
-	const run = await recordRunStart(ticket, step, new Date());
-	printStepStarted(run);
-	await mkdir(dirname(run.log), { recursive: true });
+export async function runStep(step: Step, ticket: Ticket): Promise<RunOutcome> {
+	const started = new Date();
+	const entry = await recordRunStart(ticket, step, started);
+	printStepStarted(ticket, step.id, started);
+	await mkdir(dirname(entry.log), { recursive: true });
 	// One descriptor for both streams keeps stdout and stderr in the order the
 	// Step wrote them, which two separate pipes can't promise.
-	const fd = openSync(run.log, "w");
-	let outcome: Outcome;
+	const fd = openSync(entry.log, "w");
+	let outcome: RunOutcome;
 	let session: HarnessSessionReport | undefined;
 	try {
 		if (step.type === "agent") {
@@ -48,8 +51,10 @@ export async function runStep(step: Step, ticket: Ticket): Promise<Outcome> {
 		closeSync(fd);
 	}
 	const ended = new Date();
-	await recordRunEnd(run, outcome, ended, session);
-	printStepEnded(run, outcome, ended, session);
+	// The header and the Step line spell the outcome the same way.
+	const spelled = outcome.kind === "ok" ? "ok" : `exit ${outcome.code}`;
+	await recordRunEnd(entry, spelled, ended, session);
+	printStepEnded(ticket, step.id, spelled, started, ended, session?.costUsd);
 	return outcome;
 }
 
@@ -59,7 +64,7 @@ async function runAgent(
 	step: AgentStep,
 	ticket: Ticket,
 	fd: number,
-): Promise<{ outcome: Outcome; session: HarnessSessionReport }> {
+): Promise<{ outcome: RunOutcome; session: HarnessSessionReport }> {
 	const prompt = buildPrompt(step, {
 		ticket: await readTicketBody(ticket),
 		goal: await readGoalBody(ticket),
@@ -89,6 +94,6 @@ async function runAgent(
 	return { outcome: outcomeOf(await child.exited), session };
 }
 
-function outcomeOf(code: number): Outcome {
+function outcomeOf(code: number): RunOutcome {
 	return code === 0 ? { kind: "ok" } : { kind: "exit", code };
 }
