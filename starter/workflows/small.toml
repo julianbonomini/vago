@@ -1,0 +1,44 @@
+# The small Workflow, for a Goal whose Tickets are small and already clear:
+# one agent builds each Ticket and a fresh one reviews it. Pick it with
+# `punt goal new <goal> --workflow small`. Prompt paths resolve from .punt/,
+# include and shell paths from the repo root.
+#
+# Git: each Goal has a branch, goal/<goal>, cut from main by its first Ticket.
+# Each Ticket is built on <goal>/<ticket>, cut from the Goal's branch, and
+# squash-merged back as one commit. The human merges the Goal's PR to main.
+# Shell Steps get the names in $PUNT_GOAL and $PUNT_TICKET.
+
+harness = "claude-code"
+model   = "claude-opus-5-5"
+# args = []             # appended to the claude command; a Step can set its own
+idle_timeout = "10m"  # how long claude may print nothing before the Run fails
+
+[[steps]]
+id   = "branch"
+type = "shell"
+run  = "sh .punt/scripts/branch.sh"
+
+[[steps]]
+id     = "implement"
+type   = "agent"
+prompt = "prompts/small-implement.md"
+include.aposd = ".punt/rules/aposd.md"
+include.style = ".punt/rules/code-style.md"
+
+[[steps]]
+id      = "check"
+type    = "shell"
+run     = "bun run check"
+on_fail = "continue"   # review reads a failed check and fixes it
+
+[[steps]]
+id     = "review"
+type   = "agent"
+prompt = "prompts/small-review.md"
+include.aposd = ".punt/rules/aposd.md"
+include.style = ".punt/rules/code-style.md"
+
+[[steps]]
+id   = "merge"
+type = "shell"
+run  = "bun run check && sh .punt/scripts/merge.sh"

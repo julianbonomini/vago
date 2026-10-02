@@ -7,7 +7,7 @@ declare module "*.md" {
 	export default text;
 }
 
-declare module "*/workflow.toml" {
+declare module "*/try-hard.toml" {
 	const text: string;
 	export default text;
 }

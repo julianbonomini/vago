@@ -17,7 +17,7 @@ import aposd from "../starter/rules/aposd.md" with { type: "text" };
 import codeStyle from "../starter/rules/code-style.md" with { type: "text" };
 import branchScript from "../starter/scripts/branch.sh" with { type: "text" };
 import mergeScript from "../starter/scripts/merge.sh" with { type: "text" };
-import workflow from "../starter/workflow.toml" with { type: "text" };
+import workflow from "../starter/workflows/try-hard.toml" with { type: "text" };
 
 // Each starter file's text, by its path under `.punt/`.
 const starterFiles: Record<string, string> = {
