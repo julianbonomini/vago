@@ -142,6 +142,8 @@ test("a Goal goes through the starter Workflow on the fake claude to done", asyn
 	for (const call of calls) {
 		expect(call.stdin).toEndWith(`# style\n\n${codeStyle}`);
 	}
+	// The temp repo has no check script, so the check fails and review reads it.
+	expect(calls[1]?.stdin).toMatch(/exit code [1-9]\d*\n/);
 });
 
 test("init refuses a directory that isn't a git repo and changes nothing", async () => {

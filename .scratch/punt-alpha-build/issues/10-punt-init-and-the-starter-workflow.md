@@ -12,13 +12,13 @@ Spec: [Punt Alpha](../../punt-alpha/spec.md).
 
 **Blocked by:** 06 (Prompt composition).
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] `punt init` in a temp repo produces a `.punt/` that passes `punt run`'s Workflow check.
-- [ ] `.git/info/exclude` gets `.punt/goals/`, and `.gitignore` is untouched.
-- [ ] Answering "don't commit" excludes all of `.punt/`. Answering "commit" excludes only `goals/`.
-- [ ] Running `punt init` again with a Workflow in place refuses and changes nothing.
-- [ ] A Goal run through the starter Workflow with a fake `claude` reaches `done`.
+- [x] `punt init` in a temp repo produces a `.punt/` that passes `punt run`'s Workflow check.
+- [x] `.git/info/exclude` gets `.punt/goals/`, and `.gitignore` is untouched.
+- [x] Answering "don't commit" excludes all of `.punt/`. Answering "commit" excludes only `goals/`.
+- [x] Running `punt init` again with a Workflow in place refuses and changes nothing.
+- [x] A Goal run through the starter Workflow with a fake `claude` reaches `done`.
 
 ## Comments
 

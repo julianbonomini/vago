@@ -34,13 +34,15 @@ Goals and Tickets in .punt/goals/ stay out of git either way.`;
  * exists or `root` has no `.git` directory.
  */
 export async function initProject(root: string): Promise<void> {
-	const workflowPath = join(root, ".punt", "workflow.toml");
+	const punt = join(root, ".punt");
+	const workflowPath = join(punt, "workflow.toml");
 	if (await Bun.file(workflowPath).exists()) {
 		throw new Error(
 			`${workflowPath} already exists, and punt init never replaces a Workflow`,
 		);
 	}
 	const git = join(root, ".git");
+	// `Bun.file().exists()` is false for a directory, so it can't tell a repo.
 	const isRepo = await stat(git).then(
 		(found) => found.isDirectory(),
 		() => false,
@@ -54,12 +56,16 @@ export async function initProject(root: string): Promise<void> {
 	const answer = prompt("Commit the Workflow? [y/N]") ?? "";
 	const commitWorkflow = /^y(es)?$/i.test(answer.trim());
 	for (const [path, text] of Object.entries(starterFiles)) {
-		await Bun.write(join(root, ".punt", path), text);
+		await Bun.write(join(punt, path), text);
 	}
 	const exclude = Bun.file(join(git, "info", "exclude"));
 	const excluded = (await exclude.exists()) ? await exclude.text() : "";
-	const lines = commitWorkflow ? [".punt/goals/"] : [".punt/goals/", ".punt/"];
-	const missing = lines.filter((line) => !excluded.split("\n").includes(line));
+	const wantedLines = commitWorkflow
+		? [".punt/goals/"]
+		: [".punt/goals/", ".punt/"];
+	const missing = wantedLines.filter(
+		(line) => !excluded.split("\n").includes(line),
+	);
 	if (missing.length === 0) return;
 	// A last line without its newline would run into the first added one.
 	const separator = excluded === "" || excluded.endsWith("\n") ? "" : "\n";

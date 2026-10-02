@@ -6,7 +6,7 @@ You are reviewing the work on the current branch, which an earlier session built
 
 # Check output
 
-After the work was built, `bun run check` printed this:
+After the work was built, `bun run check` ran. Its exit code comes first, then what it printed:
 
 {{steps.check.output}}
 
