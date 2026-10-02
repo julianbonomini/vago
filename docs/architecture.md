@@ -11,8 +11,8 @@ src/tickets.ts
 src/harness/registry.ts     src/harness/claude-code.ts
 src/starter-imports.d.ts    types for init.ts's text imports of the starter
 starter/                    the starter Workflow embedded in the binary
-.punt/                      Punt's own Workflow, written by `punt init` from the starter
-test/                       CLI tests, the fake `claude`, recorded fixtures
+.punt/                      Punt's own Workflow: the starter plus Punt's docs as includes
+test/                       CLI tests, the fake `claude`, recorded fixtures, a fixed Workflow
 ```
 
 One file per module. A module becomes a folder only when it outgrows about 400 lines, and the folder exposes one entry file.

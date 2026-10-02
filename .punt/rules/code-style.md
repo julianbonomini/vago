@@ -1,6 +1,6 @@
 # Code style
 
-The rules for every line of Punt's code. They come from `docs/aposd.md`, and each rule names its source there. When a case isn't covered here, decide from `docs/aposd.md`.
+The rules for every line of Punt's code. They come from `.punt/rules/aposd.md`, and each rule names its source there. When a case isn't covered here, decide from `.punt/rules/aposd.md`.
 
 The goal is **zero complexity added**. Complexity is anything that makes the system harder to understand or change (aposd §1). A change that adds complexity is wrong even when it works.
 
@@ -23,7 +23,7 @@ Before adding anything (a file, an export, a parameter, an option, a type, a bra
 
 ## Red flags
 
-Any red flag in `docs/aposd.md` §3 blocks the PR. The session finds and fixes them before asking the human to review: Shallow Module, Information Leakage, Temporal Decomposition, Overexposure, Pass-Through Method, Repetition, Special-General Mixture, Conjoined Methods, Comment Repeats Code, Implementation Documentation Contaminates Interface, Vague Name, Hard to Pick Name, Hard to Describe, Nonobvious Code.
+Any red flag in `.punt/rules/aposd.md` §3 blocks the PR. The session finds and fixes them before asking the human to review: Shallow Module, Information Leakage, Temporal Decomposition, Overexposure, Pass-Through Method, Repetition, Special-General Mixture, Conjoined Methods, Comment Repeats Code, Implementation Documentation Contaminates Interface, Vague Name, Hard to Pick Name, Hard to Describe, Nonobvious Code.
 
 ## TypeScript
 

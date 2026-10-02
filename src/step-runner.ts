@@ -52,9 +52,10 @@ export type FinishedRun = {
  * gets a `[[runs]]` entry before it starts and its end filled in after, a
  * line on stdout at each, and a log of everything it wrote. An agent Step's
  * prompt reads `stepOutputs`, the outputs of the Steps already run on this
- * Ticket by Step id. SIGINT or SIGTERM while the Step runs kills every
- * process it started and ends the Run `interrupted`, instead of ending
- * `punt`.
+ * Ticket by Step id. A shell Step's command gets the Goal's and Ticket's
+ * names in `PUNT_GOAL` and `PUNT_TICKET`, like `hello` and `01-say-hello`.
+ * SIGINT or SIGTERM while the Step runs kills every process it started
+ * and ends the Run `interrupted`, instead of ending `punt`.
  */
 export async function runStep(
 	step: Step,
@@ -89,8 +90,15 @@ export async function runStep(
 			));
 			output = session.resultText ?? "";
 		} else {
+			// Agents read the Goal and Ticket in their prompt; a command needs
+			// the names, for example to name a branch per Goal and Ticket.
 			const child = Bun.spawn(["sh", "-c", step.run], {
 				cwd: ticket.root,
+				env: {
+					...process.env,
+					PUNT_GOAL: ticket.goal,
+					PUNT_TICKET: ticket.name,
+				},
 				stdin: "ignore",
 				stdout: fd,
 				stderr: fd,

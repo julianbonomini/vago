@@ -7,11 +7,23 @@ import { makeFakeClaude } from "./fake-claude.ts";
 import { makeProject, readTicketFile, runPunt } from "./project.ts";
 
 const starter = join(import.meta.dir, "..", "starter");
+// A fixed four-Step Workflow (implement, check, review, merge), so the run test
+// doesn't change whenever the starter does.
+const fixture = join(import.meta.dir, "fixtures", "workflow");
 
 // Every file under `dir`, as sorted paths relative to it.
 async function filesIn(dir: string): Promise<string[]> {
 	const paths = await Array.fromAsync(new Bun.Glob("**").scan(dir));
 	return paths.sort();
+}
+
+// The fixture Workflow's files, keyed by their path in a Project.
+async function workflowFixture(): Promise<Record<string, string>> {
+	const files: Record<string, string> = {};
+	for (const path of await filesIn(fixture)) {
+		files[`.punt/${path}`] = await Bun.file(join(fixture, path)).text();
+	}
+	return files;
 }
 
 // The files under `root` that git would offer to commit.
@@ -91,13 +103,10 @@ test("answering commit lets git see the Workflow but never the Goals", async () 
 	expect(init.exitCode).toBe(0);
 	expect(init.stdout).toContain("[y/N]");
 	await runPunt(root, ["goal", "new", "hello"]);
+	const starterFiles = await filesIn(starter);
 	expect(untrackedFiles(root)).toEqual([
 		".gitignore",
-		".punt/code-style.md",
-		".punt/prompts/implement.md",
-		".punt/prompts/merge.md",
-		".punt/prompts/review.md",
-		".punt/workflow.toml",
+		...starterFiles.map((path) => `.punt/${path}`),
 	]);
 	expect(await excludeLines(root)).toEqual([".punt/goals/", ""]);
 	expect(await Bun.file(join(root, ".gitignore")).text()).toBe(
@@ -149,10 +158,9 @@ test("init refuses a Project that has a Workflow and changes nothing", async () 
 	expect(await Bun.file(join(root, ".git/info/exclude")).text()).toBe(exclude);
 });
 
-test("a Goal goes through the starter Workflow on the fake claude to done", async () => {
-	const root = await makeProject({});
+test("a Goal goes through a four-Step Workflow on the fake claude to done", async () => {
+	const root = await makeProject(await workflowFixture());
 	const claude = await makeFakeClaude();
-	await runPunt(root, ["init"]);
 	await runPunt(root, ["goal", "new", "hello"]);
 	await runPunt(root, ["ticket", "add", "hello", "greet"]);
 
@@ -165,7 +173,7 @@ test("a Goal goes through the starter Workflow on the fake claude to done", asyn
 		".punt/goals/hello/tickets/01-greet.md",
 	);
 	expect(ticket.header.status).toBe("done");
-	const codeStyle = await Bun.file(join(starter, "code-style.md")).text();
+	const codeStyle = await Bun.file(join(fixture, "code-style.md")).text();
 	const calls = await claude.calls();
 	expect(calls).toHaveLength(3);
 	for (const call of calls) {

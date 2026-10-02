@@ -4,21 +4,33 @@
 
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
-import codeStyle from "../starter/code-style.md" with { type: "text" };
+import architecturePrompt from "../starter/prompts/architecture.md" with {
+	type: "text",
+};
+import designPrompt from "../starter/prompts/design.md" with { type: "text" };
 import implementPrompt from "../starter/prompts/implement.md" with {
 	type: "text",
 };
-import mergePrompt from "../starter/prompts/merge.md" with { type: "text" };
+import productPrompt from "../starter/prompts/product.md" with { type: "text" };
 import reviewPrompt from "../starter/prompts/review.md" with { type: "text" };
+import aposd from "../starter/rules/aposd.md" with { type: "text" };
+import codeStyle from "../starter/rules/code-style.md" with { type: "text" };
+import branchScript from "../starter/scripts/branch.sh" with { type: "text" };
+import mergeScript from "../starter/scripts/merge.sh" with { type: "text" };
 import workflow from "../starter/workflow.toml" with { type: "text" };
 
 // Each starter file's text, by its path under `.punt/`.
 const starterFiles: Record<string, string> = {
 	"workflow.toml": workflow,
-	"code-style.md": codeStyle,
+	"rules/aposd.md": aposd,
+	"rules/code-style.md": codeStyle,
+	"prompts/design.md": designPrompt,
+	"prompts/product.md": productPrompt,
+	"prompts/architecture.md": architecturePrompt,
 	"prompts/implement.md": implementPrompt,
 	"prompts/review.md": reviewPrompt,
-	"prompts/merge.md": mergePrompt,
+	"scripts/branch.sh": branchScript,
+	"scripts/merge.sh": mergeScript,
 };
 
 const commitExplanation = `Committing the Workflow in .punt/ shares it with everyone who clones this repo.

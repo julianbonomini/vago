@@ -1,6 +1,6 @@
 # A Philosophy of Software Design
 
-The design reference for building Punt. It summarises John Ousterhout's *A Philosophy of Software Design* (2nd ed.). `docs/code-style.md` turns it into rules. When a rule doesn't settle a case, decide from this file.
+The design reference for building Punt. It summarises John Ousterhout's *A Philosophy of Software Design* (2nd ed.). `.punt/rules/code-style.md` turns it into rules. When a rule doesn't settle a case, decide from this file.
 
 It's paraphrase unless text is in quotation marks. Quoted text is either a list-item title from the book's summaries or a phrase confirmed in a source below.
 
