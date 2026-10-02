@@ -93,8 +93,13 @@ export async function runStep(
 				stderr: fd,
 				detached: true,
 			});
-			killGroupOnAbort(child.pid, interrupt.signal);
+			let stopping: Promise<void> | undefined;
+			whenAborted(interrupt.signal, () => {
+				stopping = stopGroup(child.pid);
+			});
 			const code = await child.exited;
+			// `sh` can exit while the rest of its group still ignores SIGTERM.
+			await stopping;
 			outcome = outcomeOf(code);
 			// Read back from the log, so a review prompt sees stdout and stderr
 			// interleaved the way the Step wrote them.
@@ -142,11 +147,15 @@ async function runAgent(
 		stderr: fd,
 		detached: true,
 	});
-	killGroupOnAbort(child.pid, interrupt);
+	let stopping: Promise<void> | undefined;
+	const stop = () => {
+		stopping ??= stopGroup(child.pid);
+	};
+	whenAborted(interrupt, stop);
 	let idle = false;
 	const idleTimer = setTimeout(() => {
 		idle = true;
-		killGroup(child.pid);
+		stop();
 	}, step.idleTimeoutMs);
 	let session: HarnessSessionReport = {};
 	const decoder = new TextDecoder();
@@ -166,6 +175,8 @@ async function runAgent(
 	clearTimeout(idleTimer);
 	session = { ...session, ...harness.readLine(partial + decoder.decode()) };
 	const code = await child.exited;
+	// The Harness can exit while the rest of its group still ignores SIGTERM.
+	await stopping;
 	return {
 		outcome: idle ? { kind: "idle-timeout" } : outcomeOf(code),
 		session,
@@ -177,20 +188,42 @@ async function runAgent(
 }
 
 // At once when the signal came while the Step was still being set up.
-function killGroupOnAbort(leader: number, interrupt: AbortSignal): void {
-	if (interrupt.aborted) killGroup(leader);
-	else interrupt.addEventListener("abort", () => killGroup(leader));
+function whenAborted(interrupt: AbortSignal, stop: () => void): void {
+	if (interrupt.aborted) stop();
+	else interrupt.addEventListener("abort", stop);
 }
+
+// Long enough for a Harness to stop its tool commands. Claude Code takes
+// under a second.
+const stopGraceMs = 5_000;
 
 // The whole group, since a process the Step started would otherwise live on
 // and could hold the Harness's stdout open, so its stream would never end.
-// SIGKILL because a Step that ignores SIGTERM must still end. The group is
-// gone already when the signal comes just after the Step ended.
-function killGroup(leader: number): void {
+// SIGTERM first, because a Harness can run its tool commands in process groups
+// of their own, which no signal to this group reaches, and only the Harness
+// can stop them. SIGKILL after the grace period, because a Step that ignores
+// SIGTERM must still end. Resolves once the group is gone.
+async function stopGroup(leader: number): Promise<void> {
+	const deadline = Date.now() + stopGraceMs;
+	signalGroup(leader, "SIGTERM");
+	while (signalGroup(leader, 0)) {
+		if (Date.now() >= deadline) {
+			signalGroup(leader, "SIGKILL");
+			return;
+		}
+		await Bun.sleep(50);
+	}
+}
+
+// False when the group is gone, as it is already when the signal comes just
+// after the Step ended. Signal 0 only asks whether the group is alive.
+function signalGroup(leader: number, signal: NodeJS.Signals | 0): boolean {
 	try {
-		process.kill(-leader, "SIGKILL");
+		process.kill(-leader, signal);
+		return true;
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+		return false;
 	}
 }
 
