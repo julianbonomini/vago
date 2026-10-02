@@ -20,9 +20,9 @@ import { type AgentStep, buildPrompt, type Step } from "./workflow.ts";
 export type RunOutcome = { kind: "ok" } | { kind: "exit"; code: number };
 
 /**
- * How a Run ended, and its output for later Steps' `{{steps.<id>.output}}`:
- * a shell Step's exit code and everything it wrote to stdout and stderr, an
- * agent Step's final result text.
+ * How a Run ended, and its output for later Steps' prompts: a shell Step's
+ * exit code and everything it wrote to stdout and stderr, an agent Step's
+ * final result text.
  */
 export type FinishedRun = { outcome: RunOutcome; output: string };
 
@@ -61,8 +61,8 @@ export async function runStep(
 			});
 			const code = await child.exited;
 			outcome = outcomeOf(code);
-			// The log holds stdout and stderr in the order the Step wrote them,
-			// which is how a review prompt should read them.
+			// Read back from the log, so a review prompt sees stdout and stderr
+			// interleaved the way the Step wrote them.
 			output = `exit code ${code}\n${await Bun.file(entry.log).text()}`;
 		}
 	} finally {

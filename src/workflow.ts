@@ -60,7 +60,8 @@ const IdleTimeout = z.string().regex(/^[1-9]\d*(ms|s|m|h)$/, {
 // `{{steps.<id>.output}}` is group 2.
 const placeholder = /\{\{(ticket|goal)\}\}|\{\{steps\.([^{}]+?)\.output\}\}/g;
 
-// Slot name to file path, in the order the human listed them.
+// Slot name to file path, in the order the human listed them, except that
+// slot names that are integers come first, as in any JavaScript object.
 const IncludeSlots = z.record(z.string(), z.string());
 
 // TODO(07): give `on_fail` and `idle_timeout` their effect. Until then the
@@ -237,9 +238,14 @@ export function buildPrompt(step: AgentStep, texts: PromptTexts): string {
 	// One pass, so a `{{goal}}` written inside the Ticket stays as written.
 	let prompt = step.promptTemplate.replace(
 		placeholder,
-		(written, name: "ticket" | "goal" | undefined, stepId: string) => {
-			if (name === "ticket") return texts.ticket;
-			if (name === "goal") return texts.goal;
+		(
+			written,
+			name: "ticket" | "goal" | undefined,
+			stepId: string | undefined,
+		) => {
+			if (stepId === undefined) {
+				return name === "ticket" ? texts.ticket : texts.goal;
+			}
 			return texts.stepOutputs.get(stepId) ?? written;
 		},
 	);
