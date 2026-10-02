@@ -141,3 +141,19 @@ test("the end line shows the Run's cost", async () => {
 	const lines = result.stdout.trimEnd().split("\n");
 	expect(lines[1]).toMatch(/^\S+ 01-say-hello implement ok \d+\.\ds \$0\.02$/);
 });
+
+test("an unknown harness fails before any Run, naming workflow.toml", async () => {
+	const root = await makeProject({
+		".punt/workflow.toml": workflow.replace("claude-code", "claude-kode"),
+		".punt/prompts/implement.md": prompt,
+		[`${goalDir}/goal.md`]: "# Hello\n",
+		[ticketPath]: `+++\nstatus = "ready"\n+++\n${ticketBody}`,
+	});
+
+	const result = await runPunt(root, ["run", "hello"]);
+
+	expect(result.exitCode).not.toBe(0);
+	expect(result.stderr).toContain("workflow.toml");
+	expect(result.stderr).toContain('unknown harness "claude-kode"');
+	expect((await readHeader(root)).status).toBe("ready");
+});

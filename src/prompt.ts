@@ -5,7 +5,7 @@
 export type PromptTexts = {
 	/** The Ticket's title and body, never its header. */
 	ticket: string;
-	/** The body of the Goal's `goal.md`. */
+	/** The Goal's `goal.md`, as the human wrote it. */
 	goal: string;
 };
 

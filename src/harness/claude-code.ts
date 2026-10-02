@@ -12,7 +12,7 @@ const InitEvent = z.object({
 
 const ResultEvent = z.object({
 	type: z.literal("result"),
-	total_cost_usd: z.number(),
+	total_cost_usd: z.number().optional(),
 	usage: z.object({
 		input_tokens: z.number(),
 		output_tokens: z.number(),
@@ -24,8 +24,8 @@ const ResultEvent = z.object({
 /** Claude Code, run headless in its `auto` permission mode. */
 export const claudeCode: Harness = {
 	command(model) {
-		// Never --dangerously-skip-permissions: loosening the guard is the
-		// human's call, made through the Workflow's `args`.
+		// Never --dangerously-skip-permissions: loosening the guard is always
+		// the human's explicit choice, never Punt's.
 		return [
 			"claude",
 			"-p",

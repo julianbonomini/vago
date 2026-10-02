@@ -32,6 +32,11 @@ const harnesses: Record<string, Harness> = {
 	"claude-code": claudeCode,
 };
 
+/** Whether a Harness is registered as `name`. */
+export function knownHarness(name: string): boolean {
+	return Object.hasOwn(harnesses, name);
+}
+
 /** Returns the Harness registered as `name`. Throws an Error when none is. */
 export function findHarness(name: string): Harness {
 	const harness = harnesses[name];

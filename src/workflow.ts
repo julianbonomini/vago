@@ -4,6 +4,7 @@
 
 import { join } from "node:path";
 import { z } from "zod";
+import { knownHarness } from "./harness/registry.ts";
 
 /** A Step that runs `run` with `sh -c` in the repo root. */
 export type ShellStep = {
@@ -49,8 +50,8 @@ const WorkflowFile = z.object({
 
 /**
  * Reads the Workflow of the Project at `root`. Throws an Error naming the
- * file and the problem when the Workflow is missing or invalid, or a prompt
- * file it names can't be read.
+ * file and the problem when the Workflow is missing or invalid, names an
+ * unknown Harness, or names a prompt file that doesn't exist.
  */
 export async function loadWorkflow(root: string): Promise<Workflow> {
 	const punt = join(root, ".punt");
@@ -80,6 +81,9 @@ export async function loadWorkflow(root: string): Promise<Workflow> {
 			throw new Error(
 				`${path}: agent step "${step.id}" needs a harness and a model`,
 			);
+		}
+		if (!knownHarness(harness)) {
+			throw new Error(`${path}: unknown harness "${harness}"`);
 		}
 		const promptPath = join(punt, step.prompt);
 		const prompt = Bun.file(promptPath);

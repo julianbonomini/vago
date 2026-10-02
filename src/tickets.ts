@@ -93,13 +93,18 @@ export async function readTicketText(ticket: Ticket): Promise<string> {
 	return (await readTicketFile(ticketFile(ticket))).body;
 }
 
-/** Returns the text of the Goal's `goal.md`, or "" when there is none. */
+/**
+ * Returns the text of the Goal's `goal.md`. Throws an Error naming the file
+ * when it doesn't exist.
+ */
 export async function readGoalText(
 	root: string,
 	goal: string,
 ): Promise<string> {
-	const file = Bun.file(join(goalFolder(root, goal), "goal.md"));
-	return (await file.exists()) ? await file.text() : "";
+	const path = join(goalFolder(root, goal), "goal.md");
+	const file = Bun.file(path);
+	if (!(await file.exists())) throw new Error(`${path} not found`);
+	return await file.text();
 }
 
 /** Sets the Ticket's status. */
@@ -130,21 +135,20 @@ export async function recordRunStart(
 			const position = runs.length + 1;
 			// The position in the name gives a reset Ticket's new Runs new logs.
 			const paddedNumber = String(ticket.number).padStart(2, "0");
-			const extension = step.type === "agent" ? "jsonl" : "log";
-			const log = `logs/${paddedNumber}-${step.id}-${position}.${extension}`;
-			runs.push(
+			const name = `logs/${paddedNumber}-${step.id}-${position}`;
+			const entry =
 				step.type === "agent"
 					? {
 							step: step.id,
 							harness: step.harness,
 							model: step.model,
 							started,
-							log,
+							log: `${name}.jsonl`,
 						}
-					: { step: step.id, started, log },
-			);
+					: { step: step.id, started, log: `${name}.log` };
+			runs.push(entry);
 			header.runs = runs;
-			return { position, log };
+			return { position, log: entry.log };
 		},
 	);
 	return {

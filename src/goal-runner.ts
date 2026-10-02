@@ -30,12 +30,15 @@ export async function runGoal(root: string, goal: string): Promise<GoalEnd> {
 		ticket = await nextReadyTicket(root, goal)
 	) {
 		await setStatus(ticket, "running");
-		const texts = { ticket: await readTicketText(ticket), goal: goalText };
+		const promptTexts = {
+			ticket: await readTicketText(ticket),
+			goal: goalText,
+		};
 		for (const step of workflow.steps) {
 			const started = new Date();
 			const run = await recordRunStart(ticket, step, started);
 			printStepStarted(ticket, step.id, started);
-			const end = await runStep(step, root, run.log, texts);
+			const end = await runStep(step, root, run.log, promptTexts);
 			const ended = new Date();
 			await recordRunEnd(run, end, ended);
 			printStepEnded(ticket, step.id, end, started, ended);

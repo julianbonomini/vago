@@ -9,11 +9,11 @@ Spec: [Punt Alpha](../../punt-alpha/spec.md).
 
 **Blocked by:** 02 (Tracer bullet).
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A Workflow with one agent Step takes a Ticket to `done` through the fake `claude`.
-- [ ] The fake received guarded mode, the stream-json flags and the Workflow's `model`. It never received `--dangerously-skip-permissions`.
-- [ ] The prompt received has `{{ticket}}` and `{{goal}}` substituted, and the Ticket header never appears in it.
-- [ ] `[[runs]]` records `harness`, `model`, `session_id`, `tokens` and `cost_usd` from the fixture.
-- [ ] The `.jsonl` log holds the full stream.
-- [ ] Adding a Harness means one new module plus one registry entry, with no change to the kernel.
+- [x] A Workflow with one agent Step takes a Ticket to `done` through the fake `claude`.
+- [x] The fake received guarded mode, the stream-json flags and the Workflow's `model`. It never received `--dangerously-skip-permissions`.
+- [x] The prompt received has `{{ticket}}` and `{{goal}}` substituted, and the Ticket header never appears in it.
+- [x] `[[runs]]` records `harness`, `model`, `session_id`, `tokens` and `cost_usd` from the fixture.
+- [x] The `.jsonl` log holds the full stream.
+- [x] Adding a Harness means one new module plus one registry entry, with no change to the kernel.
