@@ -5,7 +5,7 @@
 // formats, columns and colours, and how durations and costs read.
 
 import { relative } from "node:path";
-import type { GoalState, Ticket, TicketRun } from "./tickets.ts";
+import type { GoalState, Ticket, TicketRun, TicketStatus } from "./tickets.ts";
 
 /** Prints the line naming `ticket`, under which its Step lines follow, indented. */
 export function printTicketStarted(ticket: Ticket): void {
@@ -30,9 +30,8 @@ export function printStepEnded(
 	costUsd?: number,
 ): void {
 	const took = duration(ended.getTime() - started.getTime());
-	const cost = costUsd === undefined ? "" : dollars(costUsd);
 	const colour = outcome === "ok" ? "green" : "red";
-	console.log(stepLine(ended, stepId, outcome, colour, took, cost));
+	console.log(stepLine(ended, stepId, outcome, colour, took, dollars(costUsd)));
 }
 
 /**
@@ -81,30 +80,48 @@ export function printGoalSummary(goal: string, state: GoalState): void {
 	console.log();
 	const done = state.tickets.filter(({ status }) => status === "done").length;
 	console.log(`${goal}: ${done} of ${state.tickets.length} Tickets done`);
-	const rows = [["Ticket", "Status", "Runs", "Took", "Cost"]];
-	const all: TicketRun[] = [];
-	for (const { ticket, status, runs } of state.tickets) {
-		rows.push([
-			ticket.name,
+	const { tickets, total } = goalTotals(state);
+	const lines: SummaryLine[] = [
+		{
+			name: "Ticket",
+			status: "Status",
+			colour: undefined,
+			runs: "Runs",
+			took: "Took",
+			cost: "Cost",
+		},
+		...tickets.map(({ name, status, totals }) => ({
+			name,
 			status,
-			String(runs.length),
-			duration(took(runs)),
-			cost(runs),
-		]);
-		all.push(...runs);
-	}
-	rows.push(["Total", "", String(all.length), duration(took(all)), cost(all)]);
-	const widths = rows.reduce(
-		(widest, row) =>
-			widest.map((width, at) => Math.max(width, row[at]?.length ?? 0)),
-		[0, 0, 0, 0, 0],
-	);
-	const [nameWidth = 0, statusWidth = 0, ...numberWidths] = widths;
-	for (const [name = "", status = "", ...numbers] of rows) {
+			colour: statusColour(status),
+			runs: String(totals.runs),
+			took: duration(totals.tookMs),
+			cost: dollars(totals.costUsd),
+		})),
+		{
+			name: "Total",
+			status: "",
+			colour: undefined,
+			runs: String(total.runs),
+			took: duration(total.tookMs),
+			cost: dollars(total.costUsd),
+		},
+	];
+	// Never empty, since the heading is always there.
+	const widest = (cell: (line: SummaryLine) => string) =>
+		Math.max(...lines.map((line) => cell(line).length));
+	const nameWidth = widest(({ name }) => name);
+	const statusWidth = widest(({ status }) => status);
+	const runsWidth = widest(({ runs }) => runs);
+	const tookWidth = widest(({ took }) => took);
+	const costWidth = widest(({ cost }) => cost);
+	for (const { name, status, colour, runs, took, cost } of lines) {
 		const cells = [
 			name.padEnd(nameWidth),
-			paint(status.padEnd(statusWidth), statusColour(status)),
-			...numbers.map((cell, at) => cell.padStart(numberWidths[at] ?? 0)),
+			paint(status.padEnd(statusWidth), colour),
+			runs.padStart(runsWidth),
+			took.padStart(tookWidth),
+			cost.padStart(costWidth),
 		];
 		console.log(cells.join("  ").trimEnd());
 	}
@@ -127,15 +144,14 @@ export function printGoalReport(goalBody: string, state: GoalState): void {
 		"",
 	];
 	lines.push("| Ticket | Runs | Took | Cost |", "|---|---:|---:|---:|");
-	const all: TicketRun[] = [];
-	for (const { ticket, runs } of state.tickets) {
+	const { tickets, total } = goalTotals(state);
+	for (const { name, totals } of tickets) {
 		lines.push(
-			`| ${ticket.name} | ${runs.length} | ${duration(took(runs))} | ${cost(runs)} |`,
+			`| ${name} | ${totals.runs} | ${duration(totals.tookMs)} | ${dollars(totals.costUsd)} |`,
 		);
-		all.push(...runs);
 	}
 	lines.push(
-		`| **Total** | **${all.length}** | **${duration(took(all))}** | **${cost(all)}** |`,
+		`| **Total** | **${total.runs}** | **${duration(total.tookMs)}** | **${dollars(total.costUsd)}** |`,
 	);
 	lines.push("", "<details>", "<summary>Every Run</summary>", "");
 	lines.push(
@@ -144,9 +160,12 @@ export function printGoalReport(goalBody: string, state: GoalState): void {
 	);
 	for (const { ticket, runs } of state.tickets) {
 		for (const run of runs) {
-			const ran = run.ended === undefined ? "" : duration(took([run]));
+			const took =
+				run.ended === undefined
+					? ""
+					: duration(run.ended.getTime() - run.started.getTime());
 			lines.push(
-				`| ${ticket.name} | ${run.step} | ${run.outcome ?? "running"} | ${ran} | ${cost([run])} |`,
+				`| ${ticket.name} | ${run.step} | ${run.outcome ?? "running"} | ${took} | ${dollars(run.costUsd)} |`,
 			);
 		}
 	}
@@ -172,7 +191,7 @@ function paint(text: string, colour: Colour | undefined): string {
 	return `${on}${text}${off}`;
 }
 
-function statusColour(status: string): Colour | undefined {
+function statusColour(status: TicketStatus): Colour | undefined {
 	if (status === "done") return "green";
 	if (status === "stuck") return "red";
 	return undefined;
@@ -205,26 +224,58 @@ function stepLine(
 	return `  ${cells.join("  ")}`;
 }
 
-// Milliseconds the ended Runs took between them.
-function took(runs: TicketRun[]): number {
-	let total = 0;
-	for (const { started, ended } of runs) {
-		if (ended !== undefined) total += ended.getTime() - started.getTime();
+// One line of the summary table, its cells already spelled. `colour` is the
+// status cell's, picked from the Ticket's TicketStatus.
+type SummaryLine = {
+	name: string;
+	status: string;
+	colour: Colour | undefined;
+	runs: string;
+	took: string;
+	cost: string;
+};
+
+// What a set of Runs took and cost between them. A Run still going counts
+// toward neither; `costUsd` is undefined when no Run reported a cost.
+type RunTotals = { runs: number; tookMs: number; costUsd: number | undefined };
+
+type TicketTotals = { name: string; status: TicketStatus; totals: RunTotals };
+
+// One row per Ticket, lowest number first, and the total over every Run of
+// the Goal.
+function goalTotals(state: GoalState): {
+	tickets: TicketTotals[];
+	total: RunTotals;
+} {
+	return {
+		tickets: state.tickets.map(({ ticket, status, runs }) => ({
+			name: ticket.name,
+			status,
+			totals: runTotals(runs),
+		})),
+		// Over every Run, not the Tickets' sums: floats added in another order
+		// can round the total to a different cent.
+		total: runTotals(state.tickets.flatMap(({ runs }) => runs)),
+	};
+}
+
+function runTotals(runs: TicketRun[]): RunTotals {
+	let tookMs = 0;
+	let costUsd: number | undefined;
+	for (const run of runs) {
+		if (run.ended !== undefined) {
+			tookMs += run.ended.getTime() - run.started.getTime();
+		}
+		if (run.costUsd !== undefined) {
+			costUsd = costUsd === undefined ? run.costUsd : costUsd + run.costUsd;
+		}
 	}
-	return total;
+	return { runs: runs.length, tookMs, costUsd };
 }
 
 // Blank when no Run reported a cost, so a shell Step doesn't read as free.
-function cost(runs: TicketRun[]): string {
-	const costs = runs.flatMap(({ costUsd }) =>
-		costUsd === undefined ? [] : [costUsd],
-	);
-	if (costs.length === 0) return "";
-	return dollars(costs.reduce((sum, each) => sum + each, 0));
-}
-
-function dollars(usd: number): string {
-	return `$${usd.toFixed(2)}`;
+function dollars(usd: number | undefined): string {
+	return usd === undefined ? "" : `$${usd.toFixed(2)}`;
 }
 
 // Numbered as the Ticket file is, so it reads like the name above it.

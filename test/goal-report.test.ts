@@ -91,6 +91,59 @@ Workflow: small
 `);
 });
 
+test("goal report leaves every cost blank when no Run reported one", async () => {
+	const root = await makeProject({
+		[`${goalDir}/goal.md`]: goalText("small"),
+		[`${goalDir}/tickets/01-greet.md`]: `+++
+status = "done"
+
+[[runs]]
+step = "branch"
+started = 2026-10-02T10:00:00.000Z
+ended = 2026-10-02T10:00:01.500Z
+outcome = "ok"
+log = "logs/01-branch-1.log"
+
+[[runs]]
+step = "check"
+started = 2026-10-02T10:00:01.500Z
+ended = 2026-10-02T10:00:04.000Z
+outcome = "ok"
+log = "logs/01-check-2.log"
++++
+
+# Greet
+`,
+	});
+
+	const result = await runPunt(root, ["goal", "report", "hello"]);
+
+	expect(result.exitCode).toBe(0);
+	expect(result.stdout).toContain(`| Ticket | Runs | Took | Cost |
+|---|---:|---:|---:|
+| 01-greet | 2 | 4.0s |  |
+| **Total** | **2** | **4.0s** | **** |
+`);
+});
+
+test("goal report counts a Ticket with no Runs as nothing", async () => {
+	const root = await makeProject({
+		[`${goalDir}/goal.md`]: goalText("small"),
+		[`${goalDir}/tickets/01-greet.md`]: greet,
+		[`${goalDir}/tickets/02-x.md`]: '+++\nstatus = "ready"\n+++\n\n# X\n',
+	});
+
+	const result = await runPunt(root, ["goal", "report", "hello"]);
+
+	expect(result.exitCode).toBe(0);
+	expect(result.stdout).toContain(`| Ticket | Runs | Took | Cost |
+|---|---:|---:|---:|
+| 01-greet | 2 | 5m31s | $1.25 |
+| 02-x | 0 | 0.0s |  |
+| **Total** | **2** | **5m31s** | **$1.25** |
+`);
+});
+
 test("goal report leaves out blank lines under a hand-edited header", async () => {
 	const root = await makeProject({
 		[`${goalDir}/goal.md`]: '+++\nworkflow = "small"\n+++\n\n# Hello\n',

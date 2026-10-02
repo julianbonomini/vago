@@ -78,6 +78,44 @@ Total                       6  1.0s
 `);
 });
 
+test("the summary adds up each Ticket's cost into the total and leaves a cost-less Ticket's blank", async () => {
+	const done = (step: string, started: string, ended: string, cost: string) =>
+		`+++\nstatus = "done"\n\n[[runs]]\nstep = "${step}"\nstarted = ${started}\nended = ${ended}\noutcome = "ok"\nlog = "logs/${step}.jsonl"\ncost_usd = ${cost}\n+++\n# A Ticket\n`;
+	const root = await makeProject({
+		".punt/workflows/test.toml": `
+[[steps]]
+id   = "greet"
+type = "shell"
+run  = "true"
+`,
+		[`${goalDir}/goal.md`]: goalText("test"),
+		[`${goalDir}/tickets/01-greet.md`]: done(
+			"implement",
+			"2026-10-02T10:00:00.000Z",
+			"2026-10-02T10:05:30.000Z",
+			"1.254",
+		),
+		[`${goalDir}/tickets/02-wave.md`]: done(
+			"implement",
+			"2026-10-02T11:00:00.000Z",
+			"2026-10-02T11:02:00.000Z",
+			"0.5",
+		),
+		[`${goalDir}/tickets/03-later.md`]: ticket(),
+	});
+
+	const result = await runPunt(root, ["run", "hello"]);
+
+	expect(steady(result.stdout)).toEndWith(`
+hello: 3 of 3 Tickets done
+Ticket    Status  Runs   Took   Cost
+01-greet  done       1  5m30s  $1.25
+02-wave   done       1  2m00s  $0.50
+03-later  done       1   1.0s
+Total                3  7m30s  $1.75
+`);
+});
+
 test("a long outcome pushes no column of the Step lines", async () => {
 	const root = await makeProject({
 		".punt/workflows/test.toml": `
@@ -134,6 +172,28 @@ test("in a terminal, start lines are dimmed, ok is green, and a failed Step and 
 		"ESC[31m03-fail is stuck after check-everything: exit 1ESC[39m",
 	);
 	expect(lines).toContainEqual(expect.stringContaining("ESC[31mstuck "));
+});
+
+test("in a terminal, the summary shows done green, stuck red and ready plain", async () => {
+	const root = await makeProject({
+		".punt/workflows/test.toml": workflow,
+		[`${goalDir}/goal.md`]: goalText("test"),
+		[`${goalDir}/tickets/01-greet.md`]: ticket(),
+		[`${goalDir}/tickets/03-fail.md`]: ticket(),
+		[`${goalDir}/tickets/04-later.md`]: ticket("blocked_by = [3]\n"),
+	});
+
+	const printed = await runPuntInTerminal(root, ["run", "hello"], {
+		NO_COLOR: "",
+	});
+
+	const lines = printed.replaceAll("\x1b", "ESC").split("\r\n");
+	const row = (name: string) =>
+		lines.find((line) => line.startsWith(`${name} `)) ?? "";
+	expect(row("01-greet")).toContain("ESC[32mdone");
+	expect(row("03-fail")).toContain("ESC[31mstuck");
+	expect(row("04-later")).toContain("ready");
+	expect(row("04-later")).not.toContain("ESC");
 });
 
 test("in a terminal with NO_COLOR set, the output is plain text", async () => {
