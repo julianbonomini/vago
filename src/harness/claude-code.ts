@@ -12,6 +12,8 @@ const InitEvent = z.object({
 
 const ResultEvent = z.object({
 	type: z.literal("result"),
+	// Absent when the session ended in an error rather than an answer.
+	result: z.string().optional(),
 	total_cost_usd: z.number().optional(),
 	usage: z.object({
 		input_tokens: z.number(),
@@ -52,6 +54,7 @@ export const claudeCode: Harness = {
 		if (!result.success) return {};
 		const { usage } = result.data;
 		return {
+			resultText: result.data.result,
 			costUsd: result.data.total_cost_usd,
 			// Cached input still went through the model, so it counts as input.
 			tokens: {

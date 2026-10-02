@@ -1,7 +1,7 @@
-// Owns `.punt/workflow.toml` and its prompt files: reads them once, checks
-// them, returns the Workflow a Goal runs with, and fills in agent prompts.
-// Hides the TOML schema, its defaults, how paths resolve and the `{{…}}`
-// placeholder syntax.
+// Owns `.punt/workflow.toml` and the prompt and include files it names:
+// reads them once, checks them, returns the Workflow a Goal runs with, and
+// builds agent prompts. Hides the TOML schema, its defaults, how paths
+// resolve, how include slots merge and the `{{…}}` placeholder syntax.
 
 import { join } from "node:path";
 import { z } from "zod";
@@ -29,6 +29,15 @@ export type AgentStep = {
 	 * Workflow's, and it's empty when neither sets any.
 	 */
 	readonly args: readonly string[];
+	/**
+	 * The include slots appended to the prompt, in order: the Workflow's
+	 * `[include]`, with the Step's own `include.<name>` replacing a slot of
+	 * the same name or added after them.
+	 */
+	readonly includes: readonly {
+		readonly name: string;
+		readonly text: string;
+	}[];
 };
 
 /** One entry of a Workflow. */
@@ -47,6 +56,14 @@ const IdleTimeout = z.string().regex(/^[1-9]\d*(ms|s|m|h)$/, {
 	error: 'idle_timeout must be a duration like "30m"',
 });
 
+// `{{ticket}}` or `{{goal}}` is group 1, and the id in
+// `{{steps.<id>.output}}` is group 2.
+const placeholder = /\{\{(ticket|goal)\}\}|\{\{steps\.([^{}]+?)\.output\}\}/g;
+
+// Slot name to file path, in the order the human listed them, except that
+// slot names that are integers come first, as in any JavaScript object.
+const IncludeSlots = z.record(z.string(), z.string());
+
 // TODO(07): give `on_fail` and `idle_timeout` their effect. Until then the
 // loader only checks them.
 const WorkflowFile = z.strictObject({
@@ -54,6 +71,7 @@ const WorkflowFile = z.strictObject({
 	model: z.string().optional(),
 	args: z.array(z.string()).optional(),
 	idle_timeout: IdleTimeout.optional(),
+	include: IncludeSlots.optional(),
 	steps: z
 		.array(
 			z.discriminatedUnion(
@@ -73,6 +91,7 @@ const WorkflowFile = z.strictObject({
 						model: z.string().optional(),
 						args: z.array(z.string()).optional(),
 						idle_timeout: IdleTimeout.optional(),
+						include: IncludeSlots.optional(),
 					}),
 				],
 				{ error: 'type must be "agent" or "shell"' },
@@ -87,7 +106,8 @@ const WorkflowFile = z.strictObject({
  * is missing or isn't valid TOML, has a key or value its schema doesn't take
  * (an unknown Step `type` or `harness`, a bad `on_fail` or `idle_timeout`),
  * gives two Steps one `id`, leaves an agent Step without a harness or model,
- * or names a prompt file that doesn't exist.
+ * names a prompt or include file that doesn't exist, or has a prompt read
+ * `{{steps.<id>.output}}` of a Step that doesn't run before it.
  */
 export async function loadWorkflow(root: string): Promise<Workflow> {
 	const punt = join(root, ".punt");
@@ -106,6 +126,12 @@ export async function loadWorkflow(root: string): Promise<Workflow> {
 	if (!checked.success) {
 		throw new Error(`${path}: ${z.prettifyError(checked.error)}`);
 	}
+	const workflowIncludes = await readIncludes(
+		root,
+		path,
+		checked.data.include ?? {},
+		"the Workflow",
+	);
 	const steps: Step[] = [];
 	for (const step of checked.data.steps) {
 		if (steps.some(({ id }) => id === step.id)) {
@@ -131,14 +157,34 @@ export async function loadWorkflow(root: string): Promise<Workflow> {
 				`${path}: prompt file ${promptPath} of step "${step.id}" not found`,
 			);
 		}
+		const promptTemplate = await prompt.text();
+		for (const [written, , stepId] of promptTemplate.matchAll(placeholder)) {
+			if (stepId !== undefined && !steps.some(({ id }) => id === stepId)) {
+				throw new Error(
+					`${path}: step "${step.id}" reads ${written}, but no step "${stepId}" runs before it`,
+				);
+			}
+		}
+		// Spread keeps a replaced slot where the Workflow listed it and adds new
+		// slots after, which is the order they reach the prompt in.
+		const includes = Object.entries({
+			...workflowIncludes,
+			...(await readIncludes(
+				root,
+				path,
+				step.include ?? {},
+				`step "${step.id}"`,
+			)),
+		}).map(([name, text]) => Object.freeze({ name, text }));
 		steps.push(
 			Object.freeze({
 				id: step.id,
 				type: step.type,
-				promptTemplate: await prompt.text(),
+				promptTemplate,
 				harness,
 				model,
 				args: Object.freeze(step.args ?? checked.data.args ?? []),
+				includes: Object.freeze(includes),
 			}),
 		);
 	}
@@ -147,26 +193,66 @@ export async function loadWorkflow(root: string): Promise<Workflow> {
 	return Object.freeze({ steps: Object.freeze(steps) });
 }
 
+// Returns each slot's name and its file's text, in the order `slots` lists
+// them. `owner` is who sets the slots, for the message when a file is missing.
+async function readIncludes(
+	root: string,
+	workflowPath: string,
+	slots: Record<string, string>,
+	owner: string,
+): Promise<Record<string, string>> {
+	const texts: Record<string, string> = {};
+	for (const [name, slotPath] of Object.entries(slots)) {
+		const file = Bun.file(join(root, slotPath));
+		if (!(await file.exists())) {
+			throw new Error(
+				`${workflowPath}: include.${name} file ${file.name} of ${owner} not found`,
+			);
+		}
+		texts[name] = await file.text();
+	}
+	return texts;
+}
+
 /** What an agent prompt's placeholders are filled with. */
 export type PromptTexts = {
 	/** `{{ticket}}`: the Ticket's title and body, never its header. */
 	ticket: string;
 	/** `{{goal}}`: the Goal's `goal.md`. */
 	goal: string;
+	/**
+	 * `{{steps.<id>.output}}`: by Step id, the output of each Step already run
+	 * on this Ticket in this pass.
+	 */
+	stepOutputs: ReadonlyMap<string, string>;
 };
 
-const placeholder = /\{\{(ticket|goal)\}\}/g;
-
 /**
- * Returns the prompt `step`'s Harness reads, with each placeholder in its
- * template replaced by its text. A prompt gets only the texts its template
- * names, and text without placeholders is left as written.
+ * Returns the prompt `step`'s Harness reads: its template with each
+ * placeholder replaced by its text, then each include slot's text under a
+ * heading with the slot's name. A prompt gets only the texts its template
+ * names. Text without placeholders, and a `{{steps.<id>.output}}` whose Step
+ * isn't in `stepOutputs`, are left as written.
  */
 export function buildPrompt(step: AgentStep, texts: PromptTexts): string {
 	// One pass, so a `{{goal}}` written inside the Ticket stays as written.
-	return step.promptTemplate.replace(
+	let prompt = step.promptTemplate.replace(
 		placeholder,
-		(_, name: "ticket" | "goal") =>
-			name === "ticket" ? texts.ticket : texts.goal,
+		(
+			written,
+			name: "ticket" | "goal" | undefined,
+			stepId: string | undefined,
+		) => {
+			if (stepId === undefined) {
+				return name === "ticket" ? texts.ticket : texts.goal;
+			}
+			return texts.stepOutputs.get(stepId) ?? written;
+		},
 	);
+	// Includes go in after substitution, so a doc that mentions `{{ticket}}`
+	// reaches the agent as written.
+	for (const { name, text } of step.includes) {
+		prompt = `${prompt.trimEnd()}\n\n# ${name}\n\n${text}`;
+	}
+	return prompt;
 }
