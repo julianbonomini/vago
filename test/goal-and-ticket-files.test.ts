@@ -47,7 +47,7 @@ test("goal new creates a Goal with no Tickets that punt run accepts", async () =
 
 	expect(run.stderr).toBe("");
 	expect(run.exitCode).toBe(0);
-	expect(run.stdout).toStartWith("hello: 0 of 0 Tickets done\n");
+	expect(run.stdout).toStartWith("\nhello: 0 of 0 Tickets done\n");
 });
 
 test("goal new without --workflow prints the usage and creates no Goal", async () => {

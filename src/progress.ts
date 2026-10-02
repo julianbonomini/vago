@@ -1,46 +1,28 @@
-// Everything `punt run` prints to stdout while it runs: one line when a Step
-// starts and one when it ends, where to look when a Ticket goes stuck, and
-// the Goal summary table on exit. Also the Goal report `punt goal report`
-// prints. Hides the line formats, columns and colours, and how durations and
-// costs read.
+// Everything `punt run` prints to stdout while it runs: one line naming each
+// Ticket as it starts, and under it a line when each Step starts and one when
+// it ends, where to look when a Ticket goes stuck, and the Goal summary table
+// on exit. Also the Goal report `punt goal report` prints. Hides the line
+// formats, columns and colours, and how durations and costs read.
 
 import { relative } from "node:path";
 import type { GoalState, Ticket, TicketRun } from "./tickets.ts";
 
-/**
- * Lines up the columns of the Step lines printed after it for Tickets named
- * as in `ticketNames` and Steps with the ids in `stepIds`. A line with a
- * longer name pushes its later columns right.
- */
-export function alignStepLines(ticketNames: string[], stepIds: string[]): void {
-	stepColumns = {
-		ticket: Math.max(0, ...ticketNames.map((name) => name.length)),
-		step: Math.max(0, ...stepIds.map((id) => id.length)),
-	};
+/** Prints the line naming `ticket`, under which its Step lines follow, indented. */
+export function printTicketStarted(ticket: Ticket): void {
+	console.log(ticket.name);
+}
+
+/** Prints the indented line saying Step `stepId` started at `started`. */
+export function printStepStarted(stepId: string, started: Date): void {
+	console.log(paint(stepLine(started, stepId, "started"), "dim"));
 }
 
 /**
- * Prints the line saying Step `stepId` started on `ticket` at `started`,
- * after a blank line when the Step line before it was for another Ticket.
- * Its columns line up with the widths `alignStepLines` last set.
- */
-export function printStepStarted(
-	ticket: Ticket,
-	stepId: string,
-	started: Date,
-): void {
-	if (lastTicket !== undefined && lastTicket !== ticket.name) console.log();
-	lastTicket = ticket.name;
-	console.log(paint(stepLine(started, ticket, stepId, "started"), "dim"));
-}
-
-/**
- * Prints the line saying how Step `stepId` on `ticket` ended, with `outcome`
- * as spelled in the header (`ok`, `exit 1`), how long it took and, when the
+ * Prints the indented line saying how Step `stepId` ended, with `outcome` as
+ * spelled in the header (`ok`, `exit 1`), how long it took and, when the
  * Harness reported one, what it cost.
  */
 export function printStepEnded(
-	ticket: Ticket,
 	stepId: string,
 	outcome: string,
 	started: Date,
@@ -50,7 +32,7 @@ export function printStepEnded(
 	const took = duration(ended.getTime() - started.getTime());
 	const cost = costUsd === undefined ? "" : dollars(costUsd);
 	const colour = outcome === "ok" ? "green" : "red";
-	console.log(stepLine(ended, ticket, stepId, outcome, colour, took, cost));
+	console.log(stepLine(ended, stepId, outcome, colour, took, cost));
 }
 
 /**
@@ -92,10 +74,11 @@ export function printStuckRefusal(goal: string, stuck: Ticket[]): void {
 /**
  * Prints how `goal` ended: how many of its Tickets are `done`, then a table
  * of each Ticket with its status and what its Runs took and cost, and a
- * total row. A Run still going counts toward neither.
+ * total row. A Run still going counts toward neither. It opens with a blank
+ * line, so it stands apart from whatever `punt run` printed before it.
  */
 export function printGoalSummary(goal: string, state: GoalState): void {
-	if (lastTicket !== undefined) console.log();
+	console.log();
 	const done = state.tickets.filter(({ status }) => status === "done").length;
 	console.log(`${goal}: ${done} of ${state.tickets.length} Tickets done`);
 	const rows = [["Ticket", "Status", "Runs", "Took", "Cost"]];
@@ -195,21 +178,18 @@ function statusColour(status: string): Colour | undefined {
 	return undefined;
 }
 
-// Set by `alignStepLines` for the whole run, and the Ticket of the last Step
-// line, so the next Ticket's lines start after a blank line.
-let stepColumns = { ticket: 0, step: 0 };
-let lastTicket: string | undefined;
+// Wide enough for every duration up to 99h59m and every cost under $100. A
+// longer one pushes only its own line right.
+const durationWidth = "99h59m".length;
+const costWidth = "$99.99".length;
 
-// Wide enough for every outcome but the rare `permission-mode` ones, which
-// push the duration right on the one line that ends the Ticket.
-const outcomeWidth = "idle-timeout".length;
-const durationWidth = "59m59s".length;
-
-// Columns two spaces apart, the duration right-aligned so the units line up,
-// and no trailing spaces where a line has no duration or cost.
+// Indented under the Ticket's name, columns two spaces apart, the duration and
+// cost right-aligned so their units line up. The Step id and outcome vary in
+// length, so they come last, where nothing after them needs aligning. A
+// started line leaves the duration and cost blank, which keeps its Step id in
+// line with the ended lines'.
 function stepLine(
 	at: Date,
-	ticket: Ticket,
 	stepId: string,
 	outcome: string,
 	colour?: Colour,
@@ -218,13 +198,11 @@ function stepLine(
 ): string {
 	const cells = [
 		timestamp(at),
-		ticket.name.padEnd(stepColumns.ticket),
-		stepId.padEnd(stepColumns.step),
-		paint(outcome.padEnd(outcomeWidth), colour),
 		took.padStart(durationWidth),
-		cost,
+		cost.padStart(costWidth),
+		`${stepId} ${paint(outcome, colour)}`,
 	];
-	return cells.join("  ").trimEnd();
+	return `  ${cells.join("  ")}`;
 }
 
 // Milliseconds the ended Runs took between them.

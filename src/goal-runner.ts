@@ -4,10 +4,10 @@
 // of a Goal's lifecycle.
 
 import {
-	alignStepLines,
 	printGoalSummary,
 	printStuck,
 	printStuckRefusal,
+	printTicketStarted,
 } from "./progress.ts";
 import { runStep, spellOutcome } from "./step-runner.ts";
 import {
@@ -71,10 +71,6 @@ export async function runGoal(root: string, goal: string): Promise<GoalEnd> {
 		printStuckRefusal(goal, stuck);
 		return "unfinished";
 	}
-	alignStepLines(
-		state.tickets.map(({ ticket }) => ticket.name),
-		workflow.steps.map(({ id }) => id),
-	);
 	while (state.nextReady !== undefined) {
 		const finished = await runTicket(workflow, state.nextReady);
 		state = await readGoal(root, goal);
@@ -114,6 +110,7 @@ export async function resetTicket(
 // interrupted.
 async function runTicket(workflow: Workflow, ticket: Ticket): Promise<boolean> {
 	await setStatus(ticket, "running");
+	printTicketStarted(ticket);
 	const stepOutputs = new Map<string, string>();
 	for (const step of workflow.steps) {
 		const run = await runStep(step, ticket, stepOutputs);

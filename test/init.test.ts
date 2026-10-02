@@ -26,6 +26,16 @@ async function workflowFixture(): Promise<Record<string, string>> {
 	return files;
 }
 
+// Writes `files`, keyed by path relative to `root`, over whatever is there.
+async function writeFiles(
+	root: string,
+	files: Record<string, string>,
+): Promise<void> {
+	for (const [path, text] of Object.entries(files)) {
+		await Bun.write(join(root, path), text);
+	}
+}
+
 // The files under `root` that git would offer to commit.
 function untrackedFiles(root: string): string[] {
 	const status = Bun.spawnSync(
@@ -68,7 +78,7 @@ test("init copies the starter into .punt/ verbatim and punt run accepts both Wor
 	// A Goal with no Tickets, so neither Workflow runs a Step.
 	for (const workflow of ["try-hard", "small"]) {
 		await Bun.write(
-			join(root, ".punt/goals/hello/goal.md"),
+			join(root, ".punt-goals/hello/goal.md"),
 			goalText(workflow),
 		);
 		const run = await runPunt(root, ["run", "hello"]);
@@ -114,7 +124,7 @@ test("answering commit lets git see the Workflow but never the Goals", async () 
 		".gitignore",
 		...starterFiles.map((path) => `.punt/${path}`),
 	]);
-	expect(await excludeLines(root)).toEqual([".punt/goals/", ""]);
+	expect(await excludeLines(root)).toEqual([".punt-goals/", ""]);
 	expect(await Bun.file(join(root, ".gitignore")).text()).toBe(
 		"node_modules/\n",
 	);
@@ -128,7 +138,7 @@ test("answering don't commit hides all of .punt/ from git", async () => {
 	expect(init.exitCode).toBe(0);
 	await runPunt(root, ["goal", "new", "hello", "--workflow", "small"]);
 	expect(untrackedFiles(root)).toEqual([".gitignore"]);
-	expect(await excludeLines(root)).toEqual([".punt/goals/", ".punt/", ""]);
+	expect(await excludeLines(root)).toEqual([".punt-goals/", ".punt/", ""]);
 	expect(await Bun.file(join(root, ".gitignore")).text()).toBe(
 		"node_modules/\n",
 	);
@@ -198,7 +208,7 @@ test("a Goal goes through a four-Step Workflow on the fake claude to done", asyn
 	expect(run.exitCode).toBe(0);
 	const ticket = await readTicketFile(
 		root,
-		".punt/goals/hello/tickets/01-greet.md",
+		".punt-goals/hello/tickets/01-greet.md",
 	);
 	expect(ticket.header.status).toBe("done");
 	const codeStyle = await Bun.file(join(fixture, "code-style.md")).text();
@@ -209,6 +219,39 @@ test("a Goal goes through a four-Step Workflow on the fake claude to done", asyn
 	}
 	// The temp repo has no check script, so the check fails and review reads it.
 	expect(calls[1]?.stdin).toMatch(/exit code [1-9]\d*\n/);
+});
+
+test("deleting .punt/ and running init again keeps every Goal, and punt run runs it", async () => {
+	const root = await makeProject({});
+	const claude = await makeFakeClaude();
+	await runPunt(root, ["init"], {}, "n\n");
+	await writeFiles(root, await workflowFixture());
+	await runPunt(root, ["goal", "new", "hello", "--workflow", "four-steps"]);
+	await runPunt(root, ["ticket", "add", "hello", "greet"]);
+	const goalFiles = await filesIn(join(root, ".punt-goals"));
+	const ticketText = await Bun.file(
+		join(root, ".punt-goals/hello/tickets/01-greet.md"),
+	).text();
+
+	await rm(join(root, ".punt"), { recursive: true });
+	const init = await runPunt(root, ["init"], {}, "n\n");
+
+	expect(init.exitCode).toBe(0);
+	expect(await filesIn(join(root, ".punt-goals"))).toEqual(goalFiles);
+	expect(
+		await Bun.file(join(root, ".punt-goals/hello/tickets/01-greet.md")).text(),
+	).toBe(ticketText);
+	expect(await excludeLines(root)).toEqual([".punt-goals/", ".punt/", ""]);
+
+	await writeFiles(root, await workflowFixture());
+	const run = await runPunt(root, ["run", "hello"], claude.env);
+
+	expect(run.exitCode).toBe(0);
+	const ticket = await readTicketFile(
+		root,
+		".punt-goals/hello/tickets/01-greet.md",
+	);
+	expect(ticket.header.status).toBe("done");
 });
 
 test("init refuses a directory that isn't a git repo and changes nothing", async () => {
