@@ -8,10 +8,10 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-human
+**Status:** done
 
-- [ ] A code-style file exists. It's the same file the starter Workflow's `style` include will point at.
-- [ ] The code architecture is written down: the modules, what each owns, and the rules between them.
-- [ ] `AGENTS.md` has a "How we work" section with the working rules and pointers to the code-style file, the architecture and the spec.
-- [ ] The places `/implement`, `/tdd` and `/code-review` look for rules point at these files.
-- [ ] The human has reviewed and approved all of it.
+- [x] A code-style file exists that the sessions building Punt follow.
+- [x] The code architecture is written down: the modules, what each owns, and the rules between them.
+- [x] `AGENTS.md` has a "How we work" section with the working rules and pointers to the code-style file, the architecture and the spec.
+- [x] The places `/implement`, `/tdd` and `/code-review` look for rules point at these files.
+- [x] The human has reviewed and approved all of it.
