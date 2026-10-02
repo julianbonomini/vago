@@ -1,6 +1,11 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
-import { makeFakeClaude } from "./fake-claude.ts";
+import {
+	makeFakeClaude,
+	permissionDeniedFixture,
+	permissionModeFallbackFixture,
+	sessionFixture,
+} from "./fake-claude.ts";
 import { makeProject, readTicketFile, runPunt } from "./project.ts";
 
 const goalDir = ".punt/goals/hello";
@@ -87,6 +92,47 @@ test("a Step's idle_timeout replaces the Workflow's", async () => {
 	expect(runsOf(greet).map((run) => run.outcome)).toEqual(["idle-timeout"]);
 });
 
+const acceptEditsArgs = `args = ["--permission-mode", "acceptEdits"]\n`;
+
+for (const { session, workflow, fixture, outcome } of [
+	{
+		session: "a session Claude Code ran outside auto mode",
+		workflow: agentWorkflow,
+		fixture: permissionModeFallbackFixture,
+		outcome: "permission-mode default",
+	},
+	{
+		session: "a session in auto mode when args asked for acceptEdits",
+		workflow: acceptEditsArgs + agentWorkflow,
+		fixture: sessionFixture,
+		outcome: "permission-mode auto",
+	},
+	{
+		session: "a session with a denied tool call",
+		workflow: agentWorkflow,
+		fixture: permissionDeniedFixture,
+		outcome: "permission-denied",
+	},
+]) {
+	test(`${session} leaves the Ticket stuck though claude exits 0`, async () => {
+		const root = await stuckProject(workflow);
+		const claude = await makeFakeClaude("exit 0", fixture);
+
+		const result = await runPunt(root, ["run", "hello"], claude.env);
+
+		expect(result.exitCode).not.toBe(0);
+		const greet = await headerOf(root, "01-greet");
+		expect(greet.status).toBe("stuck");
+		expect(runsOf(greet).map((run) => run.outcome)).toEqual([outcome]);
+		expect(result.stdout).toContain(
+			`01-greet is stuck after implement: ${outcome}\n`,
+		);
+		const wave = await headerOf(root, "02-wave");
+		expect(wave.status).toBe("ready");
+		expect(runsOf(wave)).toEqual([]);
+	});
+}
+
 const checkWorkflow = (onFail: string) => `
 harness = "claude-code"
 model   = "opus"
@@ -137,15 +183,15 @@ test("a failing shell Step stops the Ticket by default", async () => {
 	expect(await claude.calls()).toEqual([]);
 });
 
-test("the stuck message shows the log, the resume command and the reset command", async () => {
+test("the stuck message shows the outcome, the log, the resume command and the reset command", async () => {
 	const root = await stuckProject(agentWorkflow);
 	const claude = await makeFakeClaude("exit 3");
 
 	const result = await runPunt(root, ["run", "hello"], claude.env);
 
-	expect(result.stdout).toContain(`01-greet is stuck after implement
+	expect(result.stdout).toContain(`01-greet is stuck after implement: exit 3
   log:    .punt/goals/hello/logs/01-implement-1.jsonl
-  resume: claude --resume e6a2f4b4-6e31-4a33-90b1-ef815ed07b42
+  resume: claude --resume f679b9c4-e75a-4f73-affd-0dedfe161e0d
   reset:  punt ticket reset hello 01
 `);
 });
@@ -155,7 +201,7 @@ test("a stuck shell Step's message has no resume command", async () => {
 
 	const result = await runPunt(root, ["run", "hello"]);
 
-	expect(result.stdout).toContain(`01-greet is stuck after check
+	expect(result.stdout).toContain(`01-greet is stuck after check: exit 4
   log:    .punt/goals/hello/logs/01-check-1.log
   reset:  punt ticket reset hello 01
 `);

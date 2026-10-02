@@ -5,12 +5,37 @@ import { chmod, mkdir, mkdtemp, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-/** The fixture the fake replays, recorded from `claude -p --output-format stream-json --verbose`. */
-export const sessionFixture = join(
-	import.meta.dir,
-	"fixtures",
-	"claude-code-session.jsonl",
+// Each fixture was recorded from `claude -p --output-format stream-json
+// --verbose --permission-mode auto`, with the recording's paths replaced.
+
+/** A Sonnet session in `auto` mode that answers without any tool call. */
+export const sessionFixture = fixture("claude-code-session.jsonl");
+
+/**
+ * A Haiku session, which Claude Code can't run in `auto` mode: it falls back
+ * to `default` and denies the agent's `Write`.
+ */
+export const permissionModeFallbackFixture = fixture(
+	"claude-code-permission-mode-fallback.jsonl",
 );
+
+/**
+ * A Sonnet session in `auto` mode whose `git push` was denied, by a
+ * `--disallowedTools` rule since the classifier won't deny on cue.
+ */
+export const permissionDeniedFixture = fixture(
+	"claude-code-permission-denied.jsonl",
+);
+
+/**
+ * A Sonnet session started as Punt starts one whose Workflow has
+ * `args = ["--permission-mode", "acceptEdits"]`.
+ */
+export const acceptEditsFixture = fixture("claude-code-accept-edits.jsonl");
+
+function fixture(name: string): string {
+	return join(import.meta.dir, "fixtures", name);
+}
 
 /** What one call of the fake received: its argv without the program name, and its stdin. */
 export type FakeClaudeCall = { argv: string[]; stdin: string };
@@ -24,12 +49,13 @@ export type FakeClaude = {
 };
 
 /**
- * Writes a fake `claude` into a fresh temp directory. Each call replays the
- * fixture, then runs the shell command `afterFixture`, such as `exit 3` or
- * `sleep 30`.
+ * Writes a fake `claude` into a fresh temp directory. Each call replays
+ * `fixturePath`, one of the fixtures above, then runs the shell command
+ * `afterFixture`, such as `exit 3` or `sleep 30`.
  */
 export async function makeFakeClaude(
 	afterFixture = "exit 0",
+	fixturePath = sessionFixture,
 ): Promise<FakeClaude> {
 	const dir = await mkdtemp(join(tmpdir(), "punt-fake-claude-"));
 	const program = join(dir, "claude");
@@ -53,7 +79,7 @@ ${afterFixture}
 		env: {
 			PATH: `${dir}:${process.env.PATH}`,
 			FAKE_CLAUDE_DIR: dir,
-			FAKE_CLAUDE_FIXTURE: sessionFixture,
+			FAKE_CLAUDE_FIXTURE: fixturePath,
 		},
 		async calls() {
 			const names = await readdir(callsDir);
