@@ -20,12 +20,16 @@ export type Ticket = {
 	number: number;
 };
 
-/** A Run whose `[[runs]]` entry has been written but not yet ended. */
+/**
+ * A Run whose `[[runs]]` entry has been written but not yet ended. Hand it
+ * back to `recordRunEnd` unchanged, like a file descriptor.
+ */
 export type Run = {
+	ticket: Ticket;
+	/** The entry's 1-based position in the Ticket's `[[runs]]`. */
+	position: number;
 	/** Absolute path the Step's output must be written to. */
 	log: string;
-	/** Fills in the Run's `[[runs]]` entry with when and how it ended. */
-	end: (outcome: Outcome, ended: Date) => Promise<void>;
 };
 
 // Loose objects, so header fields Alpha doesn't know survive a rewrite.
@@ -89,39 +93,50 @@ export async function setStatus(
 }
 
 /**
- * Appends a `[[runs]]` entry for `step`, started at `started`, so a crash
- * mid-Step still leaves a trace. Returns the Run, which carries the path its
- * log must be written to and ends the entry when the Step is over.
+ * Appends a `[[runs]]` entry for `step`, started at `started`. Call it before
+ * the Step starts, so a crash mid-Step still leaves a trace. Returns the Run,
+ * which carries the path its log must be written to.
  */
-export async function startRun(
+export async function recordRunStart(
 	ticket: Ticket,
 	step: string,
 	started: Date,
 ): Promise<Run> {
-	const file = ticketFile(ticket);
-	const { position, log } = await rewriteHeader(file, (header) => {
-		const runs = header.runs ?? [];
-		const position = runs.length + 1;
-		// The position in the name gives a reset Ticket's new Runs new logs.
-		const paddedNumber = String(ticket.number).padStart(2, "0");
-		const log = `logs/${paddedNumber}-${step}-${position}.log`;
-		runs.push({ step, started, log });
-		header.runs = runs;
-		return { position, log };
-	});
-	return {
-		log: join(goalFolder(ticket.root, ticket.goal), log),
-		end: async (outcome, ended) => {
-			await rewriteHeader(file, (header) => {
-				const entry = header.runs?.[position - 1];
-				if (entry === undefined) {
-					throw new Error(`${file} has no [[runs]] entry ${position}`);
-				}
-				entry.ended = ended;
-				entry.outcome = outcomeText(outcome);
-			});
+	const { position, log } = await rewriteHeader(
+		ticketFile(ticket),
+		(header) => {
+			const runs = header.runs ?? [];
+			const position = runs.length + 1;
+			// The position in the name gives a reset Ticket's new Runs new logs.
+			const paddedNumber = String(ticket.number).padStart(2, "0");
+			const log = `logs/${paddedNumber}-${step}-${position}.log`;
+			runs.push({ step, started, log });
+			header.runs = runs;
+			return { position, log };
 		},
+	);
+	return {
+		ticket,
+		position,
+		log: join(goalFolder(ticket.root, ticket.goal), log),
 	};
+}
+
+/** Fills in the Run's `[[runs]]` entry with when and how it ended. */
+export async function recordRunEnd(
+	run: Run,
+	outcome: Outcome,
+	ended: Date,
+): Promise<void> {
+	const file = ticketFile(run.ticket);
+	await rewriteHeader(file, (header) => {
+		const entry = header.runs?.[run.position - 1];
+		if (entry === undefined) {
+			throw new Error(`${file} has no [[runs]] entry ${run.position}`);
+		}
+		entry.ended = ended;
+		entry.outcome = outcomeText(outcome);
+	});
 }
 
 function goalFolder(root: string, goal: string): string {
