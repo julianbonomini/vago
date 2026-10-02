@@ -89,10 +89,8 @@ export function printGoalSummary(goal: string, state: GoalState): void {
  * toward neither total.
  */
 export function printGoalReport(goalBody: string, state: GoalState): void {
-	// trim, not trimEnd: a blank line after the header would open the PR
-	// description with an empty line.
 	const lines = [
-		goalBody.trim(),
+		goalBody.trimEnd(),
 		"",
 		"## Runs",
 		"",

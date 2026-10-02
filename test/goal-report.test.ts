@@ -91,6 +91,18 @@ Workflow: small
 `);
 });
 
+test("goal report leaves out blank lines under a hand-edited header", async () => {
+	const root = await makeProject({
+		[`${goalDir}/goal.md`]: '+++\nworkflow = "small"\n+++\n\n# Hello\n',
+	});
+
+	const result = await runPunt(root, ["goal", "report", "hello"]);
+
+	expect(result.stderr).toBe("");
+	expect(result.exitCode).toBe(0);
+	expect(result.stdout).toStartWith("# Hello\n\n## Runs\n");
+});
+
 test("goal report refuses a Goal that doesn't exist", async () => {
 	const root = await makeProject({});
 

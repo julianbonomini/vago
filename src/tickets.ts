@@ -275,8 +275,9 @@ export async function readTicketBody(ticket: Ticket): Promise<string> {
 }
 
 /**
- * Returns the `goal.md` of `goal` without its header, byte for byte after
- * the closing `+++` line, which is what `{{goal}}` and the Goal report show.
+ * Returns the `goal.md` of `goal` without its header or the blank lines
+ * after it, and otherwise byte for byte, which is what `{{goal}}` and the
+ * Goal report show.
  * Throws an Error naming the file when it doesn't exist or its header is
  * bad, as `readGoal` does.
  */
@@ -489,7 +490,11 @@ async function readGoalFile(
 			`${file}: its header names no Workflow; add the line workflow = "<name>"`,
 		);
 	}
-	return { workflow: checked.data.workflow, body: split.body };
+	// A human editing the header by hand may leave a blank line under it.
+	return {
+		workflow: checked.data.workflow,
+		body: split.body.replace(/^\n+/, ""),
+	};
 }
 
 function headedText(header: Record<string, unknown>, body: string): string {
