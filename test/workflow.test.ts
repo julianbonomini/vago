@@ -1,8 +1,7 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
-import { parse } from "smol-toml";
 import { makeFakeClaude } from "./fake-claude.ts";
-import { makeProject, runPunt } from "./project.ts";
+import { makeProject, readTicketFile, runPunt } from "./project.ts";
 
 const goalDir = ".punt/goals/hello";
 const ticketPath = `${goalDir}/tickets/01-say-hello.md`;
@@ -16,13 +15,6 @@ function workflowProject(files: Record<string, string>): Promise<string> {
 		[ticketPath]: ticket,
 		...files,
 	});
-}
-
-async function readTicketHeader(
-	root: string,
-): Promise<Record<string, unknown>> {
-	const text = await Bun.file(join(root, ticketPath)).text();
-	return parse(text.slice("+++\n".length, text.indexOf("\n+++\n") + 1));
 }
 
 // The value after `flag` in a fake `claude` call's argv.
@@ -61,7 +53,10 @@ model  = "sonnet"
 		"opus",
 		"sonnet",
 	]);
-	const runs = (await readTicketHeader(root)).runs as Record<string, unknown>[];
+	const runs = (await readTicketFile(root, ticketPath)).header.runs as Record<
+		string,
+		unknown
+	>[];
 	expect(runs.map((run) => run.model)).toEqual(["opus", "sonnet"]);
 });
 
@@ -113,6 +108,7 @@ type = "shell"
 run  = "true"
 `;
 
+// A Workflow with one agent Step, `implement`, that also holds `stepLines`.
 const agentWorkflow = (stepLines: string) => `
 harness = "claude-code"
 model   = "opus"
@@ -159,6 +155,11 @@ test.each([
 		problem: "an invalid on_fail",
 		workflow: `${shellStep("check")}on_fail = "retry"\n`,
 		message: 'expected one of "stop"|"continue"\n  → at steps[0].on_fail',
+	},
+	{
+		problem: "a key the Step type doesn't take",
+		workflow: agentWorkflow('on_fail = "continue"'),
+		message: 'Unrecognized key: "on_fail"\n  → at steps[0]',
 	},
 	{
 		problem: "an invalid Workflow idle_timeout",

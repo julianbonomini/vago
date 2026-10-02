@@ -1,8 +1,7 @@
 import { expect, test } from "bun:test";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { parse } from "smol-toml";
-import { makeProject, runPunt } from "./project.ts";
+import { makeProject, readTicketFile, runPunt } from "./project.ts";
 
 const workflow = `
 [[steps]]
@@ -29,10 +28,8 @@ function goalProject(tickets: Record<string, string>): Promise<string> {
 }
 
 async function statusOf(root: string, name: string): Promise<unknown> {
-	const text = await Bun.file(
-		join(root, goalDir, "tickets", `${name}.md`),
-	).text();
-	return parse(text.slice("+++\n".length, text.indexOf("\n+++\n") + 1)).status;
+	const path = `${goalDir}/tickets/${name}.md`;
+	return (await readTicketFile(root, path)).header.status;
 }
 
 function startedTickets(stdout: string): string[] {

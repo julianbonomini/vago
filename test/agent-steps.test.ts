@@ -1,8 +1,7 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
-import { parse } from "smol-toml";
 import { makeFakeClaude, sessionFixture } from "./fake-claude.ts";
-import { makeProject, runPunt } from "./project.ts";
+import { makeProject, readTicketFile, runPunt } from "./project.ts";
 
 const workflow = `
 harness = "claude-code"
@@ -41,11 +40,6 @@ async function agentProject(): Promise<string> {
 	});
 }
 
-async function readHeader(root: string): Promise<Record<string, unknown>> {
-	const text = await Bun.file(join(root, ticketPath)).text();
-	return parse(text.slice("+++\n".length, text.indexOf("\n+++\n") + 1));
-}
-
 test("a Ticket goes through an agent Step on the fake claude and ends done", async () => {
 	const root = await agentProject();
 	const claude = await makeFakeClaude();
@@ -54,7 +48,7 @@ test("a Ticket goes through an agent Step on the fake claude and ends done", asy
 
 	expect(result.stderr).toBe("");
 	expect(result.exitCode).toBe(0);
-	expect((await readHeader(root)).status).toBe("done");
+	expect((await readTicketFile(root, ticketPath)).header.status).toBe("done");
 });
 
 test("claude runs headless in guarded mode on the Workflow's model", async () => {
@@ -105,7 +99,10 @@ test("[[runs]] records the Harness, model, session, tokens and cost", async () =
 
 	await runPunt(root, ["run", "hello"], claude.env);
 
-	const runs = (await readHeader(root)).runs as Record<string, unknown>[];
+	const runs = (await readTicketFile(root, ticketPath)).header.runs as Record<
+		string,
+		unknown
+	>[];
 	expect(runs).toHaveLength(1);
 	expect(runs[0]).toMatchObject({
 		step: "implement",

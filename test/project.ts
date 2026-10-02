@@ -4,6 +4,7 @@
 import { mkdir, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { parse } from "smol-toml";
 
 const cli = join(import.meta.dir, "..", "src", "cli.ts");
 
@@ -51,4 +52,20 @@ export async function runPunt(
 		child.exited,
 	]);
 	return { exitCode, stdout, stderr };
+}
+
+/** A Ticket file as the tests read it: its `+++` header parsed, and its body. */
+export type TicketFile = { header: Record<string, unknown>; body: string };
+
+/** Reads the Ticket file at `path`, relative to the repo root `root`. */
+export async function readTicketFile(
+	root: string,
+	path: string,
+): Promise<TicketFile> {
+	const text = await Bun.file(join(root, path)).text();
+	const end = text.indexOf("\n+++\n");
+	return {
+		header: parse(text.slice("+++\n".length, end + 1)),
+		body: text.slice(end + "\n+++\n".length),
+	};
 }

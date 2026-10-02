@@ -25,7 +25,8 @@ export type FakeClaude = {
 
 // Plain sh so the fake starts as fast as the real CLI would, and one argument
 // per line is enough since no flag Punt passes holds a newline. Each call
-// gets the next numbered folder, so calls never overwrite each other.
+// gets the next numbered folder, so calls never overwrite each other. The
+// count is safe because Punt runs one Step at a time.
 const script = `#!/bin/sh
 call="$FAKE_CLAUDE_DIR/calls/$(ls "$FAKE_CLAUDE_DIR/calls" | wc -l | tr -d ' ')"
 mkdir "$call"

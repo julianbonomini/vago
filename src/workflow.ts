@@ -24,7 +24,10 @@ export type AgentStep = {
 	readonly promptTemplate: string;
 	readonly harness: string;
 	readonly model: string;
-	/** Appended to the Harness command; empty when neither level sets any. */
+	/**
+	 * Appended to the Harness command. A Step's own `args` replace the
+	 * Workflow's, and it's empty when neither sets any.
+	 */
 	readonly args: readonly string[];
 };
 
@@ -40,36 +43,36 @@ const HarnessName = z.string().refine(knownHarness, {
 	error: (issue) => `unknown harness "${issue.input}"`,
 });
 
-const Duration = z.string().regex(/^[1-9]\d*(ms|s|m|h)$/, {
+const IdleTimeout = z.string().regex(/^[1-9]\d*(ms|s|m|h)$/, {
 	error: 'idle_timeout must be a duration like "30m"',
 });
 
 // TODO(07): give `on_fail` and `idle_timeout` their effect. Until then the
 // loader only checks them.
-const WorkflowFile = z.object({
+const WorkflowFile = z.strictObject({
 	harness: HarnessName.optional(),
 	model: z.string().optional(),
 	args: z.array(z.string()).optional(),
-	idle_timeout: Duration.optional(),
+	idle_timeout: IdleTimeout.optional(),
 	steps: z
 		.array(
 			z.discriminatedUnion(
 				"type",
 				[
-					z.object({
+					z.strictObject({
 						id: z.string(),
 						type: z.literal("shell"),
 						run: z.string(),
 						on_fail: z.enum(["stop", "continue"]).optional(),
 					}),
-					z.object({
+					z.strictObject({
 						id: z.string(),
 						type: z.literal("agent"),
 						prompt: z.string(),
 						harness: HarnessName.optional(),
 						model: z.string().optional(),
 						args: z.array(z.string()).optional(),
-						idle_timeout: Duration.optional(),
+						idle_timeout: IdleTimeout.optional(),
 					}),
 				],
 				{ error: 'type must be "agent" or "shell"' },
@@ -81,10 +84,10 @@ const WorkflowFile = z.object({
 /**
  * Reads the Workflow of the Project at `root`, with every prompt's text
  * inside. Throws an Error naming the file and the problem when the Workflow
- * is missing or isn't valid TOML, two Steps share an `id`, a Step's `type`
- * is unknown, a `harness` isn't registered, an agent Step has no harness or
- * model, a prompt file doesn't exist, or an `on_fail` or `idle_timeout`
- * value is invalid.
+ * is missing or isn't valid TOML, has a key or value its schema doesn't take
+ * (an unknown Step `type` or `harness`, a bad `on_fail` or `idle_timeout`),
+ * gives two Steps one `id`, leaves an agent Step without a harness or model,
+ * or names a prompt file that doesn't exist.
  */
 export async function loadWorkflow(root: string): Promise<Workflow> {
 	const punt = join(root, ".punt");

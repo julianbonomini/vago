@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
-import { parse } from "smol-toml";
-import { makeProject, runPunt } from "./project.ts";
+import { makeProject, readTicketFile, runPunt } from "./project.ts";
 
 const workflow = `
 [[steps]]
@@ -29,18 +28,6 @@ ${ticketBody}`;
 const goalDir = ".punt/goals/hello";
 const ticketPath = `${goalDir}/tickets/01-say-hello.md`;
 
-async function readTicket(root: string): Promise<{
-	header: Record<string, unknown>;
-	body: string;
-}> {
-	const text = await Bun.file(join(root, ticketPath)).text();
-	const end = text.indexOf("\n+++\n");
-	return {
-		header: parse(text.slice("+++\n".length, end + 1)),
-		body: text.slice(end + "\n+++\n".length),
-	};
-}
-
 test("a Ticket goes through every shell Step and ends done", async () => {
 	const root = await makeProject({
 		".punt/workflow.toml": workflow,
@@ -52,7 +39,7 @@ test("a Ticket goes through every shell Step and ends done", async () => {
 
 	expect(result.stderr).toBe("");
 	expect(result.exitCode).toBe(0);
-	const { header, body } = await readTicket(root);
+	const { header, body } = await readTicketFile(root, ticketPath);
 	expect(header.status).toBe("done");
 	expect(body).toBe(ticketBody);
 });
@@ -66,7 +53,7 @@ test("each Step gets a [[runs]] entry and a log of its stdout and stderr", async
 
 	await runPunt(root, ["run", "hello"]);
 
-	const { header } = await readTicket(root);
+	const { header } = await readTicketFile(root, ticketPath);
 	const runs = header.runs as Record<string, unknown>[];
 	expect(runs.map((run) => [run.step, run.outcome, run.log])).toEqual([
 		["greet", "ok", "logs/01-greet-1.log"],
@@ -120,6 +107,6 @@ test("header fields Alpha doesn't know survive its rewrites", async () => {
 
 	await runPunt(root, ["run", "hello"]);
 
-	const { header } = await readTicket(root);
+	const { header } = await readTicketFile(root, ticketPath);
 	expect(header.note).toBe("kept");
 });
