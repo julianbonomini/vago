@@ -15,8 +15,8 @@ export type ShellStep = {
 };
 
 /**
- * A Step that a fresh Harness session performs. `harness` and `model` are
- * already resolved from the Workflow's defaults.
+ * A Step that a fresh Harness session performs. `harness`, `model` and
+ * `args` are already resolved: the Step's own value, else the Workflow's.
  */
 export type AgentStep = {
 	readonly id: string;
@@ -24,6 +24,8 @@ export type AgentStep = {
 	readonly promptTemplate: string;
 	readonly harness: string;
 	readonly model: string;
+	/** Appended to the Harness command; empty when neither level sets any. */
+	readonly args: readonly string[];
 };
 
 /** One entry of a Workflow. */
@@ -34,27 +36,55 @@ export type Workflow = {
 	readonly steps: readonly Step[];
 };
 
+const HarnessName = z.string().refine(knownHarness, {
+	error: (issue) => `unknown harness "${issue.input}"`,
+});
+
+const Duration = z.string().regex(/^[1-9]\d*(ms|s|m|h)$/, {
+	error: 'idle_timeout must be a duration like "30m"',
+});
+
+// TODO(07): give `on_fail` and `idle_timeout` their effect. Until then the
+// loader only checks them.
 const WorkflowFile = z.object({
-	harness: z.string().optional(),
+	harness: HarnessName.optional(),
 	model: z.string().optional(),
+	args: z.array(z.string()).optional(),
+	idle_timeout: Duration.optional(),
 	steps: z
 		.array(
-			z.discriminatedUnion("type", [
-				z.object({ id: z.string(), type: z.literal("shell"), run: z.string() }),
-				z.object({
-					id: z.string(),
-					type: z.literal("agent"),
-					prompt: z.string(),
-				}),
-			]),
+			z.discriminatedUnion(
+				"type",
+				[
+					z.object({
+						id: z.string(),
+						type: z.literal("shell"),
+						run: z.string(),
+						on_fail: z.enum(["stop", "continue"]).optional(),
+					}),
+					z.object({
+						id: z.string(),
+						type: z.literal("agent"),
+						prompt: z.string(),
+						harness: HarnessName.optional(),
+						model: z.string().optional(),
+						args: z.array(z.string()).optional(),
+						idle_timeout: Duration.optional(),
+					}),
+				],
+				{ error: 'type must be "agent" or "shell"' },
+			),
 		)
 		.min(1),
 });
 
 /**
- * Reads the Workflow of the Project at `root`. Throws an Error naming the
- * file and the problem when the Workflow is missing or invalid, names an
- * unknown Harness, or names a prompt file that doesn't exist.
+ * Reads the Workflow of the Project at `root`, with every prompt's text
+ * inside. Throws an Error naming the file and the problem when the Workflow
+ * is missing or isn't valid TOML, two Steps share an `id`, a Step's `type`
+ * is unknown, a `harness` isn't registered, an agent Step has no harness or
+ * model, a prompt file doesn't exist, or an `on_fail` or `idle_timeout`
+ * value is invalid.
  */
 export async function loadWorkflow(root: string): Promise<Workflow> {
 	const punt = join(root, ".punt");
@@ -73,20 +103,23 @@ export async function loadWorkflow(root: string): Promise<Workflow> {
 	if (!checked.success) {
 		throw new Error(`${path}: ${z.prettifyError(checked.error)}`);
 	}
-	const { harness, model } = checked.data;
 	const steps: Step[] = [];
 	for (const step of checked.data.steps) {
+		if (steps.some(({ id }) => id === step.id)) {
+			throw new Error(`${path}: two steps have id "${step.id}"`);
+		}
 		if (step.type === "shell") {
-			steps.push(Object.freeze(step));
+			steps.push(
+				Object.freeze({ id: step.id, type: step.type, run: step.run }),
+			);
 			continue;
 		}
+		const harness = step.harness ?? checked.data.harness;
+		const model = step.model ?? checked.data.model;
 		if (harness === undefined || model === undefined) {
 			throw new Error(
 				`${path}: agent step "${step.id}" needs a harness and a model`,
 			);
-		}
-		if (!knownHarness(harness)) {
-			throw new Error(`${path}: unknown harness "${harness}"`);
 		}
 		const promptPath = join(punt, step.prompt);
 		const prompt = Bun.file(promptPath);
@@ -102,6 +135,7 @@ export async function loadWorkflow(root: string): Promise<Workflow> {
 				promptTemplate: await prompt.text(),
 				harness,
 				model,
+				args: Object.freeze(step.args ?? checked.data.args ?? []),
 			}),
 		);
 	}

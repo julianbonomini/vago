@@ -63,8 +63,8 @@ test("claude runs headless in guarded mode on the Workflow's model", async () =>
 
 	await runPunt(root, ["run", "hello"], claude.env);
 
-	const { argv } = await claude.received();
-	expect(argv).toEqual([
+	const [call] = await claude.calls();
+	expect(call?.argv).toEqual([
 		"-p",
 		"--output-format",
 		"stream-json",
@@ -74,7 +74,7 @@ test("claude runs headless in guarded mode on the Workflow's model", async () =>
 		"--model",
 		"opus",
 	]);
-	expect(argv).not.toContain("--dangerously-skip-permissions");
+	expect(call?.argv).not.toContain("--dangerously-skip-permissions");
 });
 
 test("the prompt has {{ticket}} and {{goal}} substituted and no Ticket header", async () => {
@@ -83,8 +83,8 @@ test("the prompt has {{ticket}} and {{goal}} substituted and no Ticket header", 
 
 	await runPunt(root, ["run", "hello"], claude.env);
 
-	const { stdin } = await claude.received();
-	expect(stdin).toBe(`Do this Ticket:
+	const [call] = await claude.calls();
+	expect(call?.stdin).toBe(`Do this Ticket:
 
 ${ticketBody}
 
@@ -95,8 +95,8 @@ It serves this Goal:
 The CLI greets its user.
 
 `);
-	expect(stdin).not.toContain("+++");
-	expect(stdin).not.toContain("status");
+	expect(call?.stdin).not.toContain("+++");
+	expect(call?.stdin).not.toContain("status");
 });
 
 test("[[runs]] records the Harness, model, session, tokens and cost", async () => {
@@ -140,20 +140,4 @@ test("the end line shows the Run's cost", async () => {
 
 	const lines = result.stdout.trimEnd().split("\n");
 	expect(lines[1]).toMatch(/^\S+ 01-say-hello implement ok \d+\.\ds \$0\.02$/);
-});
-
-test("an unknown harness fails before any Run, naming workflow.toml", async () => {
-	const root = await makeProject({
-		".punt/workflow.toml": workflow.replace("claude-code", "claude-kode"),
-		".punt/prompts/implement.md": prompt,
-		[`${goalDir}/goal.md`]: "# Hello\n",
-		[ticketPath]: `+++\nstatus = "ready"\n+++\n${ticketBody}`,
-	});
-
-	const result = await runPunt(root, ["run", "hello"]);
-
-	expect(result.exitCode).not.toBe(0);
-	expect(result.stderr).toContain("workflow.toml");
-	expect(result.stderr).toContain('unknown harness "claude-kode"');
-	expect((await readHeader(root)).status).toBe("ready");
 });

@@ -70,7 +70,7 @@ async function runAgent(
 		goal: await readGoalBody(ticket),
 	});
 	const harness = findHarness(step.harness);
-	const child = Bun.spawn(harness.command(step.model), {
+	const child = Bun.spawn(harness.command(step.model, step.args), {
 		cwd: ticket.root,
 		stdin: new Blob([prompt]),
 		stdout: "pipe",

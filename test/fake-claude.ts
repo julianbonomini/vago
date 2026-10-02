@@ -1,7 +1,7 @@
 // Test helper: a fake `claude` that replays a stream-json fixture recorded
 // from a real Claude Code session and records what Punt handed it.
 
-import { chmod, mkdtemp } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -12,19 +12,25 @@ export const sessionFixture = join(
 	"claude-code-session.jsonl",
 );
 
+/** What one call of the fake received: its argv without the program name, and its stdin. */
+export type FakeClaudeCall = { argv: string[]; stdin: string };
+
 /** A fake `claude`, ready to put on the `PATH` of a `punt` child. */
 export type FakeClaude = {
 	/** Environment for `runPunt` that puts the fake first on `PATH`. */
 	env: Record<string, string>;
-	/** The argv (without the program name) and stdin of the last call. */
-	received(): Promise<{ argv: string[]; stdin: string }>;
+	/** Every call so far, first call first. */
+	calls(): Promise<FakeClaudeCall[]>;
 };
 
 // Plain sh so the fake starts as fast as the real CLI would, and one argument
-// per line is enough since no flag Punt passes holds a newline.
+// per line is enough since no flag Punt passes holds a newline. Each call
+// gets the next numbered folder, so calls never overwrite each other.
 const script = `#!/bin/sh
-printf '%s\\n' "$@" > "$FAKE_CLAUDE_DIR/argv"
-cat > "$FAKE_CLAUDE_DIR/stdin"
+call="$FAKE_CLAUDE_DIR/calls/$(ls "$FAKE_CLAUDE_DIR/calls" | wc -l | tr -d ' ')"
+mkdir "$call"
+printf '%s\\n' "$@" > "$call/argv"
+cat > "$call/stdin"
 cat "$FAKE_CLAUDE_FIXTURE"
 `;
 
@@ -34,18 +40,26 @@ export async function makeFakeClaude(): Promise<FakeClaude> {
 	const program = join(dir, "claude");
 	await Bun.write(program, script);
 	await chmod(program, 0o755);
+	const callsDir = join(dir, "calls");
+	await mkdir(callsDir);
 	return {
 		env: {
 			PATH: `${dir}:${process.env.PATH}`,
 			FAKE_CLAUDE_DIR: dir,
 			FAKE_CLAUDE_FIXTURE: sessionFixture,
 		},
-		async received() {
-			const argv = await Bun.file(join(dir, "argv")).text();
-			return {
-				argv: argv.split("\n").slice(0, -1),
-				stdin: await Bun.file(join(dir, "stdin")).text(),
-			};
+		async calls() {
+			const names = await readdir(callsDir);
+			names.sort((a, b) => Number(a) - Number(b));
+			const calls: FakeClaudeCall[] = [];
+			for (const name of names) {
+				const argv = await Bun.file(join(callsDir, name, "argv")).text();
+				calls.push({
+					argv: argv.split("\n").slice(0, -1),
+					stdin: await Bun.file(join(callsDir, name, "stdin")).text(),
+				});
+			}
+			return calls;
 		},
 	};
 }

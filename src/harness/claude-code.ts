@@ -23,7 +23,7 @@ const ResultEvent = z.object({
 
 /** Claude Code, run headless in its `auto` permission mode. */
 export const claudeCode: Harness = {
-	command(model) {
+	command(model, args) {
 		// Never --dangerously-skip-permissions: loosening the guard is always
 		// the human's explicit choice, never Punt's.
 		return [
@@ -36,6 +36,7 @@ export const claudeCode: Harness = {
 			"auto",
 			"--model",
 			model,
+			...args,
 		];
 	},
 	readLine(line) {
