@@ -36,18 +36,19 @@ export function printStepEnded(
 }
 
 /**
- * Prints that `ticket` went stuck after Step `stepId`, with what the human
- * needs next: the Run's log at the absolute path `log`, the command that
- * resumes its Harness session when there is one, and the command that resets
- * the Ticket.
+ * Prints that `ticket` went stuck after Step `stepId`, whose Run ended with
+ * `outcome` as spelled in the header, with what the human needs next: the
+ * Run's log at the absolute path `log`, the command that resumes its Harness
+ * session when there is one, and the command that resets the Ticket.
  */
 export function printStuck(
 	ticket: Ticket,
 	stepId: string,
+	outcome: string,
 	log: string,
 	resumeHint?: string,
 ): void {
-	console.log(`${ticket.name} is stuck after ${stepId}`);
+	console.log(`${ticket.name} is stuck after ${stepId}: ${outcome}`);
 	// Relative to the repo root, which `punt run` runs in, so it's short
 	// enough to read and still opens from where the human is.
 	console.log(`  log:    ${relative(ticket.root, log)}`);

@@ -3,7 +3,7 @@
 // goes stuck and gets reset. Hides the order of a Goal's lifecycle.
 
 import { printGoalSummary, printStuck, printStuckRefusal } from "./progress.ts";
-import { runStep } from "./step-runner.ts";
+import { runStep, spellOutcome } from "./step-runner.ts";
 import { closeOpenRun, readGoal, setStatus, type Ticket } from "./tickets.ts";
 import { loadWorkflow, type Workflow } from "./workflow.ts";
 
@@ -88,7 +88,13 @@ async function runTicket(workflow: Workflow, ticket: Ticket): Promise<boolean> {
 				step.onFail === "continue");
 		if (!goesOn) {
 			await setStatus(ticket, "stuck");
-			printStuck(ticket, step.id, run.log, run.resumeHint);
+			printStuck(
+				ticket,
+				step.id,
+				spellOutcome(run.outcome),
+				run.log,
+				run.resumeHint,
+			);
 			return false;
 		}
 	}

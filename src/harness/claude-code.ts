@@ -4,10 +4,22 @@
 import { z } from "zod";
 import type { Harness } from "./registry.ts";
 
-const InitEvent = z.object({
+// Never --dangerously-skip-permissions: loosening the guard is always the
+// human's explicit choice, never Punt's.
+const guardedMode = "auto";
+
+// Claude Code reports its permission mode at startup and again in a status
+// event when it changes, as it does when the model doesn't offer auto mode.
+const SessionEvent = z.object({
 	type: z.literal("system"),
-	subtype: z.literal("init"),
+	subtype: z.enum(["init", "status"]),
 	session_id: z.string(),
+	permissionMode: z.string().optional(),
+});
+
+const PermissionDeniedEvent = z.object({
+	type: z.literal("system"),
+	subtype: z.literal("permission_denied"),
 });
 
 const ResultEvent = z.object({
@@ -23,11 +35,13 @@ const ResultEvent = z.object({
 	}),
 });
 
-/** Claude Code, run headless in its `auto` permission mode. */
+/**
+ * Claude Code, run headless in its `auto` permission mode unless the Step's
+ * `args` choose another. Its stream reports a fallback from the mode asked
+ * for and every tool call Claude Code refused.
+ */
 export const claudeCode: Harness = {
 	command(model, args) {
-		// Never --dangerously-skip-permissions: loosening the guard is always
-		// the human's explicit choice, never Punt's.
 		return [
 			"claude",
 			"-p",
@@ -35,21 +49,35 @@ export const claudeCode: Harness = {
 			"stream-json",
 			"--verbose",
 			"--permission-mode",
-			"auto",
+			guardedMode,
 			"--model",
 			model,
 			...args,
 		];
 	},
-	readLine(line) {
+	readLine(line, command) {
 		let event: unknown;
 		try {
 			event = JSON.parse(line);
 		} catch {
 			return {};
 		}
-		const init = InitEvent.safeParse(event);
-		if (init.success) return { sessionId: init.data.session_id };
+		if (PermissionDeniedEvent.safeParse(event).success) {
+			return { permissionDenied: true };
+		}
+		const session = SessionEvent.safeParse(event);
+		if (session.success) {
+			const { session_id, permissionMode } = session.data;
+			// Left out in the mode asked for, so a later event can't clear a
+			// fallback reported earlier.
+			if (
+				permissionMode === undefined ||
+				permissionMode === askedMode(command)
+			) {
+				return { sessionId: session_id };
+			}
+			return { sessionId: session_id, permissionModeFallback: permissionMode };
+		}
 		const result = ResultEvent.safeParse(event);
 		if (!result.success) return {};
 		const { usage } = result.data;
@@ -70,3 +98,19 @@ export const claudeCode: Harness = {
 		return `claude --resume ${sessionId}`;
 	},
 };
+
+// The mode `command` asks Claude Code for: the last --permission-mode wins,
+// and --dangerously-skip-permissions wins over any of them.
+function askedMode(command: readonly string[]): string {
+	if (command.includes("--dangerously-skip-permissions")) {
+		return "bypassPermissions";
+	}
+	let mode = guardedMode;
+	for (const [index, arg] of command.entries()) {
+		if (arg === "--permission-mode") mode = command[index + 1] ?? mode;
+		else if (arg.startsWith("--permission-mode=")) {
+			mode = arg.slice("--permission-mode=".length);
+		}
+	}
+	return mode;
+}
