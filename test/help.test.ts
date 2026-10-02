@@ -129,6 +129,19 @@ for (const args of [[], ["nope"], ["help", "nope"], ["nope", "--help"]]) {
 	});
 }
 
+test("a command's words given as one argument name no command", async () => {
+	const root = await makeProject({});
+
+	const result = await runPunt(root, ["goal report", "x"]);
+
+	expect(result.exitCode).toBe(1);
+	expect(result.stdout).toBe("");
+	expect(result.stderr).toStartWith("usage: punt init\n");
+	expect(result.stderr).toEndWith(
+		"Run `punt --help` for what each command does.\n",
+	);
+});
+
 test("wrong arguments print the command's usage and point at its --help", async () => {
 	const root = await makeProject({});
 
@@ -175,4 +188,128 @@ test("every listed command has help, and takes every flag its help names", async
 			expect(result.stderr).not.toContain("usage:");
 		}
 	}
+});
+
+test("goal new --workflow -h takes -h as the Workflow's name", async () => {
+	const root = await makeProject({ ".punt/workflows/-h.toml": workflow });
+
+	const result = await runPunt(root, [
+		"goal",
+		"new",
+		"hello",
+		"--workflow",
+		"-h",
+	]);
+
+	expect(result.stderr).toBe("");
+	expect(result.exitCode).toBe(0);
+	expect(
+		await Bun.file(join(root, ".punt-goals/hello/goal.md")).text(),
+	).toStartWith('+++\nworkflow = "-h"\n+++\n');
+});
+
+test("--blocked-by --help is a value that isn't digits, not a call for help", async () => {
+	const root = await makeProject({
+		".punt/workflows/test.toml": workflow,
+		".punt-goals/hello/goal.md": goalText("test"),
+	});
+
+	const result = await runPunt(root, [
+		"ticket",
+		"add",
+		"hello",
+		"greet",
+		"--blocked-by",
+		"--help",
+	]);
+
+	expect(result.exitCode).toBe(1);
+	expect(result.stderr).toBe(
+		"usage: punt ticket add <goal> <slug> [--blocked-by <NN>]... [--body-file <path>]\nRun `punt ticket add --help` for what it does and what each argument means.\n",
+	);
+	expect(existsSync(join(root, ".punt-goals/hello/tickets/01-greet.md"))).toBe(
+		false,
+	);
+});
+
+test("--help where an operand or a flag name goes prints the command's help", async () => {
+	const root = await makeProject({ ".punt/workflows/test.toml": workflow });
+
+	const created = await runPunt(root, [
+		"goal",
+		"new",
+		"hello",
+		"--help",
+		"--workflow",
+		"test",
+	]);
+	const reset = await runPunt(root, [
+		"ticket",
+		"reset",
+		"--help",
+		"hello",
+		"1",
+	]);
+
+	expect(created.exitCode).toBe(0);
+	expect(created.stdout).toStartWith("usage: punt goal new ");
+	expect(existsSync(join(root, ".punt-goals"))).toBe(false);
+	expect(reset.exitCode).toBe(0);
+	expect(reset.stdout).toStartWith("usage: punt ticket reset <goal> <NN>\n");
+});
+
+for (const [group, members, other] of [
+	["goal", ["goal new", "goal report"], "ticket"],
+	["ticket", ["ticket add", "ticket reset"], "goal"],
+] as const) {
+	test(`punt ${group} --help gives the usage of the ${group} commands and lists only them`, async () => {
+		const root = await makeProject({});
+		const usages = {
+			goal: "usage: punt goal new <goal> --workflow <name> [--body-file <path>]\n       punt goal report <goal>\n",
+			ticket:
+				"usage: punt ticket add <goal> <slug> [--blocked-by <NN>]... [--body-file <path>]\n       punt ticket reset <goal> <NN>\n",
+		};
+
+		const result = await runPunt(root, [
+			group,
+			group === "goal" ? "--help" : "-h",
+		]);
+
+		expect(result.stderr).toBe("");
+		expect(result.exitCode).toBe(0);
+		expect(result.stdout).toStartWith(
+			`${usages[group]}\npunt takes a Goal's Tickets through the Workflow`,
+		);
+		for (const member of members) {
+			expect(result.stdout).toMatch(new RegExp(`^  ${member}  +\\S`, "m"));
+		}
+		expect(result.stdout).not.toMatch(new RegExp(`^  ${other} `, "m"));
+		expect(result.stdout).not.toContain("usage: punt <command> [arguments]");
+	});
+}
+
+for (const args of [["--help"], ["-h"], ["help"]]) {
+	test(`punt ${args[0]} starts with the generic usage`, async () => {
+		const root = await makeProject({});
+
+		const result = await runPunt(root, args);
+
+		expect(result.stdout).toStartWith("usage: punt <command> [arguments]\n\n");
+	});
+}
+
+test("punt nope prints every command's usage, lined up, then points at --help", async () => {
+	const root = await makeProject({});
+
+	const result = await runPunt(root, ["nope"]);
+
+	expect(result.exitCode).toBe(1);
+	expect(result.stderr).toBe(`usage: punt init
+       punt run <goal>
+       punt goal new <goal> --workflow <name> [--body-file <path>]
+       punt goal report <goal>
+       punt ticket add <goal> <slug> [--blocked-by <NN>]... [--body-file <path>]
+       punt ticket reset <goal> <NN>
+Run \`punt --help\` for what each command does.
+`);
 });

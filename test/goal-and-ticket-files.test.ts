@@ -358,6 +358,27 @@ test("ticket add takes --body-file and --blocked-by in any order", async () => {
 	});
 });
 
+test("ticket add --body-file -h reads the file named -h", async () => {
+	const root = await bodyProject({ "-h": body });
+
+	const result = await runPunt(root, [
+		"ticket",
+		"add",
+		"hello",
+		"greet",
+		"--body-file",
+		"-h",
+	]);
+
+	expect(result.stderr).toBe("");
+	expect(result.exitCode).toBe(0);
+	expect(result.stdout).toEndWith(`${goalDir}/tickets/01-greet.md\n`);
+	expect(await readTicketFile(root, `${goalDir}/tickets/01-greet.md`)).toEqual({
+		header: { status: "ready" },
+		body,
+	});
+});
+
 test("ticket add refuses a --body-file that doesn't exist and writes no Ticket", async () => {
 	const root = await bodyProject();
 
