@@ -42,16 +42,18 @@ export type RunningPunt = {
 /**
  * Starts `punt <args>` with `root` as the working directory without waiting
  * for it. `env` is added to this process's environment, overriding what it
- * names.
+ * names. `punt` reads `stdin` as what the human typed, then end of input.
  */
 export function startPunt(
 	root: string,
 	args: string[],
 	env: Record<string, string> = {},
+	stdin = "",
 ): RunningPunt {
 	const child = Bun.spawn([process.execPath, cli, ...args], {
 		cwd: root,
 		env: { ...process.env, ...env },
+		stdin: new Blob([stdin]),
 		stdout: "pipe",
 		stderr: "pipe",
 	});
@@ -70,8 +72,9 @@ export function runPunt(
 	root: string,
 	args: string[],
 	env: Record<string, string> = {},
+	stdin = "",
 ): Promise<PuntExit> {
-	return startPunt(root, args, env).exited;
+	return startPunt(root, args, env, stdin).exited;
 }
 
 /** A Ticket file as the tests read it: its `+++` header parsed, and its body. */

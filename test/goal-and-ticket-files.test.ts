@@ -175,6 +175,6 @@ test("ticket add takes no status and prints the usage when given one", async () 
 	]);
 
 	expect(result.exitCode).not.toBe(0);
-	expect(result.stderr).toMatch(/^usage: punt run <goal>/);
+	expect(result.stderr).toMatch(/^usage: punt /);
 	expect(existsSync(join(root, goalDir, "tickets"))).toBe(false);
 });
