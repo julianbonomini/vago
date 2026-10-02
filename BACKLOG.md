@@ -8,7 +8,7 @@ Items marked _(grill)_ have design questions to settle before writing Tickets.
 
 - [ ] Better `punt --help` and per-command help.
 - [x] A Workflow for developing Punt itself, in Punt's own `.punt/`. _(grill)_
-- [ ] Goals and Tickets written from the CLI can't carry a body, a description or other detail yet. Add a way to give them that. _(grill)_
+- [-] Goals and Tickets written from the CLI can't carry a body, a description or other detail yet. Add a way to give them that. _(grill)_
 - [ ] A README for developers who want to use Punt: install, `punt init`, writing a Goal and its Tickets, `punt run`, recovering a stuck Ticket. Architecture and philosophy can wait.
 
 ## From the Alpha map's out-of-scope list
