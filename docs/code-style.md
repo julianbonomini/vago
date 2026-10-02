@@ -45,6 +45,7 @@ Allowed: `zod`, `smol-toml` (Bun can parse TOML but not write it), and dev-only 
 ## Comments and docs
 
 - **Comments inside code explain why:** the reason, the constraint, the trap avoided. The code says what is happening. If a line needs a comment to say what it does, rewrite the line. (red flag: Comment Repeats Code)
+- **A field or type comment says only what its name can't.** When a better name would say it, rename instead. (red flag: Comment Repeats Code)
 - **Interface comment on every export:** the contract a caller relies on (what it gives back, what the caller must know, what it throws). Nothing about how it works. Write it before the body; if it's hard to write, fix the design. (§4 comments; red flags: Hard to Describe, Implementation Documentation Contaminates Interface)
 - **Module comment:** each file opens with two or three lines saying what the module owns and hides.
 - Comments change in the same commit as their code. A TODO carries a ticket number.

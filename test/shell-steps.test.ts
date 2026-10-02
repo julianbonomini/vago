@@ -60,7 +60,6 @@ test("a Ticket goes through every shell Step and ends done", async () => {
 test("each Step gets a [[runs]] entry and a log of its stdout and stderr", async () => {
 	const root = await makeProject({
 		".punt/workflow.toml": workflow,
-		[`${goalDir}/goal.md`]: "# Hello\n",
 		[ticketPath]: ticket,
 	});
 
@@ -88,7 +87,6 @@ test("each Step gets a [[runs]] entry and a log of its stdout and stderr", async
 test("stdout shows a start and an end line for each Step", async () => {
 	const root = await makeProject({
 		".punt/workflow.toml": workflow,
-		[`${goalDir}/goal.md`]: "# Hello\n",
 		[ticketPath]: ticket,
 	});
 
@@ -110,7 +108,6 @@ test("stdout shows a start and an end line for each Step", async () => {
 test("header fields Alpha doesn't know survive its rewrites", async () => {
 	const root = await makeProject({
 		".punt/workflow.toml": workflow,
-		[`${goalDir}/goal.md`]: "# Hello\n",
 		[ticketPath]: `+++\nstatus = "ready"\nnote = "kept"\n+++\n${ticketBody}`,
 	});
 

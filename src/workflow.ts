@@ -1,6 +1,7 @@
-// Owns `.punt/workflow.toml`: reads it once, along with the prompt files it
-// names, checks it, and returns the Workflow a Goal runs with. Hides the TOML
-// schema, its defaults and how paths resolve.
+// Owns `.punt/workflow.toml` and its prompt files: reads them once, checks
+// them, returns the Workflow a Goal runs with, and fills in agent prompts.
+// Hides the TOML schema, its defaults, how paths resolve and the `{{…}}`
+// placeholder syntax.
 
 import { join } from "node:path";
 import { z } from "zod";
@@ -13,12 +14,14 @@ export type ShellStep = {
 	readonly run: string;
 };
 
-/** A Step that one fresh session of `harness` on `model` performs. */
+/**
+ * A Step that a fresh Harness session performs. `harness` and `model` are
+ * already resolved from the Workflow's defaults.
+ */
 export type AgentStep = {
 	readonly id: string;
 	readonly type: "agent";
-	/** The prompt file's text, before substitution. */
-	readonly prompt: string;
+	readonly promptTemplate: string;
 	readonly harness: string;
 	readonly model: string;
 };
@@ -93,10 +96,40 @@ export async function loadWorkflow(root: string): Promise<Workflow> {
 			);
 		}
 		steps.push(
-			Object.freeze({ ...step, prompt: await prompt.text(), harness, model }),
+			Object.freeze({
+				id: step.id,
+				type: step.type,
+				promptTemplate: await prompt.text(),
+				harness,
+				model,
+			}),
 		);
 	}
 	// Frozen, with the prompts' text inside, so a Goal runs every Ticket with
 	// the Workflow it started with even if an agent edits `.punt/`.
 	return Object.freeze({ steps: Object.freeze(steps) });
+}
+
+/** What an agent prompt's placeholders are filled with. */
+export type PromptTexts = {
+	/** `{{ticket}}`: the Ticket's title and body, never its header. */
+	ticket: string;
+	/** `{{goal}}`: the Goal's `goal.md`. */
+	goal: string;
+};
+
+const placeholder = /\{\{(ticket|goal)\}\}/g;
+
+/**
+ * Returns the prompt `step`'s Harness reads, with each placeholder in its
+ * template replaced by its text. A prompt gets only the texts its template
+ * names, and text without placeholders is left as written.
+ */
+export function buildPrompt(step: AgentStep, texts: PromptTexts): string {
+	// One pass, so a `{{goal}}` written inside the Ticket stays as written.
+	return step.promptTemplate.replace(
+		placeholder,
+		(_, name: "ticket" | "goal") =>
+			name === "ticket" ? texts.ticket : texts.goal,
+	);
 }

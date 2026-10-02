@@ -4,8 +4,8 @@
 
 import { claudeCode } from "./claude-code.ts";
 
-/** What a Run reported about itself, as far as its stream has gone. */
-export type RunReport = {
+/** What a Harness session has reported about itself so far. */
+export type SessionReport = {
 	sessionId?: string;
 	tokens?: { input: number; output: number };
 	costUsd?: number;
@@ -23,7 +23,7 @@ export type Harness = {
 	 * out, so the kernel spreads each result over the last; a line that isn't
 	 * an event it knows gives `{}`.
 	 */
-	readLine(line: string): RunReport;
+	readLine(line: string): SessionReport;
 	/** The shell command the human runs to resume session `sessionId`. */
 	resumeHint(sessionId: string): string;
 };
