@@ -16,8 +16,11 @@ export type HarnessSessionReport = {
  * writes the prompt to its stdin, and feeds each line it streams to `readLine`.
  */
 export type Harness = {
-	/** The argv that starts a fresh session on `model` in guarded mode. */
-	command(model: string): string[];
+	/**
+	 * The argv that starts a fresh session on `model` in guarded mode, with
+	 * the Step's `args` appended as given.
+	 */
+	command(model: string, args: readonly string[]): string[];
 	/**
 	 * What one stream line carries. Fields the line doesn't carry are left
 	 * out, so the kernel spreads each result over the last; a line that isn't
