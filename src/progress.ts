@@ -1,8 +1,8 @@
 // Everything `punt run` prints to stdout while it runs: one line when a Step
-// starts and one when it ends. Hides the line formats and how durations and
-// costs read.
+// starts and one when it ends, and the Goal summary on exit. Hides the line
+// formats and how durations and costs read.
 
-import type { Ticket } from "./tickets.ts";
+import type { GoalState, Ticket } from "./tickets.ts";
 
 /** Prints the line saying Step `stepId` started on `ticket` at `started`. */
 export function printStepStarted(
@@ -31,6 +31,18 @@ export function printStepEnded(
 	console.log(
 		`${timestamp(ended)} ${ticket.name} ${stepId} ${outcome} ${took}${cost}`,
 	);
+}
+
+/**
+ * Prints the summary of how `goal` ended: how many of its Tickets are done,
+ * then each Ticket with its status.
+ */
+export function printGoalSummary(goal: string, state: GoalState): void {
+	const done = state.tickets.filter(({ status }) => status === "done").length;
+	console.log(`${goal}: ${done} of ${state.tickets.length} Tickets done`);
+	for (const { ticket, status } of state.tickets) {
+		console.log(`  ${ticket.name} ${status}`);
+	}
 }
 
 // UTC like the Ticket header, cut to whole seconds since a glance needs no more.

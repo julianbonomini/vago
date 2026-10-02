@@ -60,6 +60,7 @@ test("a Ticket goes through every shell Step and ends done", async () => {
 test("each Step gets a [[runs]] entry and a log of its stdout and stderr", async () => {
 	const root = await makeProject({
 		".punt/workflow.toml": workflow,
+		[`${goalDir}/goal.md`]: "# Hello\n",
 		[ticketPath]: ticket,
 	});
 
@@ -87,6 +88,7 @@ test("each Step gets a [[runs]] entry and a log of its stdout and stderr", async
 test("stdout shows a start and an end line for each Step", async () => {
 	const root = await makeProject({
 		".punt/workflow.toml": workflow,
+		[`${goalDir}/goal.md`]: "# Hello\n",
 		[ticketPath]: ticket,
 	});
 
@@ -94,7 +96,7 @@ test("stdout shows a start and an end line for each Step", async () => {
 
 	const time = String.raw`\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ`;
 	const lines = result.stdout.trimEnd().split("\n");
-	expect(lines).toHaveLength(4);
+	expect(lines).toHaveLength(6);
 	expect(lines[0]).toMatch(new RegExp(`^${time} 01-say-hello greet started$`));
 	expect(lines[1]).toMatch(
 		new RegExp(`^${time} 01-say-hello greet ok \\d+\\.\\ds$`),
@@ -103,11 +105,16 @@ test("stdout shows a start and an end line for each Step", async () => {
 	expect(lines[3]).toMatch(
 		new RegExp(`^${time} 01-say-hello check ok \\d+\\.\\ds$`),
 	);
+	expect(lines.slice(4)).toEqual([
+		"hello: 1 of 1 Tickets done",
+		"  01-say-hello done",
+	]);
 });
 
 test("header fields Alpha doesn't know survive its rewrites", async () => {
 	const root = await makeProject({
 		".punt/workflow.toml": workflow,
+		[`${goalDir}/goal.md`]: "# Hello\n",
 		[ticketPath]: `+++\nstatus = "ready"\nnote = "kept"\n+++\n${ticketBody}`,
 	});
 

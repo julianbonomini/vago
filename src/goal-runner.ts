@@ -2,31 +2,40 @@
 // and runs each through every Step of the Workflow. Hides the order of a
 // Goal's lifecycle.
 
+import { printGoalSummary } from "./progress.ts";
 import { runStep } from "./step-runner.ts";
-import { nextReadyTicket, setStatus } from "./tickets.ts";
-import { loadWorkflow } from "./workflow.ts";
+import { readGoal, setStatus, type Ticket } from "./tickets.ts";
+import { loadWorkflow, type Workflow } from "./workflow.ts";
 
 /** How `punt run` left the Goal: every Ticket `done`, or not. */
 export type GoalEnd = "done" | "unfinished";
 
 /**
- * Runs `goal` of the Project at `root` until no Ticket is ready. Throws an
- * Error naming the file when the Workflow or a Ticket can't be read.
+ * Runs `goal` of the Project at `root` until no Ticket is ready, then prints
+ * the Goal summary. Throws an Error naming the problem before any Run starts
+ * when the Workflow or the Goal's format is bad.
  */
 export async function runGoal(root: string, goal: string): Promise<GoalEnd> {
 	const workflow = await loadWorkflow(root);
-	for (
-		let ticket = await nextReadyTicket(root, goal);
-		ticket !== undefined;
-		ticket = await nextReadyTicket(root, goal)
-	) {
-		await setStatus(ticket, "running");
-		for (const step of workflow.steps) {
-			// TODO(07): a failed Step marks the Ticket stuck.
-			if ((await runStep(step, ticket)).kind !== "ok") return "unfinished";
-		}
-		await setStatus(ticket, "done");
+	let state = await readGoal(root, goal);
+	while (state.next !== undefined) {
+		const finished = await runTicket(workflow, state.next);
+		state = await readGoal(root, goal);
+		if (!finished) break;
 	}
-	// TODO(04): done only when every Ticket of the Goal is done.
-	return "done";
+	printGoalSummary(goal, state);
+	return state.tickets.every(({ status }) => status === "done")
+		? "done"
+		: "unfinished";
+}
+
+// Returns whether every Step succeeded and the Ticket is `done`.
+async function runTicket(workflow: Workflow, ticket: Ticket): Promise<boolean> {
+	await setStatus(ticket, "running");
+	for (const step of workflow.steps) {
+		// TODO(07): a failed Step marks the Ticket stuck.
+		if ((await runStep(step, ticket)).kind !== "ok") return false;
+	}
+	await setStatus(ticket, "done");
+	return true;
 }

@@ -2,6 +2,7 @@
 // header, status, the `[[runs]]` history and where each Run's log goes.
 // Every header rewrite is atomic and keeps the body byte for byte.
 
+import { existsSync } from "node:fs";
 import { readdir, rename } from "node:fs/promises";
 import { join } from "node:path";
 import { parse, stringify } from "smol-toml";
@@ -60,32 +61,94 @@ const headerStart = "+++\n";
 const headerEnd = "\n+++\n";
 
 /**
- * Returns the lowest-numbered Ticket of `goal` whose status is `ready`, or
- * undefined when there is none. Throws an Error naming the file when a
- * Ticket's header can't be read.
+ * A Goal's Tickets as they stood when `readGoal` read them. Statuses change
+ * as Alpha runs, so read the Goal again after a Ticket moves.
  */
-export async function nextReadyTicket(
-	root: string,
-	goal: string,
-): Promise<Ticket | undefined> {
-	const folder = join(goalFolder(root, goal), "tickets");
-	const tickets: Ticket[] = [];
-	for (const fileName of await readdir(folder)) {
+export type GoalState = {
+	/** Every Ticket of the Goal with its status, lowest number first. */
+	tickets: { ticket: Ticket; status: TicketStatus }[];
+	/**
+	 * The lowest-numbered Ticket that is `ready` with every blocker `done`, or
+	 * undefined when no Ticket is ready.
+	 */
+	next: Ticket | undefined;
+};
+
+/**
+ * Reads `goal` and checks its format: `goal.md` exists, every Ticket header
+ * parses, no two Tickets share a number, every blocker is a Ticket of the
+ * Goal and no blockers form a cycle. Throws an Error naming the problem and
+ * the file when a check fails. A Goal with no `tickets/` folder has no
+ * Tickets.
+ */
+export async function readGoal(root: string, goal: string): Promise<GoalState> {
+	const folder = goalFolder(root, goal);
+	const goalFile = join(folder, "goal.md");
+	if (!(await Bun.file(goalFile).exists())) {
+		throw new Error(`Goal ${goal} not found: ${goalFile} doesn't exist`);
+	}
+	const ticketFolder = join(folder, "tickets");
+	const fileNames = existsSync(ticketFolder)
+		? (await readdir(ticketFolder)).sort()
+		: [];
+	const read: { ticket: Ticket; header: Header }[] = [];
+	for (const fileName of fileNames) {
 		const match = ticketFileName.exec(fileName);
 		if (match?.[1] === undefined) continue;
-		tickets.push({
+		const ticket = {
 			root,
 			goal,
 			name: fileName.slice(0, -".md".length),
 			number: Number(match[1]),
+		};
+		read.push({
+			ticket,
+			header: (await readTicketFile(ticketFile(ticket))).header,
 		});
 	}
-	tickets.sort((a, b) => a.number - b.number);
-	for (const ticket of tickets) {
-		const { header } = await readTicketFile(ticketFile(ticket));
-		if (header.status === "ready") return ticket;
+	read.sort((a, b) => a.ticket.number - b.ticket.number);
+
+	const byNumber = new Map<number, { ticket: Ticket; header: Header }>();
+	for (const entry of read) {
+		const twin = byNumber.get(entry.ticket.number);
+		if (twin !== undefined) {
+			throw new Error(
+				`${ticketFile(twin.ticket)} and ${entry.ticket.name}.md share number ${entry.ticket.number}`,
+			);
+		}
+		byNumber.set(entry.ticket.number, entry);
 	}
-	return undefined;
+	for (const { ticket, header } of read) {
+		for (const blocker of header.blocked_by ?? []) {
+			if (!byNumber.has(blocker)) {
+				throw new Error(
+					`${ticketFile(ticket)} is blocked by Ticket ${blocker}, which isn't in Goal ${goal}`,
+				);
+			}
+		}
+	}
+	const cycle = findBlockerCycle(byNumber);
+	if (cycle !== undefined) {
+		const names = cycle.map((number) => byNumber.get(number)?.ticket.name);
+		throw new Error(
+			`Goal ${goal} has a blocker cycle: ${names.join(" -> ")} (${join(folder, "tickets")})`,
+		);
+	}
+
+	const next = read.find(
+		({ header }) =>
+			header.status === "ready" &&
+			(header.blocked_by ?? []).every(
+				(blocker) => byNumber.get(blocker)?.header.status === "done",
+			),
+	);
+	return {
+		tickets: read.map(({ ticket, header }) => ({
+			ticket,
+			status: header.status,
+		})),
+		next: next?.ticket,
+	};
 }
 
 /**
@@ -181,6 +244,34 @@ export async function recordRunEnd(
 		if (session?.tokens !== undefined) table.tokens = session.tokens;
 		if (session?.costUsd !== undefined) table.cost_usd = session.costUsd;
 	});
+}
+
+// Depth first along `blocked_by`, lowest number first. Reaching a Ticket
+// that is still on the path closes a cycle, returned as the numbers walked
+// from that Ticket back to itself.
+function findBlockerCycle(
+	byNumber: Map<number, { header: Header }>,
+): number[] | undefined {
+	const cleared = new Set<number>();
+	const path: number[] = [];
+	const visit = (number: number): number[] | undefined => {
+		const onPath = path.indexOf(number);
+		if (onPath !== -1) return [...path.slice(onPath), number];
+		if (cleared.has(number)) return undefined;
+		path.push(number);
+		for (const blocker of byNumber.get(number)?.header.blocked_by ?? []) {
+			const cycle = visit(blocker);
+			if (cycle !== undefined) return cycle;
+		}
+		path.pop();
+		cleared.add(number);
+		return undefined;
+	};
+	for (const number of byNumber.keys()) {
+		const cycle = visit(number);
+		if (cycle !== undefined) return cycle;
+	}
+	return undefined;
 }
 
 function goalFolder(root: string, goal: string): string {
