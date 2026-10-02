@@ -4,11 +4,13 @@
 
 import { resetTicket, runGoal } from "./goal-runner.ts";
 import { initProject } from "./init.ts";
-import { addTicket, createGoal } from "./tickets.ts";
+import { printGoalReport } from "./progress.ts";
+import { addTicket, createGoal, readGoal, readGoalBody } from "./tickets.ts";
 
 const usage = `usage: punt init
        punt run <goal>
        punt goal new <goal> [--body-file <path>]
+       punt goal report <goal>
        punt ticket add <goal> <slug> [--blocked-by <NN>]... [--body-file <path>]
        punt ticket reset <goal> <NN>`;
 
@@ -27,6 +29,12 @@ async function main(args: string[]): Promise<number> {
 	}
 	if (command === "goal") {
 		const [action, goal, ...extra] = operands;
+		if (action === "report" && goal !== undefined && extra.length === 0) {
+			// readGoal first, since it names a missing Goal as such.
+			const state = await readGoal(root, goal);
+			printGoalReport(await readGoalBody(root, goal), state);
+			return 0;
+		}
 		if (action === "new" && goal !== undefined) {
 			if (extra.length === 0) {
 				console.log(await createGoal(root, goal));

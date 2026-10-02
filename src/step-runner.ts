@@ -138,7 +138,7 @@ async function runAgent(
 }> {
 	const prompt = buildPrompt(step, {
 		ticket: await readTicketBody(ticket),
-		goal: await readGoalBody(ticket),
+		goal: await readGoalBody(ticket.root, ticket.goal),
 		stepOutputs,
 	});
 	const harness = findHarness(step.harness);

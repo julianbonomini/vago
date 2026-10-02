@@ -1,6 +1,7 @@
 # Squash-merges this Ticket's branch into the Goal's branch as one commit,
-# pushes the Goal's branch and makes sure it has a PR to main. Fails, and so
-# leaves the Ticket stuck, when the tree is dirty or the Ticket changed nothing.
+# pushes the Goal's branch and makes sure it has a PR to main, described by
+# `punt goal report`. Fails, and so leaves the Ticket stuck, when the tree is
+# dirty or the Ticket changed nothing.
 set -eu
 
 goal="goal/$PUNT_GOAL"
@@ -18,6 +19,11 @@ git commit -m "$(echo "$PUNT_TICKET" | tr '-' ' ')"
 git branch -D "$ticket"
 
 git push -u origin "$goal"
-gh pr view "$goal" >/dev/null 2>&1 ||
-	gh pr create --base main --head "$goal" --title "$PUNT_GOAL" \
-		--body "One commit per Ticket of Goal $PUNT_GOAL."
+# Rewritten after every Ticket, so the last merge leaves the whole Goal's
+# Runs. A body edited by hand on GitHub is replaced too.
+body="$(punt goal report "$PUNT_GOAL")"
+if gh pr view "$goal" >/dev/null 2>&1; then
+	gh pr edit "$goal" --body "$body"
+else
+	gh pr create --base main --head "$goal" --title "$PUNT_GOAL" --body "$body"
+fi

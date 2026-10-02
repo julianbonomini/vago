@@ -1,10 +1,10 @@
 // Everything `punt run` prints to stdout while it runs: one line when a Step
 // starts and one when it ends, where to look when a Ticket goes stuck, and
-// the Goal summary on exit. Hides the line formats and how durations and
-// costs read.
+// the Goal summary on exit. Also the Goal report `punt goal report` prints.
+// Hides the line formats and how durations and costs read.
 
 import { relative } from "node:path";
-import type { GoalState, Ticket } from "./tickets.ts";
+import type { GoalState, Ticket, TicketRun } from "./tickets.ts";
 
 /** Prints the line saying Step `stepId` started on `ticket` at `started`. */
 export function printStepStarted(
@@ -29,7 +29,7 @@ export function printStepEnded(
 	costUsd?: number,
 ): void {
 	const took = duration(ended.getTime() - started.getTime());
-	const cost = costUsd === undefined ? "" : ` $${costUsd.toFixed(2)}`;
+	const cost = costUsd === undefined ? "" : ` ${dollars(costUsd)}`;
 	console.log(
 		`${timestamp(ended)} ${ticket.name} ${stepId} ${outcome} ${took}${cost}`,
 	);
@@ -79,6 +79,64 @@ export function printGoalSummary(goal: string, state: GoalState): void {
 	for (const { ticket, status } of state.tickets) {
 		console.log(`  ${ticket.name} ${status}`);
 	}
+}
+
+/**
+ * Prints `goal.md`, as `goalBody`, and then in Markdown what the Goal's Runs
+ * took and cost: a table with one row per Ticket and a total, and every Run
+ * in a collapsed table under it. Made to be a PR description. A Run still
+ * going counts toward neither total.
+ */
+export function printGoalReport(goalBody: string, state: GoalState): void {
+	const lines = [goalBody.trimEnd(), "", "## Runs", ""];
+	lines.push("| Ticket | Runs | Took | Cost |", "|---|---:|---:|---:|");
+	const all: TicketRun[] = [];
+	for (const { ticket, runs } of state.tickets) {
+		lines.push(
+			`| ${ticket.name} | ${runs.length} | ${duration(took(runs))} | ${cost(runs)} |`,
+		);
+		all.push(...runs);
+	}
+	lines.push(
+		`| **Total** | **${all.length}** | **${duration(took(all))}** | **${cost(all)}** |`,
+	);
+	lines.push("", "<details>", "<summary>Every Run</summary>", "");
+	lines.push(
+		"| Ticket | Step | Outcome | Took | Cost |",
+		"|---|---|---|---:|---:|",
+	);
+	for (const { ticket, runs } of state.tickets) {
+		for (const run of runs) {
+			const ran = run.ended === undefined ? "" : duration(took([run]));
+			lines.push(
+				`| ${ticket.name} | ${run.step} | ${run.outcome ?? "running"} | ${ran} | ${cost([run])} |`,
+			);
+		}
+	}
+	lines.push("", "</details>");
+	console.log(lines.join("\n"));
+}
+
+// Milliseconds the ended Runs took between them.
+function took(runs: TicketRun[]): number {
+	let total = 0;
+	for (const { started, ended } of runs) {
+		if (ended !== undefined) total += ended.getTime() - started.getTime();
+	}
+	return total;
+}
+
+// Blank when no Run reported a cost, so a shell Step doesn't read as free.
+function cost(runs: TicketRun[]): string {
+	const costs = runs.flatMap(({ costUsd }) =>
+		costUsd === undefined ? [] : [costUsd],
+	);
+	if (costs.length === 0) return "";
+	return dollars(costs.reduce((sum, each) => sum + each, 0));
+}
+
+function dollars(usd: number): string {
+	return `$${usd.toFixed(2)}`;
 }
 
 // Numbered as the Ticket file is, so it reads like the name above it.
