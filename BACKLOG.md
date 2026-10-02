@@ -14,9 +14,9 @@ Items marked _(grill)_ have design questions to settle before writing Tickets.
 - [x] Improve the logs from cli (colours, spacing, maybe a table, idk)
 - [x] Goal PR description sucks. title could be improved as well. should contain usefull info as well as cost, time, etc. some metrics...
 - [x] Prompt/skill / way to make grilling and to-tickets clone go directly into punt goals with correct format.
-- [d] Merge should be programatic unless conflicts!
 - [n] rename project to vago instea of punt. everything! like docs, strings, project stuff, .punt to .vago, everything!
 - [ ] worfklow still produces red flags when checked as a whole
+- [n] fix all red flags
 
 ## From the Alpha map's out-of-scope list
 
