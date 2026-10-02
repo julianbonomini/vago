@@ -12,6 +12,8 @@ Before adding anything (a file, an export, a parameter, an option, a type, a bra
 
 - **Deep modules.** Each module hides a lot behind a small exported surface. Export the few functions callers need; keep every helper unexported. (§2.4, §4 deep vs. shallow)
 - **One owner per decision.** Each file format, path layout and protocol is known by exactly one module. `docs/architecture.md` names the owners. (§4 information hiding)
+- **A type lives with the module that owns its concept.** `RunOutcome` belongs to the module that performs Runs, not to one that stores them. Review checks every exported type: does its module own the concept the type names? (§4 information hiding; red flag: Information Leakage)
+- **An import cycle is a design error, not a placement puzzle.** Biome's `noImportCycles` fails `bun run check` on one. Fix the direction: make the lower module a leaf that takes plain values, or move the behaviour to the module that owns the concept. Never move a type or function out of its concept's owner to break a cycle. If there's no clean fix, stop and ask the human.
 - **Modules by knowledge, not by order.** Code that shares knowledge lives together, even when it runs at different times. (red flag: Temporal Decomposition)
 - **The common case is the call with no options.** Defaults live inside the module. Add a parameter only when the caller really knows better. (§2.5, §4 pull complexity downwards)
 - **Errors defined out of existence.** Choose semantics where the error can't happen: an idempotent write, an empty list instead of a missing one. (§2.11)
@@ -32,7 +34,7 @@ Plain TypeScript: functions and modules.
 - **Classes** only for real state with a lifetime, such as a running child process. Everything else is a function. (§4 classitis)
 - **Zod at edges only:** where data enters from outside (`workflow.toml`, Ticket headers, Harness stream lines). Past the edge, plain types.
 - **Errors.** Domain outcomes the caller branches on are return values, a discriminated union such as `{ outcome: "stuck", reason }`. Bad input the human must fix throws a plain `Error` whose message names the problem and the file. Only `cli.ts` catches, prints and picks the exit code. No custom error classes, no Result library. (§4 define errors out of existence: aggregate)
-- **Names.** Domain words exactly as in `CONTEXT.md`: `Ticket`, `Run`, `Step`, `Goal`, `Workflow`, `Harness`. The Harness's own ID is `sessionId`. A name says what the thing is; a name that's hard to pick means the design is wrong. (§4 naming; red flags: Vague Name, Hard to Pick Name)
+- **Names.** Domain words exactly as in `CONTEXT.md`: `Ticket`, `Run`, `Step`, `Goal`, `Workflow`, `Harness`. The Harness's own ID is `sessionId`. A name says what the thing is; a name that's hard to pick means the design is wrong. A type is named for the thing it describes, not the module it sits in, and carries its owner's name when it's read far from that module (`TicketStatus`, `HarnessSessionReport`). (§4 naming; red flags: Vague Name, Hard to Pick Name)
   Guardrail: no `utils.ts`, `helpers.ts`, `manager`, `data`, `info`, `handle`.
 - **Files.** Kebab-case filenames. Named exports only, imported from the file that defines them. No default exports, no barrel `index.ts`.
 - **Bun first.** `Bun.spawn`, `Bun.file`, `Bun.write`, `Bun.TOML.parse`, `bun:test`. Use `node:` modules only where Bun has no equivalent.
