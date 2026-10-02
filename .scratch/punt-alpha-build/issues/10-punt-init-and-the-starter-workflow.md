@@ -19,3 +19,7 @@ Spec: [Punt Alpha](../../punt-alpha/spec.md).
 - [ ] Answering "don't commit" excludes all of `.punt/`. Answering "commit" excludes only `goals/`.
 - [ ] Running `punt init` again with a Workflow in place refuses and changes nothing.
 - [ ] A Goal run through the starter Workflow with a fake `claude` reaches `done`.
+
+## Comments
+
+- From 01 (How we work): the starter's code-style file is its own deliverable. It's not Punt's `docs/code-style.md`, which governs the sessions that build Punt. The spec's starter `workflow.toml` also contradicts itself: it includes `docs/code-style.md` and `docs/architecture.md`, but Init copies the starter into `.punt/`, and include paths resolve from the repo root. A fresh `punt init` would then fail its own Workflow check. Point the starter's includes at files Init actually writes (for example `.punt/code-style.md`), and either drop the `architecture` include or ship a file for it.
