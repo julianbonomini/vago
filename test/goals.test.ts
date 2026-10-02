@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { makeProject, readTicketFile, runPunt } from "./project.ts";
+import { makeFakeClaude } from "./fake-claude.ts";
+import { goalText, makeProject, readTicketFile, runPunt } from "./project.ts";
 
 const workflow = `
 [[steps]]
@@ -18,8 +19,8 @@ function ticket(header: string, title: string): string {
 
 function goalProject(tickets: Record<string, string>): Promise<string> {
 	const files: Record<string, string> = {
-		".punt/workflow.toml": workflow,
-		[`${goalDir}/goal.md`]: "# Hello\n",
+		".punt/workflows/test.toml": workflow,
+		[`${goalDir}/goal.md`]: goalText("test"),
 	};
 	for (const [name, text] of Object.entries(tickets)) {
 		files[`${goalDir}/tickets/${name}.md`] = text;
@@ -109,13 +110,13 @@ test("the Goal summary is printed on exit", async () => {
 
 test("a Goal left unfinished exits non-zero and its summary says so", async () => {
 	const root = await makeProject({
-		".punt/workflow.toml": `
+		".punt/workflows/test.toml": `
 [[steps]]
 id   = "build"
 type = "shell"
 run  = "false"
 `,
-		[`${goalDir}/goal.md`]: "# Hello\n",
+		[`${goalDir}/goal.md`]: goalText("test"),
 		[`${goalDir}/tickets/01-greet.md`]: ticket(`status = "ready"`, "Greet"),
 		[`${goalDir}/tickets/02-wave.md`]: ticket(`status = "ready"`, "Wave"),
 	});
@@ -227,8 +228,48 @@ for (const [problem, tickets, message] of badGoals) {
 	});
 }
 
+const agentWorkflow = `
+harness = "claude-code"
+model   = "opus"
+
+[[steps]]
+id     = "implement"
+type   = "agent"
+prompt = "prompts/implement.md"
+`;
+
+const badGoalFiles: [string, string, RegExp][] = [
+	["no header", "# Hello\n", /goal\.md.*workflow = "/s],
+	[
+		"a header that names no Workflow",
+		`+++\ntitle = "x"\n+++\n# Hello\n`,
+		/goal\.md: its header names no Workflow/,
+	],
+];
+
+for (const [problem, goalFile, message] of badGoalFiles) {
+	test(`a goal.md with ${problem} exits non-zero and starts no Run`, async () => {
+		const root = await makeProject({
+			".punt/workflows/test.toml": agentWorkflow,
+			".punt/prompts/implement.md": "Implement it.\n",
+			[`${goalDir}/goal.md`]: goalFile,
+			[`${goalDir}/tickets/01-greet.md`]: ticket(`status = "ready"`, "Greet"),
+		});
+		const claude = await makeFakeClaude();
+		const before = await snapshot(root);
+
+		const result = await runPunt(root, ["run", "hello"], claude.env);
+
+		expect(result.exitCode).not.toBe(0);
+		expect(result.stderr).toMatch(message);
+		expect(result.stdout).toBe("");
+		expect(await snapshot(root)).toEqual(before);
+		expect(await claude.calls()).toEqual([]);
+	});
+}
+
 test("a missing Goal exits non-zero naming it", async () => {
-	const root = await makeProject({ ".punt/workflow.toml": workflow });
+	const root = await makeProject({ ".punt/workflows/test.toml": workflow });
 
 	const result = await runPunt(root, ["run", "nope"]);
 

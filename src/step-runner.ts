@@ -253,13 +253,16 @@ async function stopGroup(leader: number): Promise<void> {
 }
 
 // False when the group is gone, as it is already when the signal comes just
-// after the Step ended. Signal 0 only asks whether the group is alive.
+// after the Step ended. Signal 0 only asks whether the group is alive. macOS
+// answers EPERM, not ESRCH, while every process left in the group is a zombie
+// waiting to be reaped, and no signal can reach such a group either.
 function signalGroup(leader: number, signal: NodeJS.Signals | 0): boolean {
 	try {
 		process.kill(-leader, signal);
 		return true;
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+		const code = (error as NodeJS.ErrnoException).code;
+		if (code !== "ESRCH" && code !== "EPERM") throw error;
 		return false;
 	}
 }

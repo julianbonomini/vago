@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { makeFakeClaude } from "./fake-claude.ts";
-import { makeProject, readTicketFile, runPunt } from "./project.ts";
+import { goalText, makeProject, readTicketFile, runPunt } from "./project.ts";
 
 const workflow = `
 [[steps]]
@@ -12,18 +12,34 @@ type = "shell"
 run  = "true"
 `;
 
+const agentWorkflow = `
+harness = "claude-code"
+model   = "opus"
+
+[[steps]]
+id     = "implement"
+type   = "agent"
+prompt = "prompts/implement.md"
+`;
+
 const goalDir = ".punt/goals/hello";
 
 test("goal new creates a Goal with no Tickets that punt run accepts", async () => {
-	const root = await makeProject({ ".punt/workflow.toml": workflow });
+	const root = await makeProject({ ".punt/workflows/test.toml": workflow });
 
-	const created = await runPunt(root, ["goal", "new", "hello"]);
+	const created = await runPunt(root, [
+		"goal",
+		"new",
+		"hello",
+		"--workflow",
+		"test",
+	]);
 
 	expect(created.stderr).toBe("");
 	expect(created.exitCode).toBe(0);
 	expect(created.stdout).toEndWith(`${goalDir}/goal.md\n`);
 	expect(await Bun.file(join(root, goalDir, "goal.md")).text()).toBe(
-		"# hello\n",
+		goalText("test", "# hello\n"),
 	);
 	expect(await readdir(join(root, goalDir, "tickets"))).toEqual([]);
 
@@ -34,26 +50,90 @@ test("goal new creates a Goal with no Tickets that punt run accepts", async () =
 	expect(run.stdout).toBe("hello: 0 of 0 Tickets done\n");
 });
 
-test("goal new refuses a Goal that exists and leaves it as it was", async () => {
-	const root = await makeProject({
-		".punt/workflow.toml": workflow,
-		[`${goalDir}/goal.md`]: "# Hello\n\nSay hello to everyone.\n",
-	});
+test("goal new without --workflow prints the usage and creates no Goal", async () => {
+	const root = await makeProject({ ".punt/workflows/test.toml": workflow });
 
 	const result = await runPunt(root, ["goal", "new", "hello"]);
+
+	expect(result.exitCode).toBe(1);
+	expect(result.stderr).toContain(
+		"punt goal new <goal> --workflow <name> [--body-file <path>]",
+	);
+	expect(existsSync(join(root, goalDir))).toBe(false);
+});
+
+for (const name of ["nope", "../a"]) {
+	test(`goal new refuses the Workflow "${name}", listing the ones there are`, async () => {
+		const root = await makeProject({
+			".punt/workflows/a.toml": workflow,
+			".punt/workflows/b.toml": workflow,
+		});
+
+		const result = await runPunt(root, [
+			"goal",
+			"new",
+			"hello",
+			"--workflow",
+			name,
+		]);
+
+		expect(result.exitCode).toBe(1);
+		expect(result.stderr).toContain(name);
+		expect(result.stderr).toContain("a, b");
+		expect(existsSync(join(root, goalDir))).toBe(false);
+	});
+}
+
+test("goal new refuses a Workflow punt run would refuse and creates no Goal", async () => {
+	const root = await makeProject({
+		".punt/workflows/test.toml": agentWorkflow.replace(
+			"prompts/implement.md",
+			"prompts/gone.md",
+		),
+	});
+
+	const result = await runPunt(root, [
+		"goal",
+		"new",
+		"hello",
+		"--workflow",
+		"test",
+	]);
+
+	expect(result.exitCode).toBe(1);
+	expect(result.stderr).toContain("prompts/gone.md");
+	expect(existsSync(join(root, goalDir))).toBe(false);
+});
+
+test("goal new refuses a Goal that exists and leaves it as it was", async () => {
+	const root = await makeProject({
+		".punt/workflows/test.toml": workflow,
+		[`${goalDir}/goal.md`]: goalText(
+			"test",
+			"# Hello\n\nSay hello to everyone.\n",
+		),
+	});
+
+	const result = await runPunt(root, [
+		"goal",
+		"new",
+		"hello",
+		"--workflow",
+		"test",
+	]);
 
 	expect(result.exitCode).not.toBe(0);
 	expect(result.stderr).toMatch(/Goal hello already exists: \S*goals\/hello/);
 	expect(result.stdout).toBe("");
 	expect(await Bun.file(join(root, goalDir, "goal.md")).text()).toBe(
-		"# Hello\n\nSay hello to everyone.\n",
+		goalText("test", "# Hello\n\nSay hello to everyone.\n"),
 	);
 });
 
 test("ticket add numbers Tickets in order with a ready header punt run takes", async () => {
 	const root = await makeProject({
-		".punt/workflow.toml": workflow,
-		[`${goalDir}/goal.md`]: "# Hello\n",
+		".punt/workflows/test.toml": workflow,
+		[`${goalDir}/goal.md`]: goalText("test"),
 	});
 
 	const greet = await runPunt(root, ["ticket", "add", "hello", "greet"]);
@@ -82,8 +162,8 @@ test("ticket add numbers Tickets in order with a ready header punt run takes", a
 
 test("ticket add numbers past the highest Ticket and writes each blocker once", async () => {
 	const root = await makeProject({
-		".punt/workflow.toml": workflow,
-		[`${goalDir}/goal.md`]: "# Hello\n",
+		".punt/workflows/test.toml": workflow,
+		[`${goalDir}/goal.md`]: goalText("test"),
 		[`${goalDir}/tickets/01-greet.md`]: `+++\nstatus = "ready"\n+++\n`,
 		[`${goalDir}/tickets/03-wave.md`]: `+++\nstatus = "ready"\n+++\n`,
 	});
@@ -109,8 +189,8 @@ test("ticket add numbers past the highest Ticket and writes each blocker once", 
 
 test("ticket add refuses an unknown blocker and writes no Ticket", async () => {
 	const root = await makeProject({
-		".punt/workflow.toml": workflow,
-		[`${goalDir}/goal.md`]: "# Hello\n",
+		".punt/workflows/test.toml": workflow,
+		[`${goalDir}/goal.md`]: goalText("test"),
 		[`${goalDir}/tickets/01-greet.md`]: `+++\nstatus = "ready"\n+++\n`,
 	});
 
@@ -136,11 +216,17 @@ test("ticket add refuses an unknown blocker and writes no Ticket", async () => {
 for (const name of ["../escape", "a/b", ""]) {
 	test(`goal new and ticket add refuse the name "${name}"`, async () => {
 		const root = await makeProject({
-			".punt/workflow.toml": workflow,
-			[`${goalDir}/goal.md`]: "# Hello\n",
+			".punt/workflows/test.toml": workflow,
+			[`${goalDir}/goal.md`]: goalText("test"),
 		});
 
-		const goal = await runPunt(root, ["goal", "new", name]);
+		const goal = await runPunt(root, [
+			"goal",
+			"new",
+			name,
+			"--workflow",
+			"test",
+		]);
 		const ticket = await runPunt(root, ["ticket", "add", "hello", name]);
 		const ticketOfGoal = await runPunt(root, ["ticket", "add", name, "wave"]);
 
@@ -155,15 +241,16 @@ for (const name of ["../escape", "a/b", ""]) {
 			"goals",
 			"goals/hello",
 			"goals/hello/goal.md",
-			"workflow.toml",
+			"workflows",
+			"workflows/test.toml",
 		]);
 	});
 }
 
 test("ticket add takes no status and prints the usage when given one", async () => {
 	const root = await makeProject({
-		".punt/workflow.toml": workflow,
-		[`${goalDir}/goal.md`]: "# Hello\n",
+		".punt/workflows/test.toml": workflow,
+		[`${goalDir}/goal.md`]: goalText("test"),
 	});
 
 	const result = await runPunt(root, [
@@ -187,8 +274,11 @@ const body = "# Greet\r\n\nSay “hi” 👋\n+++\n+++ not a header";
 async function bodyProject(
 	files: Record<string, string> = {},
 ): Promise<string> {
-	const root = await makeProject({ ".punt/workflow.toml": workflow, ...files });
-	await runPunt(root, ["goal", "new", "hello"]);
+	const root = await makeProject({
+		".punt/workflows/test.toml": workflow,
+		...files,
+	});
+	await runPunt(root, ["goal", "new", "hello", "--workflow", "test"]);
 	return root;
 }
 
@@ -359,25 +449,15 @@ test("ticket add refuses a body with its own +++ header and writes no Ticket", a
 	expect(await readdir(join(root, goalDir, "tickets"))).toEqual([]);
 });
 
-const agentWorkflow = `
-harness = "claude-code"
-model   = "opus"
-
-[[steps]]
-id     = "implement"
-type   = "agent"
-prompt = "prompts/implement.md"
-`;
-
 test("punt run hands the agent a --body-file body as {{ticket}}, unchanged", async () => {
 	// The prompt is only {{ticket}} and nothing is included, so the agent's
 	// stdin is the body alone.
 	const root = await makeProject({
-		".punt/workflow.toml": agentWorkflow,
+		".punt/workflows/test.toml": agentWorkflow,
 		".punt/prompts/implement.md": "{{ticket}}",
 		"body.md": body,
 	});
-	await runPunt(root, ["goal", "new", "hello"]);
+	await runPunt(root, ["goal", "new", "hello", "--workflow", "test"]);
 	await runPunt(root, [
 		"ticket",
 		"add",
@@ -421,49 +501,78 @@ for (const flags of [
 	});
 }
 
-test("goal new --body-file writes the file's text as goal.md", async () => {
+for (const flags of [
+	["--workflow", "test", "--body-file", "body.md"],
+	["--body-file", "body.md", "--workflow", "test"],
+]) {
+	test(`goal new ${flags.join(" ")} writes the file's text after the header`, async () => {
+		const root = await makeProject({
+			".punt/workflows/test.toml": workflow,
+			"body.md": body,
+		});
+
+		const result = await runPunt(root, ["goal", "new", "hello", ...flags]);
+
+		expect(result.stderr).toBe("");
+		expect(result.exitCode).toBe(0);
+		expect(result.stdout).toEndWith(`${goalDir}/goal.md\n`);
+		expect(await Bun.file(join(root, goalDir, "goal.md")).text()).toBe(
+			goalText("test", body),
+		);
+		expect(await readdir(join(root, goalDir, "tickets"))).toEqual([]);
+	});
+}
+
+test("goal new --body-file - reads the body from stdin", async () => {
+	const root = await makeProject({ ".punt/workflows/test.toml": workflow });
+
+	const result = await runPunt(
+		root,
+		["goal", "new", "hello", "--workflow", "test", "--body-file", "-"],
+		{},
+		body,
+	);
+
+	expect(result.stderr).toBe("");
+	expect(result.exitCode).toBe(0);
+	expect(await Bun.file(join(root, goalDir, "goal.md")).text()).toBe(
+		goalText("test", body),
+	);
+});
+
+test("goal report shows a goal new body without the header", async () => {
 	const root = await makeProject({
-		".punt/workflow.toml": workflow,
+		".punt/workflows/test.toml": workflow,
 		"body.md": body,
 	});
-
-	const result = await runPunt(root, [
+	await runPunt(root, [
 		"goal",
 		"new",
 		"hello",
+		"--workflow",
+		"test",
 		"--body-file",
 		"body.md",
 	]);
 
-	expect(result.stderr).toBe("");
-	expect(result.exitCode).toBe(0);
-	expect(result.stdout).toEndWith(`${goalDir}/goal.md\n`);
-	expect(await Bun.file(join(root, goalDir, "goal.md")).text()).toBe(body);
-	expect(await readdir(join(root, goalDir, "tickets"))).toEqual([]);
-});
+	const report = await runPunt(root, ["goal", "report", "hello"]);
 
-test("goal new --body-file - reads the body from stdin", async () => {
-	const root = await makeProject({ ".punt/workflow.toml": workflow });
-	const stdin = "# Hello\n\nFrom stdin.\n";
-
-	const result = await runPunt(
-		root,
-		["goal", "new", "hello", "--body-file", "-"],
-		{},
-		stdin,
-	);
-
-	expect(result.exitCode).toBe(0);
-	expect(await Bun.file(join(root, goalDir, "goal.md")).text()).toBe(stdin);
+	expect(report.stderr).toBe("");
+	expect(report.exitCode).toBe(0);
+	expect(report.stdout).toStartWith(body);
+	expect(report.stdout).toContain("Workflow: test\n");
+	expect(report.stdout).not.toContain('workflow = "test"');
 });
 
 test("goal new refuses a --body-file that doesn't exist and creates no Goal", async () => {
-	const root = await makeProject({ ".punt/workflow.toml": workflow });
+	const root = await makeProject({ ".punt/workflows/test.toml": workflow });
 
 	const result = await runPunt(root, [
 		"goal",
 		"new",
 		"hello",
+		"--workflow",
+		"test",
 		"--body-file",
 		"nope.md",
 	]);
@@ -475,13 +584,15 @@ test("goal new refuses a --body-file that doesn't exist and creates no Goal", as
 });
 
 test("goal new refuses a --body-file that is a folder and creates no Goal", async () => {
-	const root = await makeProject({ ".punt/workflow.toml": workflow });
+	const root = await makeProject({ ".punt/workflows/test.toml": workflow });
 	await mkdir(join(root, "somedir"));
 
 	const result = await runPunt(root, [
 		"goal",
 		"new",
 		"hello",
+		"--workflow",
+		"test",
 		"--body-file",
 		"somedir",
 	]);
@@ -493,7 +604,7 @@ test("goal new refuses a --body-file that is a folder and creates no Goal", asyn
 
 test("goal new refuses an empty --body-file and creates no Goal", async () => {
 	const root = await makeProject({
-		".punt/workflow.toml": workflow,
+		".punt/workflows/test.toml": workflow,
 		"body.md": "",
 	});
 
@@ -501,6 +612,8 @@ test("goal new refuses an empty --body-file and creates no Goal", async () => {
 		"goal",
 		"new",
 		"hello",
+		"--workflow",
+		"test",
 		"--body-file",
 		"body.md",
 	]);
@@ -511,11 +624,11 @@ test("goal new refuses an empty --body-file and creates no Goal", async () => {
 });
 
 test("goal new refuses a body of only whitespace and creates no Goal", async () => {
-	const root = await makeProject({ ".punt/workflow.toml": workflow });
+	const root = await makeProject({ ".punt/workflows/test.toml": workflow });
 
 	const result = await runPunt(
 		root,
-		["goal", "new", "hello", "--body-file", "-"],
+		["goal", "new", "hello", "--workflow", "test", "--body-file", "-"],
 		{},
 		" \n\t\n",
 	);
@@ -525,15 +638,30 @@ test("goal new refuses a body of only whitespace and creates no Goal", async () 
 	expect(existsSync(join(root, goalDir))).toBe(false);
 });
 
+// Two agent Workflows told apart by their prompts: `test` hands the agent
+// only {{goal}} and `other` only the word other.
+const twoWorkflows = {
+	".punt/workflows/test.toml": agentWorkflow,
+	".punt/workflows/other.toml": agentWorkflow.replace(
+		"prompts/implement.md",
+		"prompts/other.md",
+	),
+	".punt/prompts/implement.md": "{{goal}}",
+	".punt/prompts/other.md": "other",
+	"body.md": body,
+};
+
 test("punt run hands the agent a goal new --body-file body as {{goal}}, unchanged", async () => {
-	// The prompt is only {{goal}} and nothing is included, so the agent's
-	// stdin is the Goal's body alone.
-	const root = await makeProject({
-		".punt/workflow.toml": agentWorkflow,
-		".punt/prompts/implement.md": "{{goal}}",
-		"body.md": body,
-	});
-	await runPunt(root, ["goal", "new", "hello", "--body-file", "body.md"]);
+	const root = await makeProject(twoWorkflows);
+	await runPunt(root, [
+		"goal",
+		"new",
+		"hello",
+		"--workflow",
+		"test",
+		"--body-file",
+		"body.md",
+	]);
 	await runPunt(root, ["ticket", "add", "hello", "greet"]);
 	const claude = await makeFakeClaude();
 
@@ -546,19 +674,38 @@ test("punt run hands the agent a goal new --body-file body as {{goal}}, unchange
 	expect(greet.header.status).toBe("done");
 });
 
+test("punt run runs the Workflow goal new named", async () => {
+	const root = await makeProject(twoWorkflows);
+	await runPunt(root, ["goal", "new", "hello", "--workflow", "other"]);
+	await runPunt(root, ["ticket", "add", "hello", "greet"]);
+	const claude = await makeFakeClaude();
+
+	const run = await runPunt(root, ["run", "hello"], claude.env);
+
+	expect(run.stderr).toBe("");
+	expect(run.exitCode).toBe(0);
+	expect((await claude.calls())[0]?.stdin).toBe("other");
+});
+
 for (const flags of [
-	["--body-file"],
-	["--body-file", "a.md", "--body-file", "b.md"],
-	["--blocked-by", "1"],
+	["--workflow"],
+	["--workflow", "a", "--workflow", "b"],
+	["--workflow", "test", "--body-file"],
+	["--workflow", "test", "--body-file", "a.md", "--body-file", "b.md"],
+	["--workflow", "test", "--blocked-by", "1"],
+	["--body-file", "body.md"],
 ]) {
 	test(`goal new prints the usage with the flag for ${flags.join(" ")}`, async () => {
-		const root = await makeProject({ ".punt/workflow.toml": workflow });
+		const root = await makeProject({
+			".punt/workflows/test.toml": workflow,
+			"body.md": body,
+		});
 
 		const result = await runPunt(root, ["goal", "new", "hello", ...flags]);
 
 		expect(result.exitCode).toBe(1);
 		expect(result.stderr).toContain(
-			"punt goal new <goal> [--body-file <path>]",
+			"punt goal new <goal> --workflow <name> [--body-file <path>]",
 		);
 		expect(existsSync(join(root, goalDir))).toBe(false);
 	});
@@ -566,8 +713,11 @@ for (const flags of [
 
 test("goal new --body-file refuses a Goal that exists and leaves it as it was", async () => {
 	const root = await makeProject({
-		".punt/workflow.toml": workflow,
-		[`${goalDir}/goal.md`]: "# Hello\n\nSay hello to everyone.\n",
+		".punt/workflows/test.toml": workflow,
+		[`${goalDir}/goal.md`]: goalText(
+			"test",
+			"# Hello\n\nSay hello to everyone.\n",
+		),
 		"body.md": body,
 	});
 
@@ -575,6 +725,8 @@ test("goal new --body-file refuses a Goal that exists and leaves it as it was", 
 		"goal",
 		"new",
 		"hello",
+		"--workflow",
+		"test",
 		"--body-file",
 		"body.md",
 	]);
@@ -582,15 +734,16 @@ test("goal new --body-file refuses a Goal that exists and leaves it as it was", 
 	expect(result.exitCode).toBe(1);
 	expect(result.stderr).toMatch(/Goal hello already exists/);
 	expect(await Bun.file(join(root, goalDir, "goal.md")).text()).toBe(
-		"# Hello\n\nSay hello to everyone.\n",
+		goalText("test", "# Hello\n\nSay hello to everyone.\n"),
 	);
 });
 
 test("goal new writes a body that starts with +++ as given", async () => {
-	// goal.md has no header, so unlike ticket add there is nothing to protect.
+	// Punt's header comes first, so the body's own +++ block is body and
+	// can't change the Workflow.
 	const plusBody = `+++\nstatus = "done"\n+++\n# Hello\n`;
 	const root = await makeProject({
-		".punt/workflow.toml": workflow,
+		".punt/workflows/test.toml": workflow,
 		"body.md": plusBody,
 	});
 
@@ -598,10 +751,14 @@ test("goal new writes a body that starts with +++ as given", async () => {
 		"goal",
 		"new",
 		"hello",
+		"--workflow",
+		"test",
 		"--body-file",
 		"body.md",
 	]);
 
 	expect(result.exitCode).toBe(0);
-	expect(await Bun.file(join(root, goalDir, "goal.md")).text()).toBe(plusBody);
+	expect(await Bun.file(join(root, goalDir, "goal.md")).text()).toBe(
+		goalText("test", plusBody),
+	);
 });

@@ -6,7 +6,7 @@ import {
 	permissionModeFallbackFixture,
 	sessionFixture,
 } from "./fake-claude.ts";
-import { makeProject, readTicketFile, runPunt } from "./project.ts";
+import { goalText, makeProject, readTicketFile, runPunt } from "./project.ts";
 
 const goalDir = ".punt/goals/hello";
 
@@ -18,10 +18,10 @@ function ticket(header: string, title: string): string {
 // leaves the second one ready and unrun.
 function stuckProject(workflow: string): Promise<string> {
 	return makeProject({
-		".punt/workflow.toml": workflow,
+		".punt/workflows/test.toml": workflow,
 		".punt/prompts/implement.md": "Implement it.\n",
 		".punt/prompts/review.md": "The check said:\n\n{{steps.check.output}}\n",
-		[`${goalDir}/goal.md`]: "# Hello\n",
+		[`${goalDir}/goal.md`]: goalText("test"),
 		[`${goalDir}/tickets/01-greet.md`]: ticket(`status = "ready"`, "Greet"),
 		[`${goalDir}/tickets/02-wave.md`]: ticket(
 			`status = "ready"\nblocked_by = [1]`,
@@ -209,9 +209,9 @@ test("a stuck shell Step's message has no resume command", async () => {
 
 test("punt run refuses while a Ticket is stuck, names it and runs nothing", async () => {
 	const root = await makeProject({
-		".punt/workflow.toml": checkWorkflow(""),
+		".punt/workflows/test.toml": checkWorkflow(""),
 		".punt/prompts/review.md": "Review it.\n",
-		[`${goalDir}/goal.md`]: "# Hello\n",
+		[`${goalDir}/goal.md`]: goalText("test"),
 		[`${goalDir}/tickets/01-greet.md`]: ticket(`status = "stuck"`, "Greet"),
 		// Not blocked by the stuck Ticket, so only the refusal keeps it unrun.
 		[`${goalDir}/tickets/02-wave.md`]: ticket(`status = "ready"`, "Wave"),
@@ -230,6 +230,12 @@ test("punt run refuses while a Ticket is stuck, names it and runs nothing", asyn
 
 test("a reset Ticket is ready again, keeps its runs and logs, and runs with new logs", async () => {
 	const root = await stuckProject(checkWorkflow(""));
+	await Bun.write(join(root, ".punt/workflows/strict.toml"), checkWorkflow(""));
+	await Bun.write(
+		join(root, ".punt/workflows/lenient.toml"),
+		checkWorkflow(`on_fail = "continue"`),
+	);
+	await Bun.write(join(root, goalDir, "goal.md"), goalText("strict"));
 	await runPunt(root, ["run", "hello"]);
 
 	const reset = await runPunt(root, ["ticket", "reset", "hello", "01"]);
@@ -242,10 +248,8 @@ test("a reset Ticket is ready again, keeps its runs and logs, and runs with new 
 		["exit 4", "logs/01-check-1.log"],
 	]);
 
-	await Bun.write(
-		join(root, ".punt/workflow.toml"),
-		checkWorkflow(`on_fail = "continue"`),
-	);
+	// Story 61: the human switches the Goal to another Workflow by hand.
+	await Bun.write(join(root, goalDir, "goal.md"), goalText("lenient"));
 	const claude = await makeFakeClaude();
 	const rerun = await runPunt(root, ["run", "hello"], claude.env);
 

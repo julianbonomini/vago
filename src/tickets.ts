@@ -1,6 +1,7 @@
 // Creates and owns Goal and Ticket files under `.punt/goals/<goal>/`: the
-// `+++` TOML header, status, the `[[runs]]` history and where each Run's log
-// goes. Every header rewrite is atomic and keeps the body byte for byte.
+// `+++` TOML header, the `goal.md` header naming the Goal's Workflow, status,
+// the `[[runs]]` history and where each Run's log goes. Every header rewrite
+// is atomic and keeps the body byte for byte.
 
 import { existsSync } from "node:fs";
 import { mkdir, readdir, rename } from "node:fs/promises";
@@ -56,6 +57,8 @@ const Header = z.looseObject({
 
 type Header = z.infer<typeof Header>;
 
+const GoalHeader = z.looseObject({ workflow: z.string() });
+
 // The name without `.md` is group 1 and the Ticket number group 2.
 const ticketFileName = /^((\d+)-.+)\.md$/;
 const headerStart = "+++\n";
@@ -74,10 +77,15 @@ export type TicketRun = {
 };
 
 /**
- * A Goal's Tickets as `readGoal` found them. Statuses change while Alpha
- * runs, so read the Goal again after a Ticket moves.
+ * A Goal as `readGoal` found it. Statuses change while Alpha runs, so read
+ * the Goal again after a Ticket moves.
  */
 export type GoalState = {
+	/**
+	 * The name of the Workflow the Goal's `goal.md` header names. It might
+	 * not exist.
+	 */
+	workflow: string;
 	/**
 	 * Every Ticket of the Goal with its status and its `[[runs]]` in the
 	 * order they ran, lowest number first.
@@ -95,16 +103,17 @@ export type GoalState = {
 type TicketHeader = { ticket: Ticket; header: Header };
 
 /**
- * Creates Goal `goal` with an empty `tickets/` and a `goal.md` that is
- * `body` exactly as given, which is what `{{goal}}` will be. Without `body`,
- * `goal.md` is a `# <goal>` title for the human to fill in. Returns the path
- * of `goal.md`. Throws an Error naming the problem, and creates nothing, when
- * `body` is empty or only whitespace, the Goal already exists, or `goal`
- * isn't a valid name.
+ * Creates Goal `goal` with an empty `tickets/` and a `goal.md` whose `+++`
+ * header names `workflow`, followed by `body` exactly as given, which is what
+ * `{{goal}}` will be. Without `body`, the body is a `# <goal>` title. Doesn't
+ * check that the Workflow exists. Returns the path of `goal.md`. Throws an
+ * Error naming the problem, and creates nothing, when `body` is empty or only
+ * whitespace, the Goal already exists, or `goal` isn't a valid name.
  */
 export async function createGoal(
 	root: string,
 	goal: string,
+	workflow: string,
 	body?: string,
 ): Promise<string> {
 	const folder = goalFolder(root, goal);
@@ -114,17 +123,18 @@ export async function createGoal(
 		throw new Error(`Goal ${goal} already exists: ${goalFile}`);
 	}
 	await mkdir(join(folder, "tickets"), { recursive: true });
-	await Bun.write(goalFile, body ?? `# ${goal}\n`);
+	await Bun.write(goalFile, headedText({ workflow }, body ?? `# ${goal}\n`));
 	return goalFile;
 }
 
 /**
- * Reads `goal` and checks its format: `goal.md` exists, every `.md` file in
- * `tickets/` is named `NN-<slug>.md` and has a header that parses, no two
- * Tickets share a number, every blocker is a Ticket of the Goal, and no
- * blockers form a cycle. Throws an Error naming the problem and the file or
- * folder it's in when a check fails. A Goal without a `tickets/` folder has
- * no Tickets.
+ * Reads `goal` and checks its format: `goal.md` exists and starts with a
+ * `+++` header that has a `workflow` line, every `.md` file in `tickets/` is
+ * named `NN-<slug>.md` and has a header that parses, no two Tickets share a
+ * number, every blocker is a Ticket of the Goal, and no blockers form a
+ * cycle. Throws an Error naming the problem and the file or folder it's in
+ * when a check fails, and for a bad `goal.md` header says which line to add.
+ * A Goal without a `tickets/` folder has no Tickets.
  */
 export async function readGoal(root: string, goal: string): Promise<GoalState> {
 	const folder = goalFolder(root, goal);
@@ -132,6 +142,7 @@ export async function readGoal(root: string, goal: string): Promise<GoalState> {
 	if (!(await Bun.file(goalFile).exists())) {
 		throw new Error(`Goal ${goal} not found: ${goalFile} doesn't exist`);
 	}
+	const { workflow } = await readGoalFile(goalFile);
 	const ticketFolder = join(folder, "tickets");
 	// node:fs because Bun.file can't tell whether a directory exists. Sorted
 	// by name so a shared number is reported the same way on every machine.
@@ -188,6 +199,7 @@ export async function readGoal(root: string, goal: string): Promise<GoalState> {
 			),
 	);
 	return {
+		workflow,
 		tickets: entries.map(({ ticket, header }) => ({
 			ticket,
 			status: header.status,
@@ -250,7 +262,7 @@ export async function addTicket(
 			? { status: "ready", blocked_by: [...new Set(blockedBy)] }
 			: { status: "ready" };
 	const file = ticketFile(ticket);
-	await Bun.write(file, ticketText(header, body ?? `\n# ${slug}\n`));
+	await Bun.write(file, headedText(header, body ?? `\n# ${slug}\n`));
 	return file;
 }
 
@@ -263,17 +275,19 @@ export async function readTicketBody(ticket: Ticket): Promise<string> {
 }
 
 /**
- * Returns the `goal.md` of `goal` as the human wrote it. Throws an Error
- * naming the file when it doesn't exist.
+ * Returns the `goal.md` of `goal` without its header or the blank lines
+ * after it, and otherwise byte for byte, which is what `{{goal}}` and the
+ * Goal report show.
+ * Throws an Error naming the file when it doesn't exist or its header is
+ * bad, as `readGoal` does.
  */
 export async function readGoalBody(
 	root: string,
 	goal: string,
 ): Promise<string> {
 	const path = join(goalFolder(root, goal), "goal.md");
-	const file = Bun.file(path);
-	if (!(await file.exists())) throw new Error(`${path} not found`);
-	return await file.text();
+	if (!(await Bun.file(path).exists())) throw new Error(`${path} not found`);
+	return (await readGoalFile(path)).body;
 }
 
 /** Sets the Ticket's status. */
@@ -430,14 +444,14 @@ function ticketFile(ticket: Ticket): string {
 	);
 }
 
-async function readTicketFile(
+// Splits the `+++` header off `text`, the text of `file`, and parses it.
+// Returns undefined when `text` doesn't start with a header.
+function splitHeader(
 	file: string,
-): Promise<{ header: Header; body: string }> {
-	const text = await Bun.file(file).text();
+	text: string,
+): { toml: unknown; body: string } | undefined {
 	const end = text.indexOf(headerEnd);
-	if (!text.startsWith(headerStart) || end === -1) {
-		throw new Error(`${file} has no +++ header`);
-	}
+	if (!text.startsWith(headerStart) || end === -1) return undefined;
 	let toml: unknown;
 	try {
 		// smol-toml, not Bun.TOML: Bun parses datetimes into Temporal values
@@ -446,14 +460,44 @@ async function readTicketFile(
 	} catch (error) {
 		throw new Error(`${file} has a header that isn't valid TOML: ${error}`);
 	}
-	const checked = Header.safeParse(toml);
+	return { toml, body: text.slice(end + headerEnd.length) };
+}
+
+async function readTicketFile(
+	file: string,
+): Promise<{ header: Header; body: string }> {
+	const split = splitHeader(file, await Bun.file(file).text());
+	if (split === undefined) throw new Error(`${file} has no +++ header`);
+	const checked = Header.safeParse(split.toml);
 	if (!checked.success) {
 		throw new Error(`${file}: ${z.prettifyError(checked.error)}`);
 	}
-	return { header: checked.data, body: text.slice(end + headerEnd.length) };
+	return { header: checked.data, body: split.body };
 }
 
-function ticketText(header: Header, body: string): string {
+async function readGoalFile(
+	file: string,
+): Promise<{ workflow: string; body: string }> {
+	const split = splitHeader(file, await Bun.file(file).text());
+	if (split === undefined) {
+		throw new Error(
+			`${file} has no +++ header naming its Workflow; start it with the lines +++, workflow = "<name>", +++`,
+		);
+	}
+	const checked = GoalHeader.safeParse(split.toml);
+	if (!checked.success) {
+		throw new Error(
+			`${file}: its header names no Workflow; add the line workflow = "<name>"`,
+		);
+	}
+	// A human editing the header by hand may leave a blank line under it.
+	return {
+		workflow: checked.data.workflow,
+		body: split.body.replace(/^\n+/, ""),
+	};
+}
+
+function headedText(header: Record<string, unknown>, body: string): string {
 	return `${headerStart}${stringify(header)}+++\n${body}`;
 }
 
@@ -466,7 +510,7 @@ async function rewriteHeader<Change>(
 	// Rename over the Ticket so a crash leaves the old file or the new one,
 	// never half of each.
 	const temp = `${file}.tmp`;
-	await Bun.write(temp, ticketText(header, body));
+	await Bun.write(temp, headedText(header, body));
 	await rename(temp, file);
 	return changed;
 }

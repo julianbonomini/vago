@@ -1,13 +1,19 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
 import { makeFakeClaude } from "./fake-claude.ts";
-import { makeProject, readTicketFile, runPunt, startPunt } from "./project.ts";
+import {
+	goalText,
+	makeProject,
+	readTicketFile,
+	runPunt,
+	startPunt,
+} from "./project.ts";
 
 const goalDir = ".punt/goals/hello";
 
 function project(idleTimeout: string): Promise<string> {
 	return makeProject({
-		".punt/workflow.toml": `idle_timeout = "${idleTimeout}"
+		".punt/workflows/test.toml": `idle_timeout = "${idleTimeout}"
 harness = "claude-code"
 model   = "opus"
 
@@ -17,7 +23,7 @@ type   = "agent"
 prompt = "prompts/implement.md"
 `,
 		".punt/prompts/implement.md": "Implement it.\n",
-		[`${goalDir}/goal.md`]: "# Hello\n",
+		[`${goalDir}/goal.md`]: goalText("test"),
 		[`${goalDir}/tickets/01-greet.md`]: `+++\nstatus = "ready"\n+++\n\n# Greet\n`,
 	});
 }

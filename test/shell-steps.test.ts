@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
-import { makeProject, readTicketFile, runPunt } from "./project.ts";
+import { goalText, makeProject, readTicketFile, runPunt } from "./project.ts";
 
 const workflow = `
 [[steps]]
@@ -30,8 +30,8 @@ const ticketPath = `${goalDir}/tickets/01-say-hello.md`;
 
 test("a Ticket goes through every shell Step and ends done", async () => {
 	const root = await makeProject({
-		".punt/workflow.toml": workflow,
-		[`${goalDir}/goal.md`]: "# Hello\n",
+		".punt/workflows/test.toml": workflow,
+		[`${goalDir}/goal.md`]: goalText("test"),
 		[ticketPath]: ticket,
 	});
 
@@ -46,13 +46,13 @@ test("a Ticket goes through every shell Step and ends done", async () => {
 
 test("a shell Step gets the Goal and Ticket names in PUNT_GOAL and PUNT_TICKET", async () => {
 	const root = await makeProject({
-		".punt/workflow.toml": `
+		".punt/workflows/test.toml": `
 [[steps]]
 id   = "names"
 type = "shell"
 run  = 'echo "$PUNT_GOAL $PUNT_TICKET"'
 `,
-		[`${goalDir}/goal.md`]: "# Hello\n",
+		[`${goalDir}/goal.md`]: goalText("test"),
 		[ticketPath]: ticket,
 	});
 
@@ -65,8 +65,8 @@ run  = 'echo "$PUNT_GOAL $PUNT_TICKET"'
 
 test("each Step gets a [[runs]] entry and a log of its stdout and stderr", async () => {
 	const root = await makeProject({
-		".punt/workflow.toml": workflow,
-		[`${goalDir}/goal.md`]: "# Hello\n",
+		".punt/workflows/test.toml": workflow,
+		[`${goalDir}/goal.md`]: goalText("test"),
 		[ticketPath]: ticket,
 	});
 
@@ -93,8 +93,8 @@ test("each Step gets a [[runs]] entry and a log of its stdout and stderr", async
 
 test("stdout shows a start and an end line for each Step", async () => {
 	const root = await makeProject({
-		".punt/workflow.toml": workflow,
-		[`${goalDir}/goal.md`]: "# Hello\n",
+		".punt/workflows/test.toml": workflow,
+		[`${goalDir}/goal.md`]: goalText("test"),
 		[ticketPath]: ticket,
 	});
 
@@ -119,8 +119,8 @@ test("stdout shows a start and an end line for each Step", async () => {
 
 test("header fields Alpha doesn't know survive its rewrites", async () => {
 	const root = await makeProject({
-		".punt/workflow.toml": workflow,
-		[`${goalDir}/goal.md`]: "# Hello\n",
+		".punt/workflows/test.toml": workflow,
+		[`${goalDir}/goal.md`]: goalText("test"),
 		[ticketPath]: `+++\nstatus = "ready"\nnote = "kept"\n+++\n${ticketBody}`,
 	});
 

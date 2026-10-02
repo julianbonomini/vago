@@ -82,13 +82,21 @@ export function printGoalSummary(goal: string, state: GoalState): void {
 }
 
 /**
- * Prints `goal.md`, as `goalBody`, and then in Markdown what the Goal's Runs
- * took and cost: a table with one row per Ticket and a total, and every Run
- * in a collapsed table under it. Made to be a PR description. A Run still
- * going counts toward neither total.
+ * Prints `goal.md` without its header, as `goalBody`, and then in Markdown
+ * the Workflow the Goal names and what the Goal's Runs took and cost: a
+ * table with one row per Ticket and a total, and every Run in a collapsed
+ * table under it. Made to be a PR description. A Run still going counts
+ * toward neither total.
  */
 export function printGoalReport(goalBody: string, state: GoalState): void {
-	const lines = [goalBody.trimEnd(), "", "## Runs", ""];
+	const lines = [
+		goalBody.trimEnd(),
+		"",
+		"## Runs",
+		"",
+		`Workflow: ${state.workflow}`,
+		"",
+	];
 	lines.push("| Ticket | Runs | Took | Cost |", "|---|---:|---:|---:|");
 	const all: TicketRun[] = [];
 	for (const { ticket, runs } of state.tickets) {

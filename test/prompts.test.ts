@@ -1,15 +1,15 @@
 import { expect, test } from "bun:test";
 import { makeFakeClaude } from "./fake-claude.ts";
-import { makeProject, runPunt } from "./project.ts";
+import { goalText, makeProject, runPunt } from "./project.ts";
 
 const goalDir = ".punt/goals/hello";
 const ticketPath = `${goalDir}/tickets/01-say-hello.md`;
 
-// A Project with one ready Ticket and `files` on top, `workflow.toml` and
-// prompts among them.
+// A Project with one ready Ticket and `files` on top, the Workflow
+// `.punt/workflows/test.toml` and prompts among them.
 function promptProject(files: Record<string, string>): Promise<string> {
 	return makeProject({
-		[`${goalDir}/goal.md`]: "# Hello\n",
+		[`${goalDir}/goal.md`]: goalText("test"),
 		[ticketPath]: `+++\nstatus = "ready"\n+++\n\n# Say hello\n`,
 		...files,
 	});
@@ -17,7 +17,7 @@ function promptProject(files: Record<string, string>): Promise<string> {
 
 test("the prompt has each include file under its slot heading", async () => {
 	const root = await promptProject({
-		".punt/workflow.toml": `
+		".punt/workflows/test.toml": `
 harness = "claude-code"
 model   = "opus"
 
@@ -54,7 +54,7 @@ Test through the CLI.
 
 test("a Step's include adds to the Workflow's slots and replaces one with the same name", async () => {
 	const root = await promptProject({
-		".punt/workflow.toml": `
+		".punt/workflows/test.toml": `
 harness = "claude-code"
 model   = "opus"
 
@@ -115,7 +115,7 @@ One owner per decision.
 
 test("a shell check's stdout, stderr and exit code reach a later prompt", async () => {
 	const root = await promptProject({
-		".punt/workflow.toml": `
+		".punt/workflows/test.toml": `
 harness = "claude-code"
 model   = "opus"
 
@@ -151,7 +151,7 @@ Fix what it found.
 
 test("an agent Step's result text reaches a later prompt", async () => {
 	const root = await promptProject({
-		".punt/workflow.toml": `
+		".punt/workflows/test.toml": `
 harness = "claude-code"
 model   = "opus"
 

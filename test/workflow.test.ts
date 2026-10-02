@@ -1,17 +1,17 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
 import { makeFakeClaude } from "./fake-claude.ts";
-import { makeProject, readTicketFile, runPunt } from "./project.ts";
+import { goalText, makeProject, readTicketFile, runPunt } from "./project.ts";
 
 const goalDir = ".punt/goals/hello";
 const ticketPath = `${goalDir}/tickets/01-say-hello.md`;
 const ticket = `+++\nstatus = "ready"\n+++\n\n# Say hello\n`;
 
-// A Project with one ready Ticket and `files` on top, `workflow.toml` and
-// prompts among them.
+// A Project with one ready Ticket and `files` on top, the Workflow
+// `.punt/workflows/test.toml` and prompts among them.
 function workflowProject(files: Record<string, string>): Promise<string> {
 	return makeProject({
-		[`${goalDir}/goal.md`]: "# Hello\n",
+		[`${goalDir}/goal.md`]: goalText("test"),
 		[ticketPath]: ticket,
 		...files,
 	});
@@ -23,9 +23,77 @@ function flagValue(argv: string[], flag: string): string | undefined {
 	return at === -1 ? undefined : argv[at + 1];
 }
 
+// A Workflow of one shell Step `id` that echoes its id.
+function echoWorkflow(id: string): string {
+	return `[[steps]]\nid   = "${id}"\ntype = "shell"\nrun  = "echo ${id}"\n`;
+}
+
+test("punt run runs the Workflow the goal.md header names", async () => {
+	const root = await workflowProject({
+		".punt/workflows/a.toml": echoWorkflow("a"),
+		".punt/workflows/b.toml": echoWorkflow("b"),
+		[`${goalDir}/goal.md`]: goalText("b"),
+	});
+
+	const result = await runPunt(root, ["run", "hello"]);
+
+	expect(result.stderr).toBe("");
+	expect(result.exitCode).toBe(0);
+	const runs = (await readTicketFile(root, ticketPath)).header.runs as Record<
+		string,
+		unknown
+	>[];
+	expect(runs.map((run) => run.step)).toEqual(["b"]);
+	expect(await Bun.file(join(root, goalDir, "logs", "01-b-1.log")).text()).toBe(
+		"b\n",
+	);
+});
+
+test("punt run refuses a Workflow name that isn't in .punt/workflows/, listing what is", async () => {
+	const agentWorkflow = `
+harness = "claude-code"
+model   = "opus"
+
+[[steps]]
+id     = "implement"
+type   = "agent"
+prompt = "prompts/implement.md"
+`;
+	const root = await workflowProject({
+		".punt/workflows/small.toml": agentWorkflow,
+		".punt/workflows/try-hard.toml": agentWorkflow,
+		".punt/prompts/implement.md": "Implement it.\n",
+		[`${goalDir}/goal.md`]: goalText("big"),
+	});
+	const claude = await makeFakeClaude();
+
+	const result = await runPunt(root, ["run", "hello"], claude.env);
+
+	expect(result.exitCode).toBe(1);
+	expect(result.stdout).toBe("");
+	expect(result.stderr).toMatch(
+		/No Workflow "big" in \S*\.punt\/workflows\/: it holds small, try-hard\n/,
+	);
+	expect(await Bun.file(join(root, ticketPath)).text()).toBe(ticket);
+	expect(await claude.calls()).toEqual([]);
+});
+
+test("punt run no longer reads .punt/workflow.toml", async () => {
+	const root = await workflowProject({
+		".punt/workflow.toml": echoWorkflow("a"),
+		[`${goalDir}/goal.md`]: goalText("workflow"),
+	});
+
+	const result = await runPunt(root, ["run", "hello"]);
+
+	expect(result.exitCode).toBe(1);
+	expect(result.stderr).toContain("holds no Workflows");
+	expect(await Bun.file(join(root, ticketPath)).text()).toBe(ticket);
+});
+
 test("a Step's model override reaches claude and other Steps keep the Workflow's", async () => {
 	const root = await workflowProject({
-		".punt/workflow.toml": `
+		".punt/workflows/test.toml": `
 harness = "claude-code"
 model   = "opus"
 
@@ -62,7 +130,7 @@ model  = "sonnet"
 
 test("the Workflow's args are appended to the command and a Step's own args replace them", async () => {
 	const root = await workflowProject({
-		".punt/workflow.toml": `
+		".punt/workflows/test.toml": `
 harness = "claude-code"
 model   = "opus"
 args    = ["--max-turns", "5"]
@@ -201,7 +269,7 @@ test.each([
 	"$problem fails before any Ticket changes, naming the problem",
 	async ({ workflow, files, message }) => {
 		const root = await workflowProject({
-			".punt/workflow.toml": workflow,
+			".punt/workflows/test.toml": workflow,
 			...files,
 		});
 
@@ -209,7 +277,9 @@ test.each([
 
 		expect(result.exitCode).not.toBe(0);
 		expect(result.stdout).toBe("");
-		expect(result.stderr).toContain(join(root, ".punt", "workflow.toml"));
+		expect(result.stderr).toContain(
+			join(root, ".punt", "workflows", "test.toml"),
+		);
 		expect(result.stderr).toContain(message);
 		expect(await Bun.file(join(root, ticketPath)).text()).toBe(ticket);
 	},
@@ -226,14 +296,14 @@ type = "shell"
 run  = "true"
 `;
 	const root = await workflowProject({
-		".punt/workflow.toml": `
+		".punt/workflows/test.toml": `
 harness = "claude-code"
 model   = "opus"
 
 [[steps]]
 id   = "edit"
 type = "shell"
-run  = "cp .punt/edited.toml .punt/workflow.toml && echo Edited. > .punt/prompts/implement.md"
+run  = "cp .punt/edited.toml .punt/workflows/test.toml && echo Edited. > .punt/prompts/implement.md"
 
 [[steps]]
 id     = "implement"
@@ -250,9 +320,9 @@ prompt = "prompts/implement.md"
 
 	expect(result.stderr).toBe("");
 	expect(result.exitCode).toBe(0);
-	expect(await Bun.file(join(root, ".punt", "workflow.toml")).text()).toBe(
-		edited,
-	);
+	expect(
+		await Bun.file(join(root, ".punt", "workflows", "test.toml")).text(),
+	).toBe(edited);
 	const calls = await claude.calls();
 	expect(calls.map((call) => flagValue(call.argv, "--model"))).toEqual([
 		"opus",
