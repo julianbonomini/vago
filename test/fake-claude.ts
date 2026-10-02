@@ -27,6 +27,12 @@ export const permissionDeniedFixture = fixture(
 	"claude-code-permission-denied.jsonl",
 );
 
+/**
+ * A Sonnet session started as Punt starts one whose Workflow has
+ * `args = ["--permission-mode", "acceptEdits"]`.
+ */
+export const acceptEditsFixture = fixture("claude-code-accept-edits.jsonl");
+
 function fixture(name: string): string {
 	return join(import.meta.dir, "fixtures", name);
 }
@@ -44,12 +50,12 @@ export type FakeClaude = {
 
 /**
  * Writes a fake `claude` into a fresh temp directory. Each call replays
- * `replayed`, one of the fixtures above, then runs the shell command
+ * `fixturePath`, one of the fixtures above, then runs the shell command
  * `afterFixture`, such as `exit 3` or `sleep 30`.
  */
 export async function makeFakeClaude(
 	afterFixture = "exit 0",
-	replayed = sessionFixture,
+	fixturePath = sessionFixture,
 ): Promise<FakeClaude> {
 	const dir = await mkdtemp(join(tmpdir(), "punt-fake-claude-"));
 	const program = join(dir, "claude");
@@ -73,7 +79,7 @@ ${afterFixture}
 		env: {
 			PATH: `${dir}:${process.env.PATH}`,
 			FAKE_CLAUDE_DIR: dir,
-			FAKE_CLAUDE_FIXTURE: replayed,
+			FAKE_CLAUDE_FIXTURE: fixturePath,
 		},
 		async calls() {
 			const names = await readdir(callsDir);

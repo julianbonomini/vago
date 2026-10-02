@@ -20,10 +20,17 @@ Spec: [Punt Alpha](../../punt-alpha/spec.md), user stories 37 and 51.
 
 **Blocked by:** none.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A fake `claude` whose fixture reports `"permissionMode": "default"` in `system/init` and exits 0 leaves the Ticket `stuck`, the Goal stops, and `punt run` exits non-zero.
-- [ ] A fake `claude` whose fixture carries a `system/permission_denied` event and exits 0 leaves the Ticket `stuck` the same way.
-- [ ] The `[[runs]]` entry and the `stuck` message name the reason.
-- [ ] A session in `auto` with no denials still ends `ok`.
-- [ ] Fixtures for the new cases are recorded from real `claude -p --output-format stream-json --verbose` sessions: `--model haiku` for the fallback, and a denied call for `permission_denied`.
+- [x] A fake `claude` whose fixture reports `"permissionMode": "default"` in `system/init` and exits 0 leaves the Ticket `stuck`, the Goal stops, and `punt run` exits non-zero.
+- [x] A fake `claude` whose fixture carries a `system/permission_denied` event and exits 0 leaves the Ticket `stuck` the same way.
+- [x] The `[[runs]]` entry and the `stuck` message name the reason.
+- [x] A session in `auto` with no denials still ends `ok`.
+- [x] Fixtures for the new cases are recorded from real `claude -p --output-format stream-json --verbose` sessions: `--model haiku` for the fallback, and a denied call for `permission_denied`.
+
+## Comments
+
+- On Claude Code 2.1.287 a Haiku session's `system/init` reports `auto`, and the fallback to `default` only shows in a later `system/status` event. The Claude Code module reads the mode from both.
+- Auto mode's classifier let every risky call through when the prompt asked for it, so the `permission_denied` fixture comes from a deny rule, `--disallowedTools "Bash(git push:*)"`, in auto mode.
+- The mode asked for comes from the session's argv, so a Workflow that picks another mode through `args` doesn't go stuck on it.
+- The old happy-path fixture was a Haiku recording whose mode was `default`, so it's re-recorded on Sonnet.

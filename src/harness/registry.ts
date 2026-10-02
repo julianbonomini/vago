@@ -13,8 +13,8 @@ export type HarnessSessionReport = {
 	resultText?: string;
 	/**
 	 * The permission mode the session reported running in, when it isn't the
-	 * guarded mode `command` asked for. A Harness can fall back without an
-	 * error when the model doesn't support guarded mode.
+	 * one its command asked for. A Harness can fall back without an error,
+	 * for example when the model doesn't offer the mode asked for.
 	 */
 	permissionModeFallback?: string;
 	/** Set once the Harness has refused one of the session's tool calls. */
@@ -32,11 +32,12 @@ export type Harness = {
 	 */
 	command(model: string, args: readonly string[]): string[];
 	/**
-	 * What one stream line carries. Fields the line doesn't carry are left
-	 * out, so the kernel spreads each result over the last; a line that isn't
-	 * an event it knows gives `{}`.
+	 * What one stream line of the session started with `command`, the argv
+	 * `command()` gave, carries. Fields the line doesn't carry are left out,
+	 * so the kernel spreads each result over the last; a line that isn't an
+	 * event it knows gives `{}`.
 	 */
-	readLine(line: string): HarnessSessionReport;
+	readLine(line: string, command: readonly string[]): HarnessSessionReport;
 	/** The shell command the human runs to resume session `sessionId`. */
 	resumeHint(sessionId: string): string;
 };

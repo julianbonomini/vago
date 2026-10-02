@@ -36,8 +36,9 @@ const ResultEvent = z.object({
 });
 
 /**
- * Claude Code, run headless in its `auto` permission mode. Its stream
- * reports a fallback from `auto` and every tool call Claude Code refused.
+ * Claude Code, run headless in its `auto` permission mode unless the Step's
+ * `args` choose another. Its stream reports a fallback from the mode asked
+ * for and every tool call Claude Code refused.
  */
 export const claudeCode: Harness = {
 	command(model, args) {
@@ -54,7 +55,7 @@ export const claudeCode: Harness = {
 			...args,
 		];
 	},
-	readLine(line) {
+	readLine(line, command) {
 		let event: unknown;
 		try {
 			event = JSON.parse(line);
@@ -67,9 +68,12 @@ export const claudeCode: Harness = {
 		const session = SessionEvent.safeParse(event);
 		if (session.success) {
 			const { session_id, permissionMode } = session.data;
-			// Left out in the guarded mode, so a later event can't clear a
+			// Left out in the mode asked for, so a later event can't clear a
 			// fallback reported earlier.
-			if (permissionMode === undefined || permissionMode === guardedMode) {
+			if (
+				permissionMode === undefined ||
+				permissionMode === askedMode(command)
+			) {
 				return { sessionId: session_id };
 			}
 			return { sessionId: session_id, permissionModeFallback: permissionMode };
@@ -94,3 +98,19 @@ export const claudeCode: Harness = {
 		return `claude --resume ${sessionId}`;
 	},
 };
+
+// The mode `command` asks Claude Code for: the last --permission-mode wins,
+// and --dangerously-skip-permissions wins over any of them.
+function askedMode(command: readonly string[]): string {
+	if (command.includes("--dangerously-skip-permissions")) {
+		return "bypassPermissions";
+	}
+	let mode = guardedMode;
+	for (const [index, arg] of command.entries()) {
+		if (arg === "--permission-mode") mode = command[index + 1] ?? mode;
+		else if (arg.startsWith("--permission-mode=")) {
+			mode = arg.slice("--permission-mode=".length);
+		}
+	}
+	return mode;
+}

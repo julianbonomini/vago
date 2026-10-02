@@ -17,12 +17,10 @@ import {
 import { type AgentStep, buildPrompt, type Step } from "./workflow.ts";
 
 /**
- * How a Run ended: it succeeded, its process exited non-zero, its Harness
- * session ran in permission mode `mode` instead of the guarded one, its
- * Harness refused one of the session's tool calls, its Harness streamed
- * nothing for the Step's `idle_timeout` and was killed, or `punt` got SIGINT
- * or SIGTERM and killed it. The permission outcomes win over the exit code,
- * since a session that couldn't do its work often still exits 0.
+ * How a Run ended. `permission-mode` is a Harness session that ran in `mode`
+ * instead of the mode its command asked for, `permission-denied` one whose
+ * Harness refused a tool call. Either wins over the exit code, since a
+ * session that couldn't do its work often still exits 0.
  */
 export type RunOutcome =
 	| { kind: "ok" }
@@ -137,7 +135,8 @@ async function runAgent(
 		stepOutputs,
 	});
 	const harness = findHarness(step.harness);
-	const child = Bun.spawn(harness.command(step.model, step.args), {
+	const command = harness.command(step.model, step.args);
+	const child = Bun.spawn(command, {
 		cwd: ticket.root,
 		stdin: new Blob([prompt]),
 		stdout: "pipe",
@@ -162,20 +161,29 @@ async function runAgent(
 		);
 		partial = lines.pop() ?? "";
 		for (const line of lines) {
-			session = { ...session, ...harness.readLine(line) };
+			session = { ...session, ...harness.readLine(line, command) };
 		}
 	}
 	clearTimeout(idleTimer);
-	session = { ...session, ...harness.readLine(partial + decoder.decode()) };
+	session = {
+		...session,
+		...harness.readLine(partial + decoder.decode(), command),
+	};
 	const code = await child.exited;
 	// A session out of guarded mode is why its calls were denied, so the
 	// fallback is the reason to name.
+	// A session out of the mode asked for is why its calls were denied, so
+	// the fallback is the reason to name.
 	let outcome: RunOutcome;
-	if (idle) outcome = { kind: "idle-timeout" };
-	else if (session.permissionModeFallback !== undefined) {
+	if (idle) {
+		outcome = { kind: "idle-timeout" };
+	} else if (session.permissionModeFallback !== undefined) {
 		outcome = { kind: "permission-mode", mode: session.permissionModeFallback };
-	} else if (session.permissionDenied) outcome = { kind: "permission-denied" };
-	else outcome = outcomeOf(code);
+	} else if (session.permissionDenied) {
+		outcome = { kind: "permission-denied" };
+	} else {
+		outcome = outcomeOf(code);
+	}
 	return {
 		outcome,
 		session,

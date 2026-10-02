@@ -1,6 +1,10 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
-import { makeFakeClaude, sessionFixture } from "./fake-claude.ts";
+import {
+	acceptEditsFixture,
+	makeFakeClaude,
+	sessionFixture,
+} from "./fake-claude.ts";
 import { makeProject, readTicketFile, runPunt } from "./project.ts";
 
 const workflow = `
@@ -47,6 +51,21 @@ test("a session in auto mode with no denied calls ends ok and the Ticket done", 
 	const result = await runPunt(root, ["run", "hello"], claude.env);
 
 	expect(result.stderr).toBe("");
+	expect(result.exitCode).toBe(0);
+	expect((await readTicketFile(root, ticketPath)).header.status).toBe("done");
+});
+
+test("a session in the permission mode args asked for ends ok", async () => {
+	const root = await makeProject({
+		".punt/workflow.toml": `args = ["--permission-mode", "acceptEdits"]\n${workflow}`,
+		".punt/prompts/implement.md": prompt,
+		[`${goalDir}/goal.md`]: "# Hello\n",
+		[ticketPath]: `+++\nstatus = "ready"\n+++\n${ticketBody}`,
+	});
+	const claude = await makeFakeClaude("exit 0", acceptEditsFixture);
+
+	const result = await runPunt(root, ["run", "hello"], claude.env);
+
 	expect(result.exitCode).toBe(0);
 	expect((await readTicketFile(root, ticketPath)).header.status).toBe("done");
 });

@@ -4,6 +4,7 @@ import {
 	makeFakeClaude,
 	permissionDeniedFixture,
 	permissionModeFallbackFixture,
+	sessionFixture,
 } from "./fake-claude.ts";
 import { makeProject, readTicketFile, runPunt } from "./project.ts";
 
@@ -91,45 +92,46 @@ test("a Step's idle_timeout replaces the Workflow's", async () => {
 	expect(runsOf(greet).map((run) => run.outcome)).toEqual(["idle-timeout"]);
 });
 
-test("a session Claude Code ran outside auto mode leaves the Ticket stuck though claude exits 0", async () => {
-	const root = await stuckProject(agentWorkflow);
-	const claude = await makeFakeClaude("exit 0", permissionModeFallbackFixture);
+const acceptEditsArgs = `args = ["--permission-mode", "acceptEdits"]\n`;
 
-	const result = await runPunt(root, ["run", "hello"], claude.env);
+for (const { session, workflow, fixture, outcome } of [
+	{
+		session: "a session Claude Code ran outside auto mode",
+		workflow: agentWorkflow,
+		fixture: permissionModeFallbackFixture,
+		outcome: "permission-mode default",
+	},
+	{
+		session: "a session in auto mode when args asked for acceptEdits",
+		workflow: acceptEditsArgs + agentWorkflow,
+		fixture: sessionFixture,
+		outcome: "permission-mode auto",
+	},
+	{
+		session: "a session with a denied tool call",
+		workflow: agentWorkflow,
+		fixture: permissionDeniedFixture,
+		outcome: "permission-denied",
+	},
+]) {
+	test(`${session} leaves the Ticket stuck though claude exits 0`, async () => {
+		const root = await stuckProject(workflow);
+		const claude = await makeFakeClaude("exit 0", fixture);
 
-	expect(result.exitCode).not.toBe(0);
-	const greet = await headerOf(root, "01-greet");
-	expect(greet.status).toBe("stuck");
-	expect(runsOf(greet).map((run) => run.outcome)).toEqual([
-		"permission-mode default",
-	]);
-	expect(result.stdout).toContain(
-		"01-greet is stuck after implement: permission-mode default\n",
-	);
-	const wave = await headerOf(root, "02-wave");
-	expect(wave.status).toBe("ready");
-	expect(runsOf(wave)).toEqual([]);
-});
+		const result = await runPunt(root, ["run", "hello"], claude.env);
 
-test("a session with a denied tool call leaves the Ticket stuck though claude exits 0", async () => {
-	const root = await stuckProject(agentWorkflow);
-	const claude = await makeFakeClaude("exit 0", permissionDeniedFixture);
-
-	const result = await runPunt(root, ["run", "hello"], claude.env);
-
-	expect(result.exitCode).not.toBe(0);
-	const greet = await headerOf(root, "01-greet");
-	expect(greet.status).toBe("stuck");
-	expect(runsOf(greet).map((run) => run.outcome)).toEqual([
-		"permission-denied",
-	]);
-	expect(result.stdout).toContain(
-		"01-greet is stuck after implement: permission-denied\n",
-	);
-	const wave = await headerOf(root, "02-wave");
-	expect(wave.status).toBe("ready");
-	expect(runsOf(wave)).toEqual([]);
-});
+		expect(result.exitCode).not.toBe(0);
+		const greet = await headerOf(root, "01-greet");
+		expect(greet.status).toBe("stuck");
+		expect(runsOf(greet).map((run) => run.outcome)).toEqual([outcome]);
+		expect(result.stdout).toContain(
+			`01-greet is stuck after implement: ${outcome}\n`,
+		);
+		const wave = await headerOf(root, "02-wave");
+		expect(wave.status).toBe("ready");
+		expect(runsOf(wave)).toEqual([]);
+	});
+}
 
 const checkWorkflow = (onFail: string) => `
 harness = "claude-code"
