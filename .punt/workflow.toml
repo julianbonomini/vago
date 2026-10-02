@@ -1,7 +1,6 @@
-# Punt's own Workflow: the starter, plus Punt's repo knowledge
-# (docs/architecture.md, CONTEXT.md, docs/adr/) included where a Step needs
-# it. Prompt paths resolve from .punt/, include and shell paths from the repo
-# root. When an ADR is added, add it to the Steps that list the others.
+# The Steps every Ticket goes through, in order. `punt init` copied this
+# file from Punt's starter, and it's yours to change. Prompt paths resolve
+# from .punt/, include and shell paths from the repo root.
 #
 # Git: each Goal has a branch, goal/<goal>, cut from main by its first Ticket.
 # Each Ticket is built on <goal>/<ticket>, cut from the Goal's branch, and
@@ -22,38 +21,27 @@ run  = "sh .punt/scripts/branch.sh"
 id     = "design"
 type   = "agent"
 prompt = "prompts/design.md"
-include.aposd        = ".punt/rules/aposd.md"
-include.style        = ".punt/rules/code-style.md"
-include.architecture = "docs/architecture.md"
-include.context      = "CONTEXT.md"
-include.adr-0001     = "docs/adr/0001-typescript-on-bun-driving-harness-clis.md"
-include.adr-0002     = "docs/adr/0002-kernel-owns-no-git-and-no-workspace.md"
-include.adr-0003     = "docs/adr/0003-tickets-are-untracked-files-only-alpha-writes-status.md"
+include.aposd = ".punt/rules/aposd.md"
+include.style = ".punt/rules/code-style.md"
 
 [[steps]]
 id     = "product"
 type   = "agent"
 prompt = "prompts/product.md"
-include.context = "CONTEXT.md"
 
 [[steps]]
 id     = "architecture"
 type   = "agent"
 prompt = "prompts/architecture.md"
-include.aposd        = ".punt/rules/aposd.md"
-include.style        = ".punt/rules/code-style.md"
-include.architecture = "docs/architecture.md"
-include.adr-0001     = "docs/adr/0001-typescript-on-bun-driving-harness-clis.md"
-include.adr-0002     = "docs/adr/0002-kernel-owns-no-git-and-no-workspace.md"
-include.adr-0003     = "docs/adr/0003-tickets-are-untracked-files-only-alpha-writes-status.md"
+include.aposd = ".punt/rules/aposd.md"
+include.style = ".punt/rules/code-style.md"
 
 [[steps]]
 id     = "implement"
 type   = "agent"
 prompt = "prompts/implement.md"
-include.aposd        = ".punt/rules/aposd.md"
-include.style        = ".punt/rules/code-style.md"
-include.architecture = "docs/architecture.md"
+include.aposd = ".punt/rules/aposd.md"
+include.style = ".punt/rules/code-style.md"
 
 [[steps]]
 id      = "check"
@@ -65,9 +53,8 @@ on_fail = "continue"   # review reads a failed check and fixes it
 id     = "review"
 type   = "agent"
 prompt = "prompts/review.md"
-include.aposd        = ".punt/rules/aposd.md"
-include.style        = ".punt/rules/code-style.md"
-include.architecture = "docs/architecture.md"
+include.aposd = ".punt/rules/aposd.md"
+include.style = ".punt/rules/code-style.md"
 
 [[steps]]
 id   = "merge"
