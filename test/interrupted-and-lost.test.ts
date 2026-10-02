@@ -121,7 +121,9 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 		const [interrupted] = runsOf(greet);
 		expect(interrupted?.outcome).toBe("interrupted");
 		expect(interrupted?.ended).toBeInstanceOf(Date);
-		expect(result.stdout).toContain("01-greet is stuck after implement");
+		expect(result.stdout).toContain(
+			"01-greet is stuck after implement: interrupted",
+		);
 		expect(runsOf(await headerOf(root, "02-wave"))).toEqual([]);
 	});
 }

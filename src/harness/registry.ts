@@ -11,6 +11,14 @@ export type HarnessSessionReport = {
 	costUsd?: number;
 	/** The session's final answer, which later Steps read as its output. */
 	resultText?: string;
+	/**
+	 * The permission mode the session reported running in, when it isn't the
+	 * guarded mode `command` asked for. A Harness can fall back without an
+	 * error when the model doesn't support guarded mode.
+	 */
+	permissionModeFallback?: string;
+	/** Set once the Harness has refused one of the session's tool calls. */
+	permissionDenied?: true;
 };
 
 /**

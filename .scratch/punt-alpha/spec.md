@@ -153,7 +153,7 @@ Recorded in ADR 0001 (TypeScript on Bun, driving Harness CLIs), ADR 0002 (the ke
   - Writes the raw output to the Run's log.
   - Runs the idle timer for agent Steps, resetting it on every streamed line.
   - Kills the process group on SIGINT, SIGTERM or Alpha exiting.
-  - Returns the outcome: `ok`, `exit <n>`, `idle-timeout` or `interrupted`.
+  - Returns the outcome: `ok`, `exit <n>`, `permission-mode <mode>`, `permission-denied`, `idle-timeout` or `interrupted`. An agent Step whose session left the Harness's guarded mode ends `permission-mode <mode>`, naming the mode it fell back to, and one whose Harness refused a tool call ends `permission-denied`. Both fail the Run even when the Harness exits 0.
 - **Prompt builder.** Plain string substitution, with no templating logic:
   - `{{ticket}}` becomes the Ticket's title and body, without the header;
   - `{{goal}}` becomes the body of `goal.md`;
@@ -163,12 +163,12 @@ Recorded in ADR 0001 (TypeScript on Bun, driving Harness CLIs), ADR 0002 (the ke
   Includes merge shallowly: the Step's slots add to the Workflow's, and a slot with the same name replaces the Workflow's. A Step can't remove a slot.
 - **Harness registry and modules.** A compiled-in map from `harness` name to module; Alpha ships `claude-code` only. A module provides three things:
   - **Command:** the command to spawn, given the prompt, model and `args`, including the Harness's guarded mode and JSONL streaming flags;
-  - **Stream reading:** reads one stream line at a time and returns what it carries: session ID, token counts, cost if the Harness reports one, and the final result text that becomes the agent Step's `{{steps.<id>.output}}`;
+  - **Stream reading:** reads one stream line at a time and returns what it carries: session ID, token counts, cost if the Harness reports one, the final result text that becomes the agent Step's `{{steps.<id>.output}}`, the permission mode the session fell back to if it left guarded mode, and whether the Harness refused a tool call;
   - **Resume hint:** the command that resumes a given session, for the `stuck` message.
 
   The kernel owns everything else.
-- **Claude Code module.** Runs `claude -p --output-format stream-json --verbose --permission-mode auto --model <model>`, adding the Step's `args`. It takes the session ID from the `system/init` event and tokens and `total_cost_usd` from the final result event. Its resume hint is `claude --resume <session_id>`. It never adds `--dangerously-skip-permissions`.
-- **Progress printer.** Prints one line when a Step starts and one when it ends: timestamp, Ticket number and slug, Step id, outcome, duration, cost. On exit it prints a Goal summary. On `stuck` it also prints the log path, the resume hint and the reset command. It never prints agent text. Live following is `tail -f` on the log.
+- **Claude Code module.** Runs `claude -p --output-format stream-json --verbose --permission-mode auto --model <model>`, adding the Step's `args`. It takes the session ID from the `system/init` event and tokens and `total_cost_usd` from the final result event. A `permissionMode` other than `auto` in a `system/init` or `system/status` event is a fallback: Claude Code doesn't offer auto mode on every model, and it falls back without an error. A `system/permission_denied` event is a refused tool call. Its resume hint is `claude --resume <session_id>`. It never adds `--dangerously-skip-permissions`.
+- **Progress printer.** Prints one line when a Step starts and one when it ends: timestamp, Ticket number and slug, Step id, outcome, duration, cost. On exit it prints a Goal summary. On `stuck` it also prints the failed Run's outcome, the log path, the resume hint and the reset command. It never prints agent text. Live following is `tail -f` on the log.
 - **Init.** Copies the embedded starter (`workflow.toml`, prompts, starter code-style file) into `.punt/` verbatim and refuses if a Workflow already exists. It adds `.punt/goals/` to `.git/info/exclude`, asks whether the Workflow should be committed, and excludes all of `.punt/` if not.
 
 ### Contracts
@@ -221,7 +221,7 @@ model      = "opus"
 session_id = "3f2a…"
 started    = 2026-10-01T09:12:03Z
 ended      = 2026-10-01T09:31:40Z
-outcome    = "ok"           # ok | exit <n> | idle-timeout | interrupted | lost
+outcome    = "ok"           # ok | exit <n> | permission-mode <mode> | permission-denied | idle-timeout | interrupted | lost
 cost_usd   = 1.84
 tokens     = { input = 412000, output = 18300 }
 log        = "logs/01-implement-1.jsonl"

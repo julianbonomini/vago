@@ -18,12 +18,17 @@ import { type AgentStep, buildPrompt, type Step } from "./workflow.ts";
 
 /**
  * How a Run ended: it succeeded, its process exited non-zero, its Harness
- * streamed nothing for the Step's `idle_timeout` and was killed, or `punt`
- * got SIGINT or SIGTERM and killed it.
+ * session ran in permission mode `mode` instead of the guarded one, its
+ * Harness refused one of the session's tool calls, its Harness streamed
+ * nothing for the Step's `idle_timeout` and was killed, or `punt` got SIGINT
+ * or SIGTERM and killed it. The permission outcomes win over the exit code,
+ * since a session that couldn't do its work often still exits 0.
  */
 export type RunOutcome =
 	| { kind: "ok" }
 	| { kind: "exit"; code: number }
+	| { kind: "permission-mode"; mode: string }
+	| { kind: "permission-denied" }
 	| { kind: "idle-timeout" }
 	| { kind: "interrupted" };
 
@@ -107,10 +112,7 @@ export async function runStep(
 	}
 	if (interrupt.signal.aborted) outcome = { kind: "interrupted" };
 	const ended = new Date();
-	// The header and the Step line spell the outcome the same way. Each kind
-	// is named as it's spelled, so only `exit` needs its code added.
-	const spelled =
-		outcome.kind === "exit" ? `exit ${outcome.code}` : outcome.kind;
+	const spelled = spellOutcome(outcome);
 	await recordRunEnd(entry, spelled, ended, session);
 	printStepEnded(ticket, step.id, spelled, started, ended, session?.costUsd);
 	return { outcome, output, log: entry.log, resumeHint };
@@ -166,14 +168,35 @@ async function runAgent(
 	clearTimeout(idleTimer);
 	session = { ...session, ...harness.readLine(partial + decoder.decode()) };
 	const code = await child.exited;
+	// A session out of guarded mode is why its calls were denied, so the
+	// fallback is the reason to name.
+	let outcome: RunOutcome;
+	if (idle) outcome = { kind: "idle-timeout" };
+	else if (session.permissionModeFallback !== undefined) {
+		outcome = { kind: "permission-mode", mode: session.permissionModeFallback };
+	} else if (session.permissionDenied) outcome = { kind: "permission-denied" };
+	else outcome = outcomeOf(code);
 	return {
-		outcome: idle ? { kind: "idle-timeout" } : outcomeOf(code),
+		outcome,
 		session,
 		resumeHint:
 			session.sessionId === undefined
 				? undefined
 				: harness.resumeHint(session.sessionId),
 	};
+}
+
+/**
+ * `outcome` as the Ticket header, the Step lines and the `stuck` message all
+ * spell it: `ok`, `exit 1`, `permission-mode default`.
+ */
+export function spellOutcome(outcome: RunOutcome): string {
+	// Each kind is named as it's spelled, so only the ones with a value add it.
+	if (outcome.kind === "exit") return `exit ${outcome.code}`;
+	if (outcome.kind === "permission-mode") {
+		return `permission-mode ${outcome.mode}`;
+	}
+	return outcome.kind;
 }
 
 // At once when the signal came while the Step was still being set up.

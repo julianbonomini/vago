@@ -40,7 +40,7 @@ async function agentProject(): Promise<string> {
 	});
 }
 
-test("a Ticket goes through an agent Step on the fake claude and ends done", async () => {
+test("a session in auto mode with no denied calls ends ok and the Ticket done", async () => {
 	const root = await agentProject();
 	const claude = await makeFakeClaude();
 
@@ -109,10 +109,10 @@ test("[[runs]] records the Harness, model, session, tokens and cost", async () =
 		harness: "claude-code",
 		model: "opus",
 		outcome: "ok",
-		session_id: "e6a2f4b4-6e31-4a33-90b1-ef815ed07b42",
+		session_id: "f679b9c4-e75a-4f73-affd-0dedfe161e0d",
 		// The fixture's fresh, cache-written and cache-read input tokens.
-		tokens: { input: 9 + 8397 + 14160, output: 41 },
-		cost_usd: 0.018424,
+		tokens: { input: 2 + 2326 + 4773, output: 3 },
+		cost_usd: 0.010292599999999999,
 		log: "logs/01-implement-1.jsonl",
 	});
 });
@@ -136,5 +136,5 @@ test("the end line shows the Run's cost", async () => {
 	const result = await runPunt(root, ["run", "hello"], claude.env);
 
 	const lines = result.stdout.trimEnd().split("\n");
-	expect(lines[1]).toMatch(/^\S+ 01-say-hello implement ok \d+\.\ds \$0\.02$/);
+	expect(lines[1]).toMatch(/^\S+ 01-say-hello implement ok \d+\.\ds \$0\.01$/);
 });
