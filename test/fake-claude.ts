@@ -25,9 +25,12 @@ export type FakeClaude = {
 
 /**
  * Writes a fake `claude` into a fresh temp directory. Each call replays the
- * fixture, then runs the shell command `then`, such as `exit 3` or `sleep 30`.
+ * fixture, then runs the shell command `afterFixture`, such as `exit 3` or
+ * `sleep 30`.
  */
-export async function makeFakeClaude(then = "exit 0"): Promise<FakeClaude> {
+export async function makeFakeClaude(
+	afterFixture = "exit 0",
+): Promise<FakeClaude> {
 	const dir = await mkdtemp(join(tmpdir(), "punt-fake-claude-"));
 	const program = join(dir, "claude");
 	// Plain sh so the fake starts as fast as the real CLI would, and one
@@ -40,7 +43,7 @@ mkdir "$call"
 printf '%s\\n' "$@" > "$call/argv"
 cat > "$call/stdin"
 cat "$FAKE_CLAUDE_FIXTURE"
-${then}
+${afterFixture}
 `;
 	await Bun.write(program, script);
 	await chmod(program, 0o755);

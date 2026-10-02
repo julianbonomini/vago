@@ -91,7 +91,8 @@ export async function runStep(
 		closeSync(fd);
 	}
 	const ended = new Date();
-	// The header and the Step line spell the outcome the same way.
+	// The header and the Step line spell the outcome the same way. Each kind
+	// is named as it's spelled, so only `exit` needs its code added.
 	const spelled =
 		outcome.kind === "exit" ? `exit ${outcome.code}` : outcome.kind;
 	await recordRunEnd(entry, spelled, ended, session);
@@ -101,8 +102,6 @@ export async function runStep(
 
 // The log gets the raw stream and stderr together, so a Harness that fails
 // before streaming (bad login, unknown model) still leaves its reason there.
-// An idle Harness is killed with its whole process group: a tool it started
-// would otherwise hold stdout open, and the stream would never end.
 async function runAgent(
 	step: AgentStep,
 	ticket: Ticket,
@@ -111,7 +110,7 @@ async function runAgent(
 ): Promise<{
 	outcome: RunOutcome;
 	session: HarnessSessionReport;
-	resumeHint: string | undefined;
+	resumeHint?: string;
 }> {
 	const prompt = buildPrompt(step, {
 		ticket: await readTicketBody(ticket),
@@ -131,6 +130,8 @@ async function runAgent(
 	let idle = false;
 	const idleTimer = setTimeout(() => {
 		idle = true;
+		// The whole process group, since a tool the Harness started would
+		// otherwise hold stdout open and the stream would never end.
 		process.kill(-child.pid, "SIGKILL");
 	}, step.idleTimeoutMs);
 	let session: HarnessSessionReport = {};

@@ -1,6 +1,6 @@
-// The main loop of `punt run`: takes the Goal's ready Tickets one at a time
-// and runs each through every Step of the Workflow. Hides the order of a
-// Goal's lifecycle.
+// The main loop of `punt run`, which takes the Goal's ready Tickets one at a
+// time and runs each through every Step of the Workflow, and when a Ticket
+// goes stuck and gets reset. Hides the order of a Goal's lifecycle.
 
 import { printGoalSummary, printStuck, printStuckRefusal } from "./progress.ts";
 import { runStep } from "./step-runner.ts";
