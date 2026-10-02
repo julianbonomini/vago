@@ -118,6 +118,9 @@ test("answering commit lets git see the Workflow but never the Goals", async () 
 	expect(init.stderr).toBe("");
 	expect(init.exitCode).toBe(0);
 	expect(init.stdout).toContain("[y/N]");
+	expect(init.stdout).toContain(
+		"Goals and Tickets in .punt-goals/ stay out of git",
+	);
 	await runPunt(root, ["goal", "new", "hello", "--workflow", "small"]);
 	const starterFiles = await filesIn(starter);
 	expect(untrackedFiles(root)).toEqual([
