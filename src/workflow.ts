@@ -4,16 +4,19 @@
 import { join } from "node:path";
 import { z } from "zod";
 
+/** A Step that runs `run` with `sh -c` in the repo root. */
 export type ShellStep = {
-	id: string;
-	type: "shell";
-	run: string;
+	readonly id: string;
+	readonly type: "shell";
+	readonly run: string;
 };
 
+/** One entry of a Workflow. Agent Steps join this union in ticket 03. */
 export type Step = ShellStep;
 
+/** A Project's Workflow, frozen: nothing changes it once it's loaded. */
 export type Workflow = {
-	steps: Step[];
+	readonly steps: readonly Step[];
 };
 
 const WorkflowFile = z.object({
@@ -42,11 +45,14 @@ export async function loadWorkflow(root: string): Promise<Workflow> {
 	try {
 		toml = Bun.TOML.parse(await file.text());
 	} catch (error) {
-		throw new Error(`${path} is not valid TOML: ${String(error)}`);
+		throw new Error(`${path} is not valid TOML: ${error}`);
 	}
 	const checked = WorkflowFile.safeParse(toml);
 	if (!checked.success) {
 		throw new Error(`${path}: ${z.prettifyError(checked.error)}`);
 	}
-	return checked.data;
+	// Frozen so a Goal runs every Ticket with the Workflow it started with.
+	return Object.freeze({
+		steps: Object.freeze(checked.data.steps.map((step) => Object.freeze(step))),
+	});
 }

@@ -9,6 +9,11 @@ import type { Step } from "./workflow.ts";
 /** How a Step ended: it succeeded, or its process exited non-zero. */
 export type Outcome = { kind: "ok" } | { kind: "exit"; code: number };
 
+/** The outcome as the Ticket header and the Step lines spell it: `ok`, `exit 1`. */
+export function outcomeText(outcome: Outcome): string {
+	return outcome.kind === "ok" ? "ok" : `exit ${outcome.code}`;
+}
+
 /**
  * Runs `step` with `root` as its working directory and waits for it to end.
  * Its stdout and stderr, interleaved as they were written, go to the file at

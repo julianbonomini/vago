@@ -23,6 +23,7 @@ export async function makeProject(
 	return root;
 }
 
+/** What a finished `punt` child left behind. */
 export type PuntExit = {
 	exitCode: number;
 	stdout: string;

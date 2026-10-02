@@ -11,10 +11,10 @@ Spec: [Punt Alpha](../../punt-alpha/spec.md).
 
 **Blocked by:** 01 (How we work).
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] `bun run check` runs `tsc --noEmit`, Biome and `bun test`, and passes.
-- [ ] A test builds a temp repo with `.punt/workflow.toml` and one Ticket, runs `punt run <goal>`, and sees exit 0 and the Ticket `done`.
-- [ ] The Ticket header has one `[[runs]]` entry per Step with outcome `ok` and a log path, and the body is unchanged.
-- [ ] Each Step's stdout and stderr are in its `.log` file.
-- [ ] stdout shows start and end lines with timestamp, Ticket, Step, outcome and duration.
+- [x] `bun run check` runs `tsc --noEmit`, Biome and `bun test`, and passes.
+- [x] A test builds a temp repo with `.punt/workflow.toml` and one Ticket, runs `punt run <goal>`, and sees exit 0 and the Ticket `done`.
+- [x] The Ticket header has one `[[runs]]` entry per Step with outcome `ok` and a log path, and the body is unchanged.
+- [x] Each Step's stdout and stderr are in its `.log` file.
+- [x] stdout shows start and end lines with timestamp, Ticket, Step, outcome and duration.

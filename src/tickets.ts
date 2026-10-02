@@ -6,10 +6,12 @@ import { readdir, rename } from "node:fs/promises";
 import { join } from "node:path";
 import { parse, stringify } from "smol-toml";
 import { z } from "zod";
-import type { Outcome } from "./step-runner.ts";
+import { type Outcome, outcomeText } from "./step-runner.ts";
 
+/** Where a Ticket stands. Only Alpha writes it. */
 export type TicketStatus = "ready" | "running" | "done" | "stuck";
 
+/** One Ticket file of a Goal, named the way the human named the file. */
 export type Ticket = {
 	root: string;
 	goal: string;
@@ -20,14 +22,14 @@ export type Ticket = {
 
 /** A Run whose `[[runs]]` entry has been written but not yet ended. */
 export type Run = {
-	ticket: Ticket;
-	/** The entry's 1-based position in the Ticket's `[[runs]]`. */
-	position: number;
 	/** Absolute path the Step's output must be written to. */
 	log: string;
+	/** Fills in the Run's `[[runs]]` entry with when and how it ended. */
+	end: (outcome: Outcome, ended: Date) => Promise<void>;
 };
 
-const RunEntry = z.object({
+// Loose objects, so header fields Alpha doesn't know survive a rewrite.
+const RunEntry = z.looseObject({
 	step: z.string(),
 	started: z.date(),
 	ended: z.date().optional(),
@@ -35,7 +37,7 @@ const RunEntry = z.object({
 	log: z.string(),
 });
 
-const Header = z.object({
+const Header = z.looseObject({
 	status: z.enum(["ready", "running", "done", "stuck"]),
 	blocked_by: z.array(z.number().int()).optional(),
 	runs: z.array(RunEntry).optional(),
@@ -89,47 +91,37 @@ export async function setStatus(
 /**
  * Appends a `[[runs]]` entry for `step`, started at `started`, so a crash
  * mid-Step still leaves a trace. Returns the Run, which carries the path its
- * log must be written to.
+ * log must be written to and ends the entry when the Step is over.
  */
 export async function startRun(
 	ticket: Ticket,
 	step: string,
 	started: Date,
 ): Promise<Run> {
-	let position = 0;
-	let logName = "";
-	await rewriteHeader(ticketFile(ticket), (header) => {
+	const file = ticketFile(ticket);
+	const { position, log } = await rewriteHeader(file, (header) => {
 		const runs = header.runs ?? [];
-		position = runs.length + 1;
+		const position = runs.length + 1;
 		// The position in the name gives a reset Ticket's new Runs new logs.
-		const number = String(ticket.number).padStart(2, "0");
-		logName = `logs/${number}-${step}-${position}.log`;
-		runs.push({ step, started, log: logName });
+		const paddedNumber = String(ticket.number).padStart(2, "0");
+		const log = `logs/${paddedNumber}-${step}-${position}.log`;
+		runs.push({ step, started, log });
 		header.runs = runs;
+		return { position, log };
 	});
 	return {
-		ticket,
-		position,
-		log: join(goalFolder(ticket.root, ticket.goal), logName),
+		log: join(goalFolder(ticket.root, ticket.goal), log),
+		end: async (outcome, ended) => {
+			await rewriteHeader(file, (header) => {
+				const entry = header.runs?.[position - 1];
+				if (entry === undefined) {
+					throw new Error(`${file} has no [[runs]] entry ${position}`);
+				}
+				entry.ended = ended;
+				entry.outcome = outcomeText(outcome);
+			});
+		},
 	};
-}
-
-/** Fills in the Run's `[[runs]]` entry with when and how it ended. */
-export async function endRun(
-	run: Run,
-	outcome: Outcome,
-	ended: Date,
-): Promise<void> {
-	await rewriteHeader(ticketFile(run.ticket), (header) => {
-		const entry = header.runs?.[run.position - 1];
-		if (entry === undefined) {
-			throw new Error(
-				`${ticketFile(run.ticket)} has no [[runs]] entry ${run.position}`,
-			);
-		}
-		entry.ended = ended;
-		entry.outcome = outcome.kind === "ok" ? "ok" : `exit ${outcome.code}`;
-	});
 }
 
 function goalFolder(root: string, goal: string): string {
@@ -154,6 +146,8 @@ async function readTicketFile(
 	}
 	let toml: unknown;
 	try {
+		// smol-toml, not Bun.TOML: Bun parses datetimes into Temporal values
+		// that smol-toml's stringify can't write back, and headers round-trip.
 		toml = parse(text.slice(headerStart.length, end + 1));
 	} catch (error) {
 		throw new Error(`${file} has a header that isn't valid TOML: ${error}`);
@@ -165,15 +159,16 @@ async function readTicketFile(
 	return { header: checked.data, body: text.slice(end + headerEnd.length) };
 }
 
-async function rewriteHeader(
+async function rewriteHeader<Change>(
 	file: string,
-	change: (header: Header) => void,
-): Promise<void> {
+	change: (header: Header) => Change,
+): Promise<Change> {
 	const { header, body } = await readTicketFile(file);
-	change(header);
+	const changed = change(header);
 	// Rename over the Ticket so a crash leaves the old file or the new one,
 	// never half of each.
 	const temp = `${file}.tmp`;
 	await Bun.write(temp, `${headerStart}${stringify(header)}+++\n${body}`);
 	await rename(temp, file);
+	return changed;
 }

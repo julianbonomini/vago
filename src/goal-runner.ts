@@ -4,7 +4,7 @@
 
 import { printStepEnded, printStepStarted } from "./progress.ts";
 import { runStep } from "./step-runner.ts";
-import { endRun, nextReadyTicket, setStatus, startRun } from "./tickets.ts";
+import { nextReadyTicket, setStatus, startRun } from "./tickets.ts";
 import { loadWorkflow } from "./workflow.ts";
 
 /** How `punt run` left the Goal: every Ticket `done`, or not. */
@@ -28,7 +28,7 @@ export async function runGoal(root: string, goal: string): Promise<GoalEnd> {
 			printStepStarted(ticket, step.id, started);
 			const outcome = await runStep(step, root, run.log);
 			const ended = new Date();
-			await endRun(run, outcome, ended);
+			await run.end(outcome, ended);
 			printStepEnded(ticket, step.id, outcome, started, ended);
 			// TODO(07): a failed Step marks the Ticket stuck.
 			if (outcome.kind !== "ok") return "unfinished";

@@ -104,3 +104,15 @@ test("stdout shows a start and an end line for each Step", async () => {
 		new RegExp(`^${time} 01-say-hello check ok \\d+\\.\\ds$`),
 	);
 });
+
+test("header fields Alpha doesn't know survive its rewrites", async () => {
+	const root = await makeProject({
+		".punt/workflow.toml": workflow,
+		[ticketPath]: `+++\nstatus = "ready"\nnote = "kept"\n+++\n${ticketBody}`,
+	});
+
+	await runPunt(root, ["run", "hello"]);
+
+	const { header } = await readTicket(root);
+	expect(header.note).toBe("kept");
+});

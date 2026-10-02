@@ -1,7 +1,7 @@
 // Everything `punt run` prints to stdout while it runs: one line when a Step
 // starts and one when it ends. Hides the line formats and how durations read.
 
-import type { Outcome } from "./step-runner.ts";
+import { type Outcome, outcomeText } from "./step-runner.ts";
 import type { Ticket } from "./tickets.ts";
 
 /** Prints the line saying `step` started on `ticket` at `started`. */
@@ -21,10 +21,9 @@ export function printStepEnded(
 	started: Date,
 	ended: Date,
 ): void {
-	const outcomeText = outcome.kind === "ok" ? "ok" : `exit ${outcome.code}`;
 	const took = duration(ended.getTime() - started.getTime());
 	console.log(
-		`${timestamp(ended)} ${ticket.name} ${step} ${outcomeText} ${took}`,
+		`${timestamp(ended)} ${ticket.name} ${step} ${outcomeText(outcome)} ${took}`,
 	);
 }
 
