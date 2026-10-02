@@ -44,6 +44,25 @@ test("a Ticket goes through every shell Step and ends done", async () => {
 	expect(body).toBe(ticketBody);
 });
 
+test("a shell Step gets the Goal and Ticket names in PUNT_GOAL and PUNT_TICKET", async () => {
+	const root = await makeProject({
+		".punt/workflow.toml": `
+[[steps]]
+id   = "names"
+type = "shell"
+run  = 'echo "$PUNT_GOAL $PUNT_TICKET"'
+`,
+		[`${goalDir}/goal.md`]: "# Hello\n",
+		[ticketPath]: ticket,
+	});
+
+	await runPunt(root, ["run", "hello"]);
+
+	expect(
+		await Bun.file(join(root, goalDir, "logs", "01-names-1.log")).text(),
+	).toBe("hello 01-say-hello\n");
+});
+
 test("each Step gets a [[runs]] entry and a log of its stdout and stderr", async () => {
 	const root = await makeProject({
 		".punt/workflow.toml": workflow,

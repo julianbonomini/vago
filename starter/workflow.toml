@@ -5,11 +5,12 @@
 # Git: each Goal has a branch, goal/<goal>, cut from main by its first Ticket.
 # Each Ticket is built on <goal>/<ticket>, cut from the Goal's branch, and
 # squash-merged back as one commit. The human merges the Goal's PR to main.
+# Shell Steps get the names in $PUNT_GOAL and $PUNT_TICKET.
 
 harness = "claude-code"
 model   = "claude-opus-5-5"
 # args = []             # appended to the claude command; a Step can set its own
-# idle_timeout = "30m"  # how long claude may print nothing before the Run fails
+idle_timeout = "10m"  # how long claude may print nothing before the Run fails
 
 [[steps]]
 id   = "branch"
