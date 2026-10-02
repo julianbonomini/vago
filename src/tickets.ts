@@ -6,7 +6,7 @@ import { readdir, rename } from "node:fs/promises";
 import { join } from "node:path";
 import { parse, stringify } from "smol-toml";
 import { z } from "zod";
-import type { SessionReport } from "./harness/registry.ts";
+import type { HarnessSessionReport } from "./harness/registry.ts";
 import type { Step } from "./workflow.ts";
 
 /** Where a Ticket stands. Only Alpha writes it. */
@@ -22,10 +22,11 @@ export type Ticket = {
 };
 
 /**
- * A Run whose `[[runs]]` entry has been written but not yet ended. Pass it
- * on unchanged, like a file descriptor, to `recordRunEnd` and the Step lines.
+ * A Run as `recordRunStart` wrote it to `[[runs]]`: started and not yet
+ * ended. Pass it on unchanged, like a file descriptor, to `recordRunEnd` and
+ * the Step lines.
  */
-export type Run = {
+export type StartedRun = {
 	ticket: Ticket;
 	stepId: string;
 	started: Date;
@@ -130,14 +131,14 @@ export async function setStatus(
 /**
  * Appends a `[[runs]]` entry for `step`, started at `started`, naming the
  * Harness and model for an agent Step. Call it before the Step starts, so a
- * crash mid-Step still leaves a trace. Returns the Run, which carries the
+ * crash mid-Step still leaves a trace. Returns the StartedRun, which carries the
  * path its log must be written to.
  */
 export async function recordRunStart(
 	ticket: Ticket,
 	step: Step,
 	started: Date,
-): Promise<Run> {
+): Promise<StartedRun> {
 	const { position, log } = await rewriteHeader(
 		ticketFile(ticket),
 		(header) => {
@@ -175,10 +176,10 @@ export async function recordRunStart(
  * agent Step, what its Harness session reported.
  */
 export async function recordRunEnd(
-	run: Run,
+	run: StartedRun,
 	outcome: Outcome,
 	ended: Date,
-	session?: SessionReport,
+	session?: HarnessSessionReport,
 ): Promise<void> {
 	const file = ticketFile(run.ticket);
 	await rewriteHeader(file, (header) => {

@@ -2,11 +2,11 @@
 // starts and one when it ends. Hides the line formats and how durations and
 // costs read.
 
-import type { SessionReport } from "./harness/registry.ts";
-import { type Outcome, outcomeText, type Run } from "./tickets.ts";
+import type { HarnessSessionReport } from "./harness/registry.ts";
+import { type Outcome, outcomeText, type StartedRun } from "./tickets.ts";
 
 /** Prints the line saying the Run's Step started on its Ticket. */
-export function printStepStarted(run: Run): void {
+export function printStepStarted(run: StartedRun): void {
 	console.log(
 		`${timestamp(run.started)} ${run.ticket.name} ${run.stepId} started`,
 	);
@@ -17,10 +17,10 @@ export function printStepStarted(run: Run): void {
  * when its Harness session reported one, what it cost.
  */
 export function printStepEnded(
-	run: Run,
+	run: StartedRun,
 	outcome: Outcome,
 	ended: Date,
-	session?: SessionReport,
+	session?: HarnessSessionReport,
 ): void {
 	const took = duration(ended.getTime() - run.started.getTime());
 	const cost =

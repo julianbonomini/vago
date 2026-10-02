@@ -5,7 +5,7 @@
 import { closeSync, openSync, writeSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
-import { findHarness, type SessionReport } from "./harness/registry.ts";
+import { findHarness, type HarnessSessionReport } from "./harness/registry.ts";
 import { printStepEnded, printStepStarted } from "./progress.ts";
 import {
 	type Outcome,
@@ -31,7 +31,7 @@ export async function runStep(step: Step, ticket: Ticket): Promise<Outcome> {
 	// Step wrote them, which two separate pipes can't promise.
 	const fd = openSync(run.log, "w");
 	let outcome: Outcome;
-	let session: SessionReport | undefined;
+	let session: HarnessSessionReport | undefined;
 	try {
 		if (step.type === "agent") {
 			({ outcome, session } = await runAgent(step, ticket, fd));
@@ -59,7 +59,7 @@ async function runAgent(
 	step: AgentStep,
 	ticket: Ticket,
 	fd: number,
-): Promise<{ outcome: Outcome; session: SessionReport }> {
+): Promise<{ outcome: Outcome; session: HarnessSessionReport }> {
 	const prompt = buildPrompt(step, {
 		ticket: await readTicketBody(ticket),
 		goal: await readGoalBody(ticket),
@@ -71,7 +71,7 @@ async function runAgent(
 		stdout: "pipe",
 		stderr: fd,
 	});
-	let session: SessionReport = {};
+	let session: HarnessSessionReport = {};
 	const decoder = new TextDecoder();
 	let partial = "";
 	for await (const chunk of child.stdout) {
