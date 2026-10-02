@@ -3,7 +3,7 @@
 // Every header rewrite is atomic and keeps the body byte for byte.
 
 import { existsSync } from "node:fs";
-import { readdir, rename } from "node:fs/promises";
+import { mkdir, readdir, rename } from "node:fs/promises";
 import { join } from "node:path";
 import { parse, stringify } from "smol-toml";
 import { z } from "zod";
@@ -78,6 +78,24 @@ export type GoalState = {
 };
 
 type TicketHeader = { ticket: Ticket; header: Header };
+
+/**
+ * Creates Goal `goal` with a `goal.md` titled with its name, for the human
+ * to describe the outcome in, and an empty `tickets/`. Returns the path of
+ * `goal.md`. Throws an Error naming the file when the Goal already exists,
+ * or naming the problem when `goal` isn't a valid name.
+ */
+export async function createGoal(root: string, goal: string): Promise<string> {
+	checkName("Goal name", goal);
+	const folder = goalFolder(root, goal);
+	const goalFile = join(folder, "goal.md");
+	if (await Bun.file(goalFile).exists()) {
+		throw new Error(`Goal ${goal} already exists: ${goalFile}`);
+	}
+	await mkdir(join(folder, "tickets"), { recursive: true });
+	await Bun.write(goalFile, `# ${goal}\n`);
+	return goalFile;
+}
 
 /**
  * Reads `goal` and checks its format: `goal.md` exists, every `.md` file in
@@ -159,6 +177,40 @@ export async function readGoal(root: string, goal: string): Promise<GoalState> {
 }
 
 /**
+ * Adds a Ticket named `slug` to `goal`, numbered one past its highest
+ * Ticket, with status `ready`, blocked by the Tickets numbered in
+ * `blockedBy`, and a title for the human to fill in. Returns the path of the
+ * new Ticket file. Throws an Error naming the problem when the Goal's format
+ * is bad, as `readGoal` does, a blocker isn't a Ticket of the Goal, or
+ * `slug` isn't a valid name.
+ */
+export async function addTicket(
+	root: string,
+	goal: string,
+	slug: string,
+	blockedBy: number[],
+): Promise<string> {
+	checkName("Ticket slug", slug);
+	const { tickets } = await readGoal(root, goal);
+	for (const blocker of blockedBy) {
+		if (!tickets.some(({ ticket }) => ticket.number === blocker)) {
+			throw new Error(
+				`${slug} can't be blocked by Ticket ${blocker}, which isn't in Goal ${goal}`,
+			);
+		}
+	}
+	const number = Math.max(0, ...tickets.map(({ ticket }) => ticket.number)) + 1;
+	const ticket = { root, goal, name: `${twoDigits(number)}-${slug}`, number };
+	const header: Header =
+		blockedBy.length > 0
+			? { status: "ready", blocked_by: blockedBy }
+			: { status: "ready" };
+	const file = ticketFile(ticket);
+	await Bun.write(file, ticketText(header, `\n# ${slug}\n`));
+	return file;
+}
+
+/**
  * Returns the Ticket's title and body as the human wrote them. The header
  * is never part of it, so agents can't see or set status (ADR 0003).
  */
@@ -204,8 +256,7 @@ export async function recordRunStart(
 			const runs = header.runs ?? [];
 			const position = runs.length + 1;
 			// The position in the name gives a reset Ticket's new Runs new logs.
-			const paddedNumber = String(ticket.number).padStart(2, "0");
-			const logStem = `logs/${paddedNumber}-${step.id}-${position}`;
+			const logStem = `logs/${twoDigits(ticket.number)}-${step.id}-${position}`;
 			const entry =
 				step.type === "agent"
 					? {
@@ -298,6 +349,22 @@ function findBlockerCycle(
 	return undefined;
 }
 
+// The name becomes a folder or file under `.punt/goals/`, so a name that
+// could point anywhere else, like `../x` or `a/b`, is refused.
+function checkName(label: string, name: string): void {
+	if (!/^[\w-]+$/.test(name)) {
+		throw new Error(
+			`${label} "${name}" may hold only letters, digits, - and _`,
+		);
+	}
+}
+
+// Ticket files and logs number Tickets with at least two digits, so a folder
+// listing shows up to 99 Tickets in number order.
+function twoDigits(number: number): string {
+	return String(number).padStart(2, "0");
+}
+
 function goalFolder(root: string, goal: string): string {
 	return join(root, ".punt", "goals", goal);
 }
@@ -333,6 +400,10 @@ async function readTicketFile(
 	return { header: checked.data, body: text.slice(end + headerEnd.length) };
 }
 
+function ticketText(header: Header, body: string): string {
+	return `${headerStart}${stringify(header)}+++\n${body}`;
+}
+
 async function rewriteHeader<Change>(
 	file: string,
 	change: (header: Header) => Change,
@@ -342,7 +413,7 @@ async function rewriteHeader<Change>(
 	// Rename over the Ticket so a crash leaves the old file or the new one,
 	// never half of each.
 	const temp = `${file}.tmp`;
-	await Bun.write(temp, `${headerStart}${stringify(header)}+++\n${body}`);
+	await Bun.write(temp, ticketText(header, body));
 	await rename(temp, file);
 	return changed;
 }
