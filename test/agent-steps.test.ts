@@ -5,7 +5,7 @@ import {
 	makeFakeClaude,
 	sessionFixture,
 } from "./fake-claude.ts";
-import { makeProject, readTicketFile, runPunt } from "./project.ts";
+import { goalText, makeProject, readTicketFile, runPunt } from "./project.ts";
 
 const workflow = `
 harness = "claude-code"
@@ -37,9 +37,12 @@ const ticketPath = `${goalDir}/tickets/01-say-hello.md`;
 
 async function agentProject(): Promise<string> {
 	return makeProject({
-		".punt/workflow.toml": workflow,
+		".punt/workflows/test.toml": workflow,
 		".punt/prompts/implement.md": prompt,
-		[`${goalDir}/goal.md`]: "# Hello\n\nThe CLI greets its user.\n",
+		[`${goalDir}/goal.md`]: goalText(
+			"test",
+			"# Hello\n\nThe CLI greets its user.\n",
+		),
 		[ticketPath]: `+++\nstatus = "ready"\n+++\n${ticketBody}`,
 	});
 }
@@ -57,9 +60,9 @@ test("a session in auto mode with no denied calls ends ok and the Ticket done", 
 
 test("a session in the permission mode args asked for ends ok", async () => {
 	const root = await makeProject({
-		".punt/workflow.toml": `args = ["--permission-mode", "acceptEdits"]\n${workflow}`,
+		".punt/workflows/test.toml": `args = ["--permission-mode", "acceptEdits"]\n${workflow}`,
 		".punt/prompts/implement.md": prompt,
-		[`${goalDir}/goal.md`]: "# Hello\n",
+		[`${goalDir}/goal.md`]: goalText("test"),
 		[ticketPath]: `+++\nstatus = "ready"\n+++\n${ticketBody}`,
 	});
 	const claude = await makeFakeClaude("exit 0", acceptEditsFixture);
@@ -90,7 +93,7 @@ test("claude runs headless in guarded mode on the Workflow's model", async () =>
 	expect(call?.argv).not.toContain("--dangerously-skip-permissions");
 });
 
-test("the prompt has {{ticket}} and {{goal}} substituted and no Ticket header", async () => {
+test("the prompt has {{ticket}} and {{goal}} substituted and no Ticket or Goal header", async () => {
 	const root = await agentProject();
 	const claude = await makeFakeClaude();
 
@@ -110,6 +113,7 @@ The CLI greets its user.
 `);
 	expect(call?.stdin).not.toContain("+++");
 	expect(call?.stdin).not.toContain("status");
+	expect(call?.stdin).not.toContain("workflow =");
 });
 
 test("[[runs]] records the Harness, model, session, tokens and cost", async () => {

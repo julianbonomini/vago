@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makeFakeClaude } from "./fake-claude.ts";
-import { makeProject, readTicketFile, runPunt } from "./project.ts";
+import { goalText, makeProject, readTicketFile, runPunt } from "./project.ts";
 
 const starter = join(import.meta.dir, "..", "starter");
 // A fixed four-Step Workflow (implement, check, review, merge), so the run test
@@ -56,7 +56,7 @@ async function excludeLines(root: string): Promise<string[]> {
 	return exclude.split("\n").filter((line) => !line.startsWith("#"));
 }
 
-test("init copies the starter into .punt/ verbatim and punt run accepts it", async () => {
+test("init copies the starter into .punt/ verbatim and punt run accepts both Workflows", async () => {
 	const root = await makeProject({});
 
 	const init = await runPunt(root, ["init"]);
@@ -65,11 +65,17 @@ test("init copies the starter into .punt/ verbatim and punt run accepts it", asy
 	expect(init.exitCode).toBe(0);
 	await expectStarterIn(root);
 
-	await runPunt(root, ["goal", "new", "hello"]);
-	const run = await runPunt(root, ["run", "hello"]);
+	// A Goal with no Tickets, so neither Workflow runs a Step.
+	for (const workflow of ["try-hard", "small"]) {
+		await Bun.write(
+			join(root, ".punt/goals/hello/goal.md"),
+			goalText(workflow),
+		);
+		const run = await runPunt(root, ["run", "hello"]);
 
-	expect(run.stderr).toBe("");
-	expect(run.exitCode).toBe(0);
+		expect(run.stderr).toBe("");
+		expect(run.exitCode).toBe(0);
+	}
 });
 
 test("the reinstalled binary's init copies the same starter as the source", async () => {
@@ -137,24 +143,46 @@ test("init keeps the Workflow private when the human gives no answer", async () 
 	expect(untrackedFiles(root)).toEqual([]);
 });
 
-test("init refuses a Project that has a Workflow and changes nothing", async () => {
+test("init refuses a Project it already set up and changes nothing", async () => {
 	const root = await makeProject({});
 	await runPunt(root, ["init"], {}, "y\n");
-	await Bun.write(join(root, ".punt/workflow.toml"), "# tuned by hand\n");
+	await Bun.write(
+		join(root, ".punt/workflows/try-hard.toml"),
+		"# tuned by hand\n",
+	);
 	await Bun.write(join(root, ".punt/prompts/review.md"), "Review it.\n");
 	const exclude = await Bun.file(join(root, ".git/info/exclude")).text();
 
 	const again = await runPunt(root, ["init"], {}, "n\n");
 
 	expect(again.exitCode).not.toBe(0);
-	expect(again.stderr).toMatch(/\S*\.punt\/workflow\.toml already exists/);
+	expect(again.stderr).toMatch(/\S*\.punt\/\S+ already exists/);
 	expect(again.stdout).toBe("");
-	expect(await Bun.file(join(root, ".punt/workflow.toml")).text()).toBe(
-		"# tuned by hand\n",
-	);
+	expect(
+		await Bun.file(join(root, ".punt/workflows/try-hard.toml")).text(),
+	).toBe("# tuned by hand\n");
 	expect(await Bun.file(join(root, ".punt/prompts/review.md")).text()).toBe(
 		"Review it.\n",
 	);
+	expect(await Bun.file(join(root, ".git/info/exclude")).text()).toBe(exclude);
+});
+
+test("init refuses a Project laid out the old way and changes nothing", async () => {
+	const root = await makeProject({
+		".punt/workflow.toml": "# tuned by hand\n",
+		".punt/prompts/review.md": "Review it.\n",
+	});
+	const exclude = await Bun.file(join(root, ".git/info/exclude")).text();
+
+	const init = await runPunt(root, ["init"], {}, "n\n");
+
+	expect(init.exitCode).not.toBe(0);
+	expect(init.stderr).toMatch(/\S*\.punt\/prompts\/review\.md already exists/);
+	expect(init.stdout).toBe("");
+	expect(await Bun.file(join(root, ".punt/prompts/review.md")).text()).toBe(
+		"Review it.\n",
+	);
+	expect(existsSync(join(root, ".punt/workflows"))).toBe(false);
 	expect(await Bun.file(join(root, ".git/info/exclude")).text()).toBe(exclude);
 });
 
@@ -162,6 +190,10 @@ test("a Goal goes through a four-Step Workflow on the fake claude to done", asyn
 	const root = await makeProject(await workflowFixture());
 	const claude = await makeFakeClaude();
 	await runPunt(root, ["goal", "new", "hello"]);
+	await Bun.write(
+		join(root, ".punt/goals/hello/goal.md"),
+		goalText("four-steps"),
+	);
 	await runPunt(root, ["ticket", "add", "hello", "greet"]);
 
 	const run = await runPunt(root, ["run", "hello"], claude.env);

@@ -15,14 +15,15 @@ export type GoalEnd = "done" | "unfinished";
  * goes stuck, then prints the Goal summary. A Ticket found `running`, left so
  * by a `punt run` that crashed or was killed, goes stuck with its open Run
  * ended `lost`. While any Ticket of the Goal is stuck it runs nothing and
- * prints which ones instead. Throws an Error
- * naming the problem when the Workflow or the Goal's format is bad. The Goal
- * is checked before the first Run and again after each Ticket, so a Ticket
+ * prints which ones instead. Throws an Error naming the problem, before any
+ * Ticket changes, when `goal.md` names no Workflow or one that doesn't exist,
+ * or when the Workflow or the Goal's format is bad. The Goal is checked
+ * before the first Run and again after each Ticket, so a `goal.md` or Ticket
  * file broken mid-Goal stops it there, without a summary.
  */
 export async function runGoal(root: string, goal: string): Promise<GoalEnd> {
-	const workflow = await loadWorkflow(root);
 	let state = await readGoal(root, goal);
+	const workflow = await loadWorkflow(root, state.workflow);
 	// The checkout may hold a lost Run's partial work, so its Ticket goes
 	// stuck for the human to look at instead of running again on top of it.
 	for (const { ticket, status } of state.tickets) {

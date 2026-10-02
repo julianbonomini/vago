@@ -12,6 +12,11 @@ declare module "*/try-hard.toml" {
 	export default text;
 }
 
+declare module "*/small.toml" {
+	const text: string;
+	export default text;
+}
+
 declare module "*.sh" {
 	const text: string;
 	export default text;

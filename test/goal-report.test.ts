@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { makeProject, runPunt } from "./project.ts";
+import { goalText, makeProject, runPunt } from "./project.ts";
 
 const goalDir = ".punt/goals/hello";
 
@@ -51,7 +51,10 @@ log = "logs/02-merge-2.log"
 
 test("goal report prints goal.md and what every Run took and cost", async () => {
 	const root = await makeProject({
-		[`${goalDir}/goal.md`]: "# Hello\n\nSay hello to everyone.\n",
+		[`${goalDir}/goal.md`]: goalText(
+			"small",
+			"# Hello\n\nSay hello to everyone.\n",
+		),
 		[`${goalDir}/tickets/01-greet.md`]: greet,
 		[`${goalDir}/tickets/02-wave.md`]: wave,
 	});
@@ -65,6 +68,8 @@ test("goal report prints goal.md and what every Run took and cost", async () => 
 Say hello to everyone.
 
 ## Runs
+
+Workflow: small
 
 | Ticket | Runs | Took | Cost |
 |---|---:|---:|---:|

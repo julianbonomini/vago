@@ -24,6 +24,11 @@ export async function makeProject(
 	return root;
 }
 
+/** A `goal.md` whose `+++` header names `workflow`, followed by `body`. */
+export function goalText(workflow: string, body = "# Hello\n"): string {
+	return `+++\nworkflow = "${workflow}"\n+++\n${body}`;
+}
+
 /** What a finished `punt` child left behind. */
 export type PuntExit = {
 	exitCode: number;

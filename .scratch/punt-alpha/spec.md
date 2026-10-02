@@ -39,12 +39,12 @@ The bar for Alpha: on Punt's own repo, `punt run <goal>` takes a Goal of two Tic
 4. As the human, I want `punt init` to keep `.punt/goals/` out of git via `.git/info/exclude`, never `.gitignore`, so that Punt leaves no trace in a repo other people share.
 5. As the human, I want `punt init` to ask whether to commit the Workflow and explain what that means, so that I can share a Workflow with a team or keep it private.
 6. As the human, I want the Workflow kept private by default, so that using Punt on someone else's open-source repo doesn't pollute it.
-7. As the human, I want `punt init` to refuse to overwrite an existing `.punt/workflow.toml`, so that I don't lose a Workflow I've tuned.
+7. As the human, I want `punt init` to refuse to overwrite any file already in `.punt/`, so that I don't lose a Workflow or prompt I've tuned.
 8. As the human, I want the starter Workflow shipped inside the binary, so that `punt init` works offline and matches the installed version.
 
 ### Defining the Workflow
 
-9. As the human, I want my Workflow to be a TOML file, `.punt/workflow.toml`, so that I never have to write TypeScript to change how my Project is built.
+9. As the human, I want each Workflow to be a TOML file, `.punt/workflows/<name>.toml`, so that I never have to write TypeScript to change how my Project is built.
 10. As the human, I want to list Steps in order, each with an `id` and a `type` of `agent` or `shell`, so that the flow is linear and easy to read.
 11. As the human, I want an agent Step to point at a prompt file, so that prompts are ordinary Markdown I can version and edit.
 12. As the human, I want my prompts to call my own skills, so that I bring my own way of working instead of Punt's.
@@ -56,7 +56,7 @@ The bar for Alpha: on Punt's own repo, `punt run <goal>` takes a Goal of two Tic
 18. As the human, I want named include slots, Workflow-wide under `[include]` and per Step under `include.<name>`, so that docs like my code style reach every agent prompt.
 19. As the human, I want a per-Step include to add a new slot or replace one with the same name, so that one Step can carry an extra doc without repeating the rest.
 20. As the human, I want an optional `idle_timeout`, Workflow-wide or per Step, defaulting to 30 minutes, so that a stalled Harness doesn't hang my Goal forever.
-21. As the human, I want Alpha to freeze the Workflow when it starts a Goal, so that an agent editing `.punt/` mid-Goal can't weaken the later Tickets.
+21. As the human, I want Alpha to freeze the Workflow the Goal names when it starts a Goal, so that an agent editing `.punt/` mid-Goal can't weaken the later Tickets.
 22. As the human, I want a bad Workflow to fail before any Run starts, with a message naming the problem, so that I never find out halfway through a Goal.
 23. As the human, I want an unknown `harness` name to fail that check, so that a typo doesn't start a broken Run.
 
@@ -73,7 +73,7 @@ The bar for Alpha: on Punt's own repo, `punt run <goal>` takes a Goal of two Tic
 ### Running a Goal
 
 31. As the human, I want `punt run <goal>` to treat every Ticket in that Goal as fair game, so that one command is my signal to start.
-32. As the human, I want `punt run` to check the Goal's format first (the Goal exists, every header parses, every blocker exists, no cycles), so that a broken Ticket file stops Alpha before any work.
+32. As the human, I want `punt run` to check the Goal's format first (the Goal exists, `goal.md` has a header naming its Workflow, every header parses, every blocker exists, no cycles), so that a broken Ticket file stops Alpha before any work.
 33. As the human, I want Alpha to pick the lowest-numbered Ticket that is `ready` and whose blockers are all `done`, so that the order is predictable.
 34. As the human, I want Tickets run one at a time, so that they never fight over my checkout.
 35. As the human, I want each Ticket to go through every Step of the Workflow in order, so that my process is followed every time.
@@ -108,7 +108,7 @@ The bar for Alpha: on Punt's own repo, `punt run <goal>` takes a Goal of two Tic
 58. As the human, I want a Ticket left `running` by a crash to be marked `stuck` with outcome `lost` the next time I run Alpha, so that it's never silently restarted on top of its own partial work.
 59. As the human, I want `punt run` to refuse to start while any Ticket in the Goal is `stuck`, naming them and printing the reset command, so that I have to check the checkout first.
 60. As the human, I want `punt ticket reset <goal> <NN>` to set a `stuck` Ticket back to `ready` and keep its Run history, so that I can continue once I've sorted out the checkout.
-61. As the human, I want to change the Workflow mid-Goal by stopping Alpha, editing `.punt/`, resetting and running again, so that done Tickets stay done and the rest use the new Workflow.
+61. As the human, I want to change the Workflow mid-Goal by stopping Alpha, editing `.punt/` or the `workflow` line in the `goal.md` header, resetting and running again, so that done Tickets stay done and the rest use the new Workflow.
 
 ### Building and extending Punt
 
@@ -133,9 +133,10 @@ Recorded in ADR 0001 (TypeScript on Bun, driving Harness CLIs), ADR 0002 (the ke
 ### Modules
 
 - **CLI.** Parses `init`, `goal new`, `ticket add`, `run` and `ticket reset`, and maps outcomes to exit codes: 0 when the command succeeded or the Goal is done, non-zero otherwise. Which non-zero code it uses carries no meaning.
-- **Workflow loader.** Reads `.punt/workflow.toml` once per `punt run`, checks it and returns a frozen Workflow. The checks: the TOML parses, Step `id`s are unique, every `type` is `agent` or `shell`, prompt and include files exist, every `harness` name is registered, `on_fail` and `idle_timeout` values are valid, and every `{{steps.<id>.output}}` points at an earlier Step. It fails closed with a message naming the problem.
+- **Workflow loader.** Reads `.punt/workflows/<name>.toml` once per `punt run`, for the name the Goal gives, checks it and returns a frozen Workflow. The checks: the TOML parses, Step `id`s are unique, every `type` is `agent` or `shell`, prompt and include files exist, every `harness` name is registered, `on_fail` and `idle_timeout` values are valid, and every `{{steps.<id>.output}}` points at an earlier Step. It fails closed with a message naming the problem, and refuses a name that isn't in `.punt/workflows/`, listing the ones that are.
 - **Ticket store.** Owns `.punt/goals/<goal>/goal.md` and `.punt/goals/<goal>/tickets/NN-<slug>.md`:
   - reads and writes the TOML front matter (`+++`);
+  - reads the `goal.md` header, a `+++` header holding `workflow = "<name>"`. The human may edit it by hand. A Goal without it is refused;
   - runs the Goal format checks: the Goal exists, every header parses, every blocker exists, no cycles;
   - finds the next ready Ticket;
   - writes status and `[[runs]]`.
@@ -156,7 +157,7 @@ Recorded in ADR 0001 (TypeScript on Bun, driving Harness CLIs), ADR 0002 (the ke
   - Returns the outcome: `ok`, `exit <n>`, `permission-mode <mode>`, `permission-denied`, `idle-timeout` or `interrupted`. An agent Step whose session ran in another permission mode than its command asked for ends `permission-mode <mode>`, naming the mode it ran in, and one whose Harness refused a tool call ends `permission-denied`. Both fail the Run even when the Harness exits 0, and both win over a non-zero exit code. A fallback wins over a denial, since it's why the calls were denied.
 - **Prompt builder.** Plain string substitution, with no templating logic:
   - `{{ticket}}` becomes the Ticket's title and body, without the header;
-  - `{{goal}}` becomes the body of `goal.md`;
+  - `{{goal}}` becomes the body of `goal.md`, without its header;
   - `{{steps.<id>.output}}` becomes an earlier Step's output in this Ticket's current pass;
   - each include slot's file is appended after the prompt under a heading with the slot's name.
 
@@ -169,7 +170,7 @@ Recorded in ADR 0001 (TypeScript on Bun, driving Harness CLIs), ADR 0002 (the ke
   The kernel owns everything else.
 - **Claude Code module.** Runs `claude -p --output-format stream-json --verbose --permission-mode auto --model <model>`, adding the Step's `args`. It takes the session ID from the `system/init` event and tokens and `total_cost_usd` from the final result event. A `permissionMode` in a `system/init` or `system/status` event other than the mode the command asked for is a fallback: Claude Code doesn't offer auto mode on every model, and it falls back without an error. The mode asked for is `auto` unless the Step's `args` choose another: the last `--permission-mode` wins, and `--dangerously-skip-permissions` asks for `bypassPermissions`. A `system/permission_denied` event is a refused tool call. Its resume hint is `claude --resume <session_id>`. It never adds `--dangerously-skip-permissions`.
 - **Progress printer.** Prints one line when a Step starts and one when it ends: timestamp, Ticket number and slug, Step id, outcome, duration, cost. On exit it prints a Goal summary. On `stuck` it also prints the failed Run's outcome, the log path, the resume hint and the reset command. It never prints agent text. Live following is `tail -f` on the log.
-- **Init.** Copies the embedded starter (`workflow.toml`, prompts, starter code-style file) into `.punt/` verbatim and refuses if a Workflow already exists. It adds `.punt/goals/` to `.git/info/exclude`, asks whether the Workflow should be committed, and excludes all of `.punt/` if not.
+- **Init.** Copies every file of the embedded starter (both Workflows under `workflows/`, prompts, starter code-style file) into `.punt/` verbatim and refuses if any of them already exists. It adds `.punt/goals/` to `.git/info/exclude`, asks whether the Workflow should be committed, and excludes all of `.punt/` if not.
 
 ### Contracts
 
@@ -246,13 +247,13 @@ Body…
   - the reinstall script (`bun build --compile`, then copy onto `PATH`), run by hand between Goals and never from a Workflow step. Don't name the package script `install`: that name is a package-manager lifecycle hook.
   - the starter Workflow source, which is embedded in the binary;
   - Punt's code-style file;
-  - Punt's own `.punt/workflow.toml`, committed as the reference copy of the starter.
+  - Punt's own Workflow in `.punt/`, committed as the reference copy of the starter.
 - **The bar:** on Punt's own repo, a Goal of two Tickets, where the second is blocked by the first, reaches `done` in one `punt run <goal>`. Each Ticket goes through every Step, serially, with no human touching anything. Smoke runs against throwaway repos don't count.
 
 ## Testing Decisions
 
 - **One seam: the `punt` CLI.**
-  - **Setup:** each test makes a throwaway git repo in a temp directory, writes `.punt/workflow.toml`, prompts and Ticket files, and runs `punt <command>` as a child process.
+  - **Setup:** each test makes a throwaway git repo in a temp directory, writes `.punt/workflows/<name>.toml`, prompts, a `goal.md` with its header, and Ticket files, and runs `punt <command>` as a child process.
   - **What tests check:** the exit code; stdout (the Step lines, the `stuck` message, refusals to start); Ticket files on disk (`status`, `[[runs]]`, a body that hasn't changed); log files. Nothing below the CLI gets its own test seam: not the Workflow loader, the Ticket store, the prompt builder or the Harness registry.
 - **A fake `claude` on `PATH`.**
   - **Scripting:** each test controls the fake. It replays a recorded `stream-json` fixture, then exits 0, exits non-zero, sleeps past a tiny `idle_timeout`, or touches files in the checkout.

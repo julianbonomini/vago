@@ -9,7 +9,7 @@ The whole system the human drives, spanning every Project it serves.
 _Avoid_: factory, orchestrator, platform, AFK
 
 **Punt Alpha**:
-The first, kernel-only release of Punt: it takes a Project's ready Tickets through that Project's Workflow on a Harness without the human present. Inside Punt docs it may be shortened to "alpha".
+The first, kernel-only release of Punt: it takes a Goal's ready Tickets through the Workflow that Goal names on a Harness without the human present. Inside Punt docs it may be shortened to "alpha".
 _Avoid_: v1, MVP
 
 **Project**:
@@ -37,7 +37,7 @@ One Harness session performing one agent Step on one Ticket, such as implement, 
 _Avoid_: session, job, attempt
 
 **Ticket**:
-One unit of work that belongs to a Goal; done when it reaches the end of its Project's Workflow.
+One unit of work that belongs to a Goal; done when it reaches the end of its Goal's Workflow.
 _Avoid_: issue, task, story
 
 **Gate**:

@@ -1,8 +1,11 @@
-// Owns `.punt/workflow.toml` and the prompt and include files it names:
-// reads them once, checks them, returns the Workflow a Goal runs with, and
-// builds agent prompts. Hides the TOML schema, its defaults, how paths
-// resolve, how include slots merge and the `{{…}}` placeholder syntax.
+// Owns `.punt/workflows/<name>.toml` and the prompt and include files each
+// names: which Workflows exist, reading one once, checking it, returning the
+// Workflow a Goal runs with, and building agent prompts. Hides the TOML
+// schema, its defaults, how paths resolve, how include slots merge and the
+// `{{…}}` placeholder syntax.
 
+import { existsSync } from "node:fs";
+import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import { knownHarness } from "./harness/registry.ts";
@@ -120,21 +123,37 @@ const WorkflowFile = z.strictObject({
 });
 
 /**
- * Reads the Workflow of the Project at `root`, with every prompt's text
- * inside. Throws an Error naming the file and the problem when the Workflow
- * is missing or isn't valid TOML, has a key or value its schema doesn't take
- * (an unknown Step `type` or `harness`, a bad `on_fail` or `idle_timeout`),
- * gives two Steps one `id`, leaves an agent Step without a harness or model,
- * names a prompt or include file that doesn't exist, or has a prompt read
- * `{{steps.<id>.output}}` of a Step that doesn't run before it.
+ * Reads `.punt/workflows/<name>.toml` of the Project at `root`, with every
+ * prompt's text inside. Throws an Error listing the Workflows in
+ * `.punt/workflows/` when none is called `name`. Throws an Error naming the
+ * file and the problem when the Workflow isn't valid TOML, has a key or
+ * value its schema doesn't take (an unknown Step `type` or `harness`, a bad
+ * `on_fail` or `idle_timeout`), gives two Steps one `id`, leaves an agent
+ * Step without a harness or model, names a prompt or include file that
+ * doesn't exist, or has a prompt read `{{steps.<id>.output}}` of a Step that
+ * doesn't run before it.
  */
-export async function loadWorkflow(root: string): Promise<Workflow> {
+export async function loadWorkflow(
+	root: string,
+	name: string,
+): Promise<Workflow> {
 	const punt = join(root, ".punt");
-	const path = join(punt, "workflow.toml");
-	const file = Bun.file(path);
-	if (!(await file.exists())) {
-		throw new Error(`${path} not found`);
+	const folder = join(punt, "workflows");
+	// node:fs because Bun.file can't tell whether a directory exists.
+	const names = existsSync(folder)
+		? (await readdir(folder))
+				.filter((fileName) => fileName.endsWith(".toml"))
+				.map((fileName) => fileName.slice(0, -".toml".length))
+				.sort()
+		: [];
+	// Looked up before any path is built, so a name like `../x` never reaches
+	// the filesystem.
+	if (!names.includes(name)) {
+		const held = names.length > 0 ? names.join(", ") : "no Workflows";
+		throw new Error(`No Workflow "${name}" in ${folder}/: it holds ${held}`);
 	}
+	const path = join(folder, `${name}.toml`);
+	const file = Bun.file(path);
 	let toml: unknown;
 	try {
 		toml = Bun.TOML.parse(await file.text());
@@ -246,7 +265,7 @@ async function readIncludes(
 export type PromptTexts = {
 	/** `{{ticket}}`: the Ticket's title and body, never its header. */
 	ticket: string;
-	/** `{{goal}}`: the Goal's `goal.md`. */
+	/** `{{goal}}`: the Goal's `goal.md` without its header. */
 	goal: string;
 	/**
 	 * `{{steps.<id>.output}}`: by Step id, the output of each Step already run

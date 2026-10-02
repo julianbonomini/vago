@@ -1,7 +1,13 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
 import { makeFakeClaude } from "./fake-claude.ts";
-import { makeProject, readTicketFile, runPunt, startPunt } from "./project.ts";
+import {
+	goalText,
+	makeProject,
+	readTicketFile,
+	runPunt,
+	startPunt,
+} from "./project.ts";
 
 const goalDir = ".punt/goals/hello";
 
@@ -32,9 +38,9 @@ prompt = "prompts/implement.md"
 
 test("a Ticket left running goes stuck with outcome lost, and nothing runs", async () => {
 	const root = await makeProject({
-		".punt/workflow.toml": agentWorkflow,
+		".punt/workflows/test.toml": agentWorkflow,
 		".punt/prompts/implement.md": "Implement it.\n",
-		[`${goalDir}/goal.md`]: "# Hello\n",
+		[`${goalDir}/goal.md`]: goalText("test"),
 		// What a `punt run` killed mid-Step leaves: the Run's entry opened
 		// and never closed.
 		[`${goalDir}/tickets/01-greet.md`]: ticket(
@@ -70,10 +76,10 @@ log = "logs/01-implement-1.jsonl"`,
 // keeps the second one unrun.
 function twoTickets(workflow: string): Promise<string> {
 	return makeProject({
-		".punt/workflow.toml": workflow,
+		".punt/workflows/test.toml": workflow,
 		".punt/prompts/implement.md": "Implement it.\n",
 		".punt/prompts/review.md": "Review it.\n",
-		[`${goalDir}/goal.md`]: "# Hello\n",
+		[`${goalDir}/goal.md`]: goalText("test"),
 		[`${goalDir}/tickets/01-greet.md`]: ticket(`status = "ready"`, "Greet"),
 		[`${goalDir}/tickets/02-wave.md`]: ticket(`status = "ready"`, "Wave"),
 	});
