@@ -60,23 +60,22 @@ test("init copies the starter into .punt/ verbatim and punt run accepts it", asy
 	expect(run.exitCode).toBe(0);
 });
 
-test("the compiled binary's init copies the same starter as the source", async () => {
+test("the reinstalled binary's init copies the same starter as the source", async () => {
 	const root = await makeProject({});
-	const binary = join(await mkdtemp(join(tmpdir(), "punt-bin-")), "punt");
-	const build = Bun.spawnSync([
-		process.execPath,
-		"build",
-		"--compile",
-		join(import.meta.dir, "..", "src", "cli.ts"),
-		"--outfile",
-		binary,
-	]);
-	expect(build.exitCode).toBe(0);
+	const home = await mkdtemp(join(tmpdir(), "punt-home-"));
+	// A temp HOME keeps the script away from the human's own installed punt.
+	const reinstall = Bun.spawnSync([process.execPath, "run", "reinstall"], {
+		cwd: join(import.meta.dir, ".."),
+		env: { ...process.env, HOME: home },
+	});
+	expect(reinstall.exitCode).toBe(0);
 
-	const init = Bun.spawnSync([binary, "init"], {
+	const init = Bun.spawnSync([join(home, ".local/bin/punt"), "init"], {
 		cwd: root,
 		stdin: new Blob(["y\n"]),
 	});
+	// The binary is about 60 MB, too big to leave in the temp directory.
+	await rm(home, { recursive: true });
 
 	expect(init.stderr.toString()).toBe("");
 	expect(init.exitCode).toBe(0);

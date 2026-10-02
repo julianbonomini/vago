@@ -25,7 +25,7 @@ When the ticket, the spec or an ADR looks wrong, stop and ask the human. If they
 
 ### The installed `punt`
 
-`bun run reinstall` compiles `src/cli.ts`, with the starter embedded, to `~/.local/bin/punt`. The human runs it between Goals. Sessions and Workflow Steps never run it, so a bad merge can't replace the `punt` that is driving a Goal.
+`bun run reinstall` compiles `src/cli.ts`, with the starter embedded, to `~/.local/bin/punt`, so that directory must be on `PATH`. The human runs it between Goals. Sessions and Workflow Steps never run it, so a bad merge can't replace the `punt` that is driving a Goal.
 
 ### Commits and PRs
 
