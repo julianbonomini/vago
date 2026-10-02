@@ -62,7 +62,7 @@ The bar for Alpha: on Punt's own repo, `punt run <goal>` takes a Goal of two Tic
 
 ### Writing Goals and Tickets
 
-24. As the human, I want `punt goal new <goal>` to create the Goal's folder and `goal.md`, so that I have a place to describe the outcome I want.
+24. As the human, I want `punt goal new <goal> --workflow <name>` to create the Goal's folder and a `goal.md` whose header names that Workflow, refusing a name with no `.punt/workflows/<name>.toml`, so that I have a place to describe the outcome I want and the Goal runs through the Workflow I chose.
 25. As the human, I want `punt ticket add <goal> <slug>` to create the next numbered Ticket file with status `ready`, so that I don't number or format headers by hand.
 26. As the human, I want to name a Ticket's blockers when I add it, so that a Ticket waits for the work it depends on.
 27. As the human, I want Tickets to be Markdown with a TOML header, so that I can write the body in my editor or with my own skills.
@@ -132,11 +132,11 @@ Recorded in ADR 0001 (TypeScript on Bun, driving Harness CLIs), ADR 0002 (the ke
 
 ### Modules
 
-- **CLI.** Parses `init`, `goal new`, `ticket add`, `run` and `ticket reset`, and maps outcomes to exit codes: 0 when the command succeeded or the Goal is done, non-zero otherwise. Which non-zero code it uses carries no meaning.
+- **CLI.** Parses `init`, `goal new`, `ticket add`, `run` and `ticket reset`. `goal new` takes `--workflow <name>`, required, and `--body-file <path>`, optional, in either order. It maps outcomes to exit codes: 0 when the command succeeded or the Goal is done, non-zero otherwise. Which non-zero code it uses carries no meaning.
 - **Workflow loader.** Reads `.punt/workflows/<name>.toml` once per `punt run`, for the name the Goal gives, checks it and returns a frozen Workflow. The checks: the TOML parses, Step `id`s are unique, every `type` is `agent` or `shell`, prompt and include files exist, every `harness` name is registered, `on_fail` and `idle_timeout` values are valid, and every `{{steps.<id>.output}}` points at an earlier Step. It fails closed with a message naming the problem, and refuses a name that isn't in `.punt/workflows/`, listing the ones that are.
 - **Ticket store.** Owns `.punt/goals/<goal>/goal.md` and `.punt/goals/<goal>/tickets/NN-<slug>.md`:
   - reads and writes the TOML front matter (`+++`);
-  - reads the `goal.md` header, a `+++` header holding `workflow = "<name>"`. The human may edit it by hand. A Goal without it is refused;
+  - writes the `goal.md` header at `goal new` and reads it: a `+++` header holding `workflow = "<name>"`. The human may edit it by hand. A Goal without it is refused;
   - runs the Goal format checks: the Goal exists, every header parses, every blocker exists, no cycles;
   - finds the next ready Ticket;
   - writes status and `[[runs]]`.

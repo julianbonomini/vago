@@ -1,14 +1,41 @@
-// The main loop of `punt run`, which takes the Goal's ready Tickets one at a
-// time and runs each through every Step of the Workflow, and when a Ticket
-// goes stuck and gets reset. Hides the order of a Goal's lifecycle.
+// A Goal's lifecycle: creating it with the Workflow it names, the main loop
+// of `punt run`, which takes the Goal's ready Tickets one at a time through
+// every Step of the Workflow, and resetting a stuck Ticket. Hides the order
+// of a Goal's lifecycle.
 
 import { printGoalSummary, printStuck, printStuckRefusal } from "./progress.ts";
 import { runStep, spellOutcome } from "./step-runner.ts";
-import { closeOpenRun, readGoal, setStatus, type Ticket } from "./tickets.ts";
+import {
+	closeOpenRun,
+	createGoal,
+	readGoal,
+	setStatus,
+	type Ticket,
+} from "./tickets.ts";
 import { loadWorkflow, type Workflow } from "./workflow.ts";
 
 /** How `punt run` left the Goal: every Ticket `done`, or not. */
 export type GoalEnd = "done" | "unfinished";
+
+/**
+ * Creates Goal `goal` of the Project at `root`, naming Workflow `workflow`
+ * in its `goal.md` header, with `body` exactly as given after it, or a
+ * `# <goal>` title without one. Returns the path of `goal.md`. Throws an
+ * Error naming the problem, and creates nothing, when `punt run` would
+ * refuse the Workflow (one not in `.punt/workflows/` is refused with the
+ * names that are), the body is empty or only whitespace, the Goal already
+ * exists, or `goal` isn't a valid name.
+ */
+export async function newGoal(
+	root: string,
+	goal: string,
+	workflow: string,
+	body?: string,
+): Promise<string> {
+	// The check punt run makes, so goal new never writes a Goal punt run would refuse.
+	await loadWorkflow(root, workflow);
+	return createGoal(root, goal, workflow, body);
+}
 
 /**
  * Runs `goal` of the Project at `root` until no Ticket is ready or a Ticket

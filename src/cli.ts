@@ -2,14 +2,14 @@
 // The `punt` command: parses arguments, runs the command, prints errors and
 // picks the exit code. Exit 0 means the command succeeded or the Goal is done.
 
-import { resetTicket, runGoal } from "./goal-runner.ts";
+import { newGoal, resetTicket, runGoal } from "./goal-runner.ts";
 import { initProject } from "./init.ts";
 import { printGoalReport } from "./progress.ts";
-import { addTicket, createGoal, readGoal, readGoalBody } from "./tickets.ts";
+import { addTicket, readGoal, readGoalBody } from "./tickets.ts";
 
 const usage = `usage: punt init
        punt run <goal>
-       punt goal new <goal> [--body-file <path>]
+       punt goal new <goal> --workflow <name> [--body-file <path>]
        punt goal report <goal>
        punt ticket add <goal> <slug> [--blocked-by <NN>]... [--body-file <path>]
        punt ticket reset <goal> <NN>`;
@@ -36,13 +36,13 @@ async function main(args: string[]): Promise<number> {
 			return 0;
 		}
 		if (action === "new" && goal !== undefined) {
-			if (extra.length === 0) {
-				console.log(await createGoal(root, goal));
-				return 0;
-			}
-			const [flag, path, ...more] = extra;
-			if (flag === "--body-file" && path !== undefined && more.length === 0) {
-				console.log(await createGoal(root, goal, await readBodyFile(path)));
+			const parsed = goalNewFlags(extra);
+			if (parsed !== undefined) {
+				const body =
+					parsed.bodyFile === undefined
+						? undefined
+						: await readBodyFile(parsed.bodyFile);
+				console.log(await newGoal(root, goal, parsed.workflow, body));
 				return 0;
 			}
 		}
@@ -73,6 +73,40 @@ async function main(args: string[]): Promise<number> {
 	return 1;
 }
 
+// Groups `flags`, read as `--name value` pairs in order, by name: each name
+// maps to its values in the order given, and a name not given maps to none.
+// A value is taken as given, even `-` or one starting with `--`. Returns
+// undefined when `flags` has an odd count or a name not in `names`, so the
+// caller prints the usage.
+function flagValues(
+	flags: string[],
+	names: string[],
+): Map<string, string[]> | undefined {
+	if (flags.length % 2 !== 0) return undefined;
+	const values = new Map<string, string[]>(names.map((name) => [name, []]));
+	for (let index = 0; index < flags.length; index += 2) {
+		const given = values.get(flags[index] ?? "");
+		if (given === undefined) return undefined;
+		given.push(flags[index + 1] ?? "");
+	}
+	return values;
+}
+
+// Reads `--workflow <name>`, given exactly once, and `--body-file <path>`,
+// given at most once, in either order. Returns undefined when `flags` holds
+// anything else, so the caller prints the usage.
+function goalNewFlags(
+	flags: string[],
+): { workflow: string; bodyFile: string | undefined } | undefined {
+	const values = flagValues(flags, ["--workflow", "--body-file"]);
+	if (values === undefined) return undefined;
+	const [workflow, ...moreWorkflows] = values.get("--workflow") ?? [];
+	const bodyFile = values.get("--body-file") ?? [];
+	if (workflow === undefined || moreWorkflows.length > 0) return undefined;
+	if (bodyFile.length > 1) return undefined;
+	return { workflow, bodyFile: bodyFile[0] };
+}
+
 // Reads `--blocked-by <NN>`, given once per blocker, and `--body-file
 // <path>`, given at most once, in any order. The path is taken as given,
 // even `-` or one starting with `--`. Returns undefined when `flags` holds
@@ -80,24 +114,13 @@ async function main(args: string[]): Promise<number> {
 function ticketAddFlags(
 	flags: string[],
 ): { blockedBy: number[]; bodyFile: string | undefined } | undefined {
-	const blockedBy: number[] = [];
-	let bodyFile: string | undefined;
-	for (let index = 0; index < flags.length; index += 2) {
-		const flag = flags[index];
-		const value = flags[index + 1];
-		if (flag === "--blocked-by" && value !== undefined && /^\d+$/.test(value)) {
-			blockedBy.push(Number(value));
-		} else if (
-			flag === "--body-file" &&
-			value !== undefined &&
-			bodyFile === undefined
-		) {
-			bodyFile = value;
-		} else {
-			return undefined;
-		}
-	}
-	return { blockedBy, bodyFile };
+	const values = flagValues(flags, ["--blocked-by", "--body-file"]);
+	if (values === undefined) return undefined;
+	const blockedBy = values.get("--blocked-by") ?? [];
+	const bodyFile = values.get("--body-file") ?? [];
+	if (!blockedBy.every((number) => /^\d+$/.test(number))) return undefined;
+	if (bodyFile.length > 1) return undefined;
+	return { blockedBy: blockedBy.map(Number), bodyFile: bodyFile[0] };
 }
 
 // `-` means stdin, as it does for `cat`. A relative path resolves from the

@@ -108,7 +108,7 @@ test("answering commit lets git see the Workflow but never the Goals", async () 
 	expect(init.stderr).toBe("");
 	expect(init.exitCode).toBe(0);
 	expect(init.stdout).toContain("[y/N]");
-	await runPunt(root, ["goal", "new", "hello"]);
+	await runPunt(root, ["goal", "new", "hello", "--workflow", "small"]);
 	const starterFiles = await filesIn(starter);
 	expect(untrackedFiles(root)).toEqual([
 		".gitignore",
@@ -126,7 +126,7 @@ test("answering don't commit hides all of .punt/ from git", async () => {
 	const init = await runPunt(root, ["init"], {}, "n\n");
 
 	expect(init.exitCode).toBe(0);
-	await runPunt(root, ["goal", "new", "hello"]);
+	await runPunt(root, ["goal", "new", "hello", "--workflow", "small"]);
 	expect(untrackedFiles(root)).toEqual([".gitignore"]);
 	expect(await excludeLines(root)).toEqual([".punt/goals/", ".punt/", ""]);
 	expect(await Bun.file(join(root, ".gitignore")).text()).toBe(
@@ -189,11 +189,7 @@ test("init refuses a Project laid out the old way and changes nothing", async ()
 test("a Goal goes through a four-Step Workflow on the fake claude to done", async () => {
 	const root = await makeProject(await workflowFixture());
 	const claude = await makeFakeClaude();
-	await runPunt(root, ["goal", "new", "hello"]);
-	await Bun.write(
-		join(root, ".punt/goals/hello/goal.md"),
-		goalText("four-steps"),
-	);
+	await runPunt(root, ["goal", "new", "hello", "--workflow", "four-steps"]);
 	await runPunt(root, ["ticket", "add", "hello", "greet"]);
 
 	const run = await runPunt(root, ["run", "hello"], claude.env);

@@ -103,16 +103,17 @@ export type GoalState = {
 type TicketHeader = { ticket: Ticket; header: Header };
 
 /**
- * Creates Goal `goal` with an empty `tickets/` and a `goal.md` that is
- * `body` exactly as given, which is what `{{goal}}` will be. Without `body`,
- * `goal.md` is a `# <goal>` title for the human to fill in. Returns the path
- * of `goal.md`. Throws an Error naming the problem, and creates nothing, when
- * `body` is empty or only whitespace, the Goal already exists, or `goal`
- * isn't a valid name.
+ * Creates Goal `goal` with an empty `tickets/` and a `goal.md` whose `+++`
+ * header names `workflow`, followed by `body` exactly as given, which is what
+ * `{{goal}}` will be. Without `body`, the body is a `# <goal>` title. Doesn't
+ * check that the Workflow exists. Returns the path of `goal.md`. Throws an
+ * Error naming the problem, and creates nothing, when `body` is empty or only
+ * whitespace, the Goal already exists, or `goal` isn't a valid name.
  */
 export async function createGoal(
 	root: string,
 	goal: string,
+	workflow: string,
 	body?: string,
 ): Promise<string> {
 	const folder = goalFolder(root, goal);
@@ -122,7 +123,7 @@ export async function createGoal(
 		throw new Error(`Goal ${goal} already exists: ${goalFile}`);
 	}
 	await mkdir(join(folder, "tickets"), { recursive: true });
-	await Bun.write(goalFile, body ?? `# ${goal}\n`);
+	await Bun.write(goalFile, headedText({ workflow }, body ?? `# ${goal}\n`));
 	return goalFile;
 }
 
@@ -261,7 +262,7 @@ export async function addTicket(
 			? { status: "ready", blocked_by: [...new Set(blockedBy)] }
 			: { status: "ready" };
 	const file = ticketFile(ticket);
-	await Bun.write(file, ticketText(header, body ?? `\n# ${slug}\n`));
+	await Bun.write(file, headedText(header, body ?? `\n# ${slug}\n`));
 	return file;
 }
 
@@ -491,7 +492,7 @@ async function readGoalFile(
 	return { workflow: checked.data.workflow, body: split.body };
 }
 
-function ticketText(header: Header, body: string): string {
+function headedText(header: Record<string, unknown>, body: string): string {
 	return `${headerStart}${stringify(header)}+++\n${body}`;
 }
 
@@ -504,7 +505,7 @@ async function rewriteHeader<Change>(
 	// Rename over the Ticket so a crash leaves the old file or the new one,
 	// never half of each.
 	const temp = `${file}.tmp`;
-	await Bun.write(temp, ticketText(header, body));
+	await Bun.write(temp, headedText(header, body));
 	await rename(temp, file);
 	return changed;
 }
