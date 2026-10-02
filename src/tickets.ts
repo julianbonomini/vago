@@ -56,30 +56,36 @@ const Header = z.looseObject({
 
 type Header = z.infer<typeof Header>;
 
-const ticketFileName = /^(\d+)-.+\.md$/;
+// The name without `.md` is group 1 and the Ticket number group 2.
+const ticketFileName = /^((\d+)-.+)\.md$/;
 const headerStart = "+++\n";
 const headerEnd = "\n+++\n";
 
 /**
- * A Goal's Tickets as they stood when `readGoal` read them. Statuses change
- * as Alpha runs, so read the Goal again after a Ticket moves.
+ * A Goal's Tickets as `readGoal` found them. Statuses change while Alpha
+ * runs, so read the Goal again after a Ticket moves.
  */
 export type GoalState = {
 	/** Every Ticket of the Goal with its status, lowest number first. */
 	tickets: { ticket: Ticket; status: TicketStatus }[];
 	/**
-	 * The lowest-numbered Ticket that is `ready` with every blocker `done`, or
-	 * undefined when no Ticket is ready.
+	 * The lowest-numbered Ticket that is `ready` and whose blockers are all
+	 * `done`, or undefined when there is none.
 	 */
-	next: Ticket | undefined;
+	nextReady: Ticket | undefined;
+	/** Whether every Ticket is `done`, which a Goal with no Tickets is. */
+	done: boolean;
 };
 
+type TicketHeader = { ticket: Ticket; header: Header };
+
 /**
- * Reads `goal` and checks its format: `goal.md` exists, every Ticket header
- * parses, no two Tickets share a number, every blocker is a Ticket of the
- * Goal and no blockers form a cycle. Throws an Error naming the problem and
- * the file when a check fails. A Goal with no `tickets/` folder has no
- * Tickets.
+ * Reads `goal` and checks its format: `goal.md` exists, every `.md` file in
+ * `tickets/` is named `NN-<slug>.md` and has a header that parses, no two
+ * Tickets share a number, every blocker is a Ticket of the Goal, and no
+ * blockers form a cycle. Throws an Error naming the problem and the file or
+ * folder it's in when a check fails. A Goal without a `tickets/` folder has
+ * no Tickets.
  */
 export async function readGoal(root: string, goal: string): Promise<GoalState> {
 	const folder = goalFolder(root, goal);
@@ -88,37 +94,37 @@ export async function readGoal(root: string, goal: string): Promise<GoalState> {
 		throw new Error(`Goal ${goal} not found: ${goalFile} doesn't exist`);
 	}
 	const ticketFolder = join(folder, "tickets");
+	// node:fs because Bun.file can't tell whether a directory exists. Sorted
+	// by name so a shared number is reported the same way on every machine.
 	const fileNames = existsSync(ticketFolder)
 		? (await readdir(ticketFolder)).sort()
 		: [];
-	const read: { ticket: Ticket; header: Header }[] = [];
+	const entries: TicketHeader[] = [];
 	for (const fileName of fileNames) {
+		if (!fileName.endsWith(".md")) continue;
 		const match = ticketFileName.exec(fileName);
-		if (match?.[1] === undefined) continue;
-		const ticket = {
-			root,
-			goal,
-			name: fileName.slice(0, -".md".length),
-			number: Number(match[1]),
-		};
-		read.push({
-			ticket,
-			header: (await readTicketFile(ticketFile(ticket))).header,
-		});
+		if (match?.[1] === undefined || match[2] === undefined) {
+			throw new Error(
+				`${join(ticketFolder, fileName)} isn't named like a Ticket, NN-<slug>.md`,
+			);
+		}
+		const ticket = { root, goal, name: match[1], number: Number(match[2]) };
+		const { header } = await readTicketFile(ticketFile(ticket));
+		entries.push({ ticket, header });
 	}
-	read.sort((a, b) => a.ticket.number - b.ticket.number);
+	entries.sort((a, b) => a.ticket.number - b.ticket.number);
 
-	const byNumber = new Map<number, { ticket: Ticket; header: Header }>();
-	for (const entry of read) {
+	const byNumber = new Map<number, TicketHeader>();
+	for (const entry of entries) {
 		const twin = byNumber.get(entry.ticket.number);
 		if (twin !== undefined) {
 			throw new Error(
-				`${ticketFile(twin.ticket)} and ${entry.ticket.name}.md share number ${entry.ticket.number}`,
+				`${ticketFile(twin.ticket)} and ${ticketFile(entry.ticket)} share number ${entry.ticket.number}`,
 			);
 		}
 		byNumber.set(entry.ticket.number, entry);
 	}
-	for (const { ticket, header } of read) {
+	for (const { ticket, header } of entries) {
 		for (const blocker of header.blocked_by ?? []) {
 			if (!byNumber.has(blocker)) {
 				throw new Error(
@@ -131,11 +137,11 @@ export async function readGoal(root: string, goal: string): Promise<GoalState> {
 	if (cycle !== undefined) {
 		const names = cycle.map((number) => byNumber.get(number)?.ticket.name);
 		throw new Error(
-			`Goal ${goal} has a blocker cycle: ${names.join(" -> ")} (${join(folder, "tickets")})`,
+			`Goal ${goal} has a blocker cycle in ${ticketFolder}: ${names.join(" -> ")}`,
 		);
 	}
 
-	const next = read.find(
+	const nextReady = entries.find(
 		({ header }) =>
 			header.status === "ready" &&
 			(header.blocked_by ?? []).every(
@@ -143,11 +149,12 @@ export async function readGoal(root: string, goal: string): Promise<GoalState> {
 			),
 	);
 	return {
-		tickets: read.map(({ ticket, header }) => ({
+		tickets: entries.map(({ ticket, header }) => ({
 			ticket,
 			status: header.status,
 		})),
-		next: next?.ticket,
+		nextReady: nextReady?.ticket,
+		done: entries.every(({ header }) => header.status === "done"),
 	};
 }
 
@@ -246,11 +253,10 @@ export async function recordRunEnd(
 	});
 }
 
-// Depth first along `blocked_by`, lowest number first. Reaching a Ticket
-// that is still on the path closes a cycle, returned as the numbers walked
-// from that Ticket back to itself.
+// Walks `blocked_by` depth first from the lowest number. Returns the Ticket
+// numbers of the first cycle found, starting and ending on the same Ticket.
 function findBlockerCycle(
-	byNumber: Map<number, { header: Header }>,
+	byNumber: Map<number, TicketHeader>,
 ): number[] | undefined {
 	const cleared = new Set<number>();
 	const path: number[] = [];

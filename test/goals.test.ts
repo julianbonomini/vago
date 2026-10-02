@@ -191,12 +191,12 @@ const badGoals: [string, Record<string, string>, RegExp][] = [
 			"02-wave": ticket(`status = "ready"\nblocked_by = [1]`, "Wave"),
 			"03-bow": ticket(`status = "ready"\nblocked_by = [2]`, "Bow"),
 		},
-		/Goal hello has a blocker cycle: 01-greet -> 03-bow -> 02-wave -> 01-greet/,
+		/Goal hello has a blocker cycle in \S*tickets: 01-greet -> 03-bow -> 02-wave -> 01-greet/,
 	],
 	[
 		"a Ticket blocking itself",
 		{ "01-greet": ticket(`status = "ready"\nblocked_by = [1]`, "Greet") },
-		/Goal hello has a blocker cycle: 01-greet -> 01-greet/,
+		/Goal hello has a blocker cycle in \S*tickets: 01-greet -> 01-greet/,
 	],
 	[
 		"two Tickets with one number",
@@ -204,7 +204,15 @@ const badGoals: [string, Record<string, string>, RegExp][] = [
 			"01-greet": ticket(`status = "ready"`, "Greet"),
 			"01-wave": ticket(`status = "ready"`, "Wave"),
 		},
-		/01-greet\.md and 01-wave\.md share number 1/,
+		/01-greet\.md and \S*01-wave\.md share number 1/,
+	],
+	[
+		"a Ticket file without a number",
+		{
+			"01-greet": ticket(`status = "ready"`, "Greet"),
+			wave: ticket(`status = "ready"`, "Wave"),
+		},
+		/wave\.md isn't named like a Ticket, NN-<slug>\.md/,
 	],
 ];
 

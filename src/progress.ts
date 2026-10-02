@@ -34,8 +34,8 @@ export function printStepEnded(
 }
 
 /**
- * Prints the summary of how `goal` ended: how many of its Tickets are done,
- * then each Ticket with its status.
+ * Prints how `goal` ended: how many of its Tickets are `done`, then each
+ * Ticket with its status.
  */
 export function printGoalSummary(goal: string, state: GoalState): void {
 	const done = state.tickets.filter(({ status }) => status === "done").length;

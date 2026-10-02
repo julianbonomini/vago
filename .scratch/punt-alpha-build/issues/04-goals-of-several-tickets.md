@@ -10,10 +10,10 @@ Spec: [Punt Alpha](../../punt-alpha/spec.md).
 
 **Blocked by:** 02 (Tracer bullet).
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Two Tickets, the second blocked by the first, run in that order and both end `done`.
-- [ ] With no blockers, the lower-numbered Ticket runs first.
-- [ ] A missing Goal, an unparsable header, an unknown blocker or a cycle exits non-zero with a message naming the problem, and no Ticket changes.
-- [ ] The Goal summary is printed on exit.
-- [ ] Header rewrites leave every Ticket body byte-for-byte unchanged.
+- [x] Two Tickets, the second blocked by the first, run in that order and both end `done`.
+- [x] With no blockers, the lower-numbered Ticket runs first.
+- [x] A missing Goal, an unparsable header, an unknown blocker or a cycle exits non-zero with a message naming the problem, and no Ticket changes.
+- [x] The Goal summary is printed on exit.
+- [x] Header rewrites leave every Ticket body byte-for-byte unchanged.

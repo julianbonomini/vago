@@ -11,25 +11,25 @@ import { loadWorkflow, type Workflow } from "./workflow.ts";
 export type GoalEnd = "done" | "unfinished";
 
 /**
- * Runs `goal` of the Project at `root` until no Ticket is ready, then prints
- * the Goal summary. Throws an Error naming the problem before any Run starts
- * when the Workflow or the Goal's format is bad.
+ * Runs `goal` of the Project at `root` until no Ticket is ready or a Ticket
+ * fails, then prints the Goal summary. Throws an Error naming the problem
+ * when the Workflow or the Goal's format is bad. The Goal is checked before
+ * the first Run and again after each Ticket, so a Ticket file broken
+ * mid-Goal stops it there, without a summary.
  */
 export async function runGoal(root: string, goal: string): Promise<GoalEnd> {
 	const workflow = await loadWorkflow(root);
 	let state = await readGoal(root, goal);
-	while (state.next !== undefined) {
-		const finished = await runTicket(workflow, state.next);
+	while (state.nextReady !== undefined) {
+		const finished = await runTicket(workflow, state.nextReady);
 		state = await readGoal(root, goal);
 		if (!finished) break;
 	}
 	printGoalSummary(goal, state);
-	return state.tickets.every(({ status }) => status === "done")
-		? "done"
-		: "unfinished";
+	return state.done ? "done" : "unfinished";
 }
 
-// Returns whether every Step succeeded and the Ticket is `done`.
+// Returns whether the Ticket got to `done`.
 async function runTicket(workflow: Workflow, ticket: Ticket): Promise<boolean> {
 	await setStatus(ticket, "running");
 	for (const step of workflow.steps) {
