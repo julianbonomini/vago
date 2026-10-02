@@ -3,9 +3,11 @@
 // picks the exit code. Exit 0 means the command succeeded or the Goal is done.
 
 import { resetTicket, runGoal } from "./goal-runner.ts";
+import { initProject } from "./init.ts";
 import { addTicket, createGoal } from "./tickets.ts";
 
-const usage = `usage: punt run <goal>
+const usage = `usage: punt init
+       punt run <goal>
        punt goal new <goal>
        punt ticket add <goal> <slug> [--blocked-by <NN>]...
        punt ticket reset <goal> <NN>`;
@@ -13,6 +15,10 @@ const usage = `usage: punt run <goal>
 async function main(args: string[]): Promise<number> {
 	const root = process.cwd();
 	const [command, ...operands] = args;
+	if (command === "init" && operands.length === 0) {
+		await initProject(root);
+		return 0;
+	}
 	if (command === "run") {
 		const [goal, ...extra] = operands;
 		if (goal !== undefined && extra.length === 0) {

@@ -9,6 +9,7 @@ src/cli.ts                  src/goal-runner.ts      src/progress.ts
 src/workflow.ts             src/step-runner.ts      src/init.ts
 src/tickets.ts
 src/harness/registry.ts     src/harness/claude-code.ts
+src/starter-imports.d.ts    types for init.ts's text imports of the starter
 starter/                    the starter Workflow embedded in the binary
 test/                       CLI tests, the fake `claude`, recorded fixtures
 ```
@@ -25,7 +26,7 @@ One file per module. A module becomes a folder only when it outgrows about 400 l
 | `goal-runner.ts` | The main loop: lost and stuck handling, picking Tickets, running Steps in order, marking `done` | The order of a Goal's lifecycle |
 | `step-runner.ts` | Running one Step on a Ticket as one Run: its `[[runs]]` entry, its Step lines, its prompt, its child process and its log | Spawning, process groups, signals, the idle timer, writing the log, reading the Harness stream |
 | `progress.ts` | Everything printed during a run: Step lines, the `stuck` message, the Goal summary | Line formats, durations, cost formatting |
-| `init.ts` | `punt init`: copying the starter, `.git/info/exclude` | The starter's file list, exclude lines |
+| `init.ts` | `punt init`: copying the starter, asking whether the Workflow will be committed, `.git/info/exclude` | The starter's file list and how it's embedded, exclude lines |
 | `harness/registry.ts` | The `Harness` type and the map from `harness` name to module | Which Harnesses exist |
 | `harness/claude-code.ts` | Claude Code's command, stream reading and resume hint | Claude Code's flags and `stream-json` event shapes |
 
