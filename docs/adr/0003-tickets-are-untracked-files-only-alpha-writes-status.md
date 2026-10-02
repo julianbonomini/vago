@@ -1,6 +1,8 @@
 # Tickets are untracked files, and only Alpha writes their status
 
-Punt keeps a Project's Goals and Tickets as Markdown files under `.punt/goals/`, with a TOML header that holds each Ticket's `status` and `blocked_by`. Those files are never tracked by git: `punt init` excludes them through `.git/info/exclude` and doesn't offer to commit them. Only Alpha writes status (`ready`, `running`, `done`, `stuck`). Agents never see the header, because `{{ticket}}` substitutes only the title and body.
+Punt keeps a Project's Goals and Tickets as Markdown files under `.punt-goals/`, with a TOML header that holds each Ticket's `status` and `blocked_by`. Those files are never tracked by git: `punt init` excludes them through `.git/info/exclude` and doesn't offer to commit them. Only Alpha writes status (`ready`, `running`, `done`, `stuck`). Agents never see the header, because `{{ticket}}` substitutes only the title and body.
+
+`.punt-goals/` sits at the repo root, apart from `.punt/`, which holds only the config: Workflows, prompts, rules and scripts. Deleting `.punt/` to run `punt init` again from a fresh starter leaves every Goal where it was.
 
 A Goal's `goal.md` has a `+++` header too. It holds only `workflow`, the name of the Workflow the Goal's Tickets go through, in `.punt/workflows/<name>.toml`. `punt goal new` writes it, and the human may edit it by hand between runs to switch the Goal to another Workflow. Punt never rewrites it, and agents never see it, because `{{goal}}` is the text after it.
 

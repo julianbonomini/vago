@@ -22,7 +22,7 @@ type   = "agent"
 prompt = "prompts/implement.md"
 `;
 
-const goalDir = ".punt/goals/hello";
+const goalDir = ".punt-goals/hello";
 
 test("goal new creates a Goal with no Tickets that punt run accepts", async () => {
 	const root = await makeProject({ ".punt/workflows/test.toml": workflow });
@@ -123,7 +123,9 @@ test("goal new refuses a Goal that exists and leaves it as it was", async () => 
 	]);
 
 	expect(result.exitCode).not.toBe(0);
-	expect(result.stderr).toMatch(/Goal hello already exists: \S*goals\/hello/);
+	expect(result.stderr).toMatch(
+		/Goal hello already exists: \S*\.punt-goals\/hello/,
+	);
 	expect(result.stdout).toBe("");
 	expect(await Bun.file(join(root, goalDir, "goal.md")).text()).toBe(
 		goalText("test", "# Hello\n\nSay hello to everyone.\n"),
@@ -236,14 +238,10 @@ for (const name of ["../escape", "a/b", ""]) {
 		expect(ticket.stderr).toMatch(/may hold only letters, digits, - and _/);
 		expect(ticketOfGoal.exitCode).not.toBe(0);
 		expect(ticketOfGoal.stderr).toMatch(/Goal name .* may hold only/);
-		const files = await readdir(join(root, ".punt"), { recursive: true });
-		expect(files.sort()).toEqual([
-			"goals",
-			"goals/hello",
-			"goals/hello/goal.md",
-			"workflows",
-			"workflows/test.toml",
-		]);
+		const files = await readdir(join(root, ".punt-goals"), {
+			recursive: true,
+		});
+		expect(files.sort()).toEqual(["hello", "hello/goal.md"]);
 	});
 }
 

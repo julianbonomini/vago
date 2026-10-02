@@ -89,7 +89,7 @@ test("--help among a command's arguments writes no file", async () => {
 
 	expect(created.exitCode).toBe(0);
 	expect(created.stdout).toStartWith("usage: punt goal new ");
-	expect(existsSync(join(root, ".punt/goals"))).toBe(false);
+	expect(existsSync(join(root, ".punt-goals"))).toBe(false);
 	expect(initialised.exitCode).toBe(0);
 	expect(initialised.stdout).toStartWith("usage: punt init\n");
 	expect(existsSync(join(root, ".punt/workflows/small.toml"))).toBe(false);
@@ -98,7 +98,7 @@ test("--help among a command's arguments writes no file", async () => {
 test("run --help runs no Ticket", async () => {
 	const root = await makeProject({
 		".punt/workflows/test.toml": workflow,
-		".punt/goals/hello/goal.md": goalText("test"),
+		".punt-goals/hello/goal.md": goalText("test"),
 	});
 	await runPunt(root, ["ticket", "add", "hello", "wave"]);
 
@@ -108,7 +108,7 @@ test("run --help runs no Ticket", async () => {
 	expect(result.stdout).toStartWith("usage: punt run <goal>\n");
 	const wave = await readTicketFile(
 		root,
-		".punt/goals/hello/tickets/01-wave.md",
+		".punt-goals/hello/tickets/01-wave.md",
 	);
 	expect(wave.header.status).toBe("ready");
 });

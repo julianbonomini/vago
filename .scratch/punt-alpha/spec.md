@@ -36,7 +36,7 @@ The bar for Alpha: on Punt's own repo, `punt run <goal>` takes a Goal of two Tic
 1. As the human, I want `punt init` to copy a starter Workflow into my Project's `.punt/`, so that I can start from a working implement → check → review → merge flow.
 2. As the human, I want the starter Workflow to include its prompts and a starter code-style file, so that the agents have house rules from day one.
 3. As the human, I want the starter files to be plain copies I own and can edit, so that Punt imposes no opinions I can't change.
-4. As the human, I want `punt init` to keep `.punt/goals/` out of git via `.git/info/exclude`, never `.gitignore`, so that Punt leaves no trace in a repo other people share.
+4. As the human, I want `punt init` to keep `.punt-goals/` out of git via `.git/info/exclude`, never `.gitignore`, so that Punt leaves no trace in a repo other people share.
 5. As the human, I want `punt init` to ask whether to commit the Workflow and explain what that means, so that I can share a Workflow with a team or keep it private.
 6. As the human, I want the Workflow kept private by default, so that using Punt on someone else's open-source repo doesn't pollute it.
 7. As the human, I want `punt init` to refuse to overwrite any file already in `.punt/`, so that I don't lose a Workflow or prompt I've tuned.
@@ -89,7 +89,7 @@ The bar for Alpha: on Punt's own repo, `punt run <goal>` takes a Goal of two Tic
 
 43. As the human, I want one line printed when each Step starts and one when it ends, showing the timestamp, Ticket, Step, outcome, duration and cost, so that I can glance at a tmux pane and know where things are.
 44. As the human, I want a short summary when `punt run` exits, so that I know how the Goal ended without reading files.
-45. As the human, I want every Run's raw Harness stream saved to `.punt/goals/<goal>/logs/`, one file per Run, so that I can follow a Run live with `tail -f` or read it afterwards.
+45. As the human, I want every Run's raw Harness stream saved to `.punt-goals/<goal>/logs/`, one file per Run, so that I can follow a Run live with `tail -f` or read it afterwards.
 46. As the human, I want shell Steps logged too, so that I can see exactly what a check printed.
 47. As the human, I want a reset Ticket's new Runs to get new log files, so that the logs of the failed attempt survive.
 48. As the human, I want each Ticket's header to keep a `[[runs]]` history (Step, start, end, outcome, Harness, model, session ID, tokens, cost, log path), so that I can audit what happened and what it cost.
@@ -134,7 +134,7 @@ Recorded in ADR 0001 (TypeScript on Bun, driving Harness CLIs), ADR 0002 (the ke
 
 - **CLI.** Parses `init`, `goal new`, `ticket add`, `run` and `ticket reset`. `goal new` takes `--workflow <name>`, required, and `--body-file <path>`, optional, in either order. It maps outcomes to exit codes: 0 when the command succeeded or the Goal is done, non-zero otherwise. Which non-zero code it uses carries no meaning.
 - **Workflow loader.** Reads `.punt/workflows/<name>.toml` once per `punt run`, for the name the Goal gives, checks it and returns a frozen Workflow. The checks: the TOML parses, Step `id`s are unique, every `type` is `agent` or `shell`, prompt and include files exist, every `harness` name is registered, `on_fail` and `idle_timeout` values are valid, and every `{{steps.<id>.output}}` points at an earlier Step. It fails closed with a message naming the problem, and refuses a name that isn't in `.punt/workflows/`, listing the ones that are.
-- **Ticket store.** Owns `.punt/goals/<goal>/goal.md` and `.punt/goals/<goal>/tickets/NN-<slug>.md`:
+- **Ticket store.** Owns `.punt-goals/<goal>/goal.md` and `.punt-goals/<goal>/tickets/NN-<slug>.md`:
   - reads and writes the TOML front matter (`+++`);
   - writes the `goal.md` header at `goal new` and reads it: a `+++` header holding `workflow = "<name>"`. The human may edit it by hand. A Goal without it is refused;
   - runs the Goal format checks: the Goal exists, every header parses, every blocker exists, no cycles;
@@ -170,7 +170,7 @@ Recorded in ADR 0001 (TypeScript on Bun, driving Harness CLIs), ADR 0002 (the ke
   The kernel owns everything else.
 - **Claude Code module.** Runs `claude -p --output-format stream-json --verbose --permission-mode auto --model <model>`, adding the Step's `args`. It takes the session ID from the `system/init` event and tokens and `total_cost_usd` from the final result event. A `permissionMode` in a `system/init` or `system/status` event other than the mode the command asked for is a fallback: Claude Code doesn't offer auto mode on every model, and it falls back without an error. The mode asked for is `auto` unless the Step's `args` choose another: the last `--permission-mode` wins, and `--dangerously-skip-permissions` asks for `bypassPermissions`. A `system/permission_denied` event is a refused tool call. Its resume hint is `claude --resume <session_id>`. It never adds `--dangerously-skip-permissions`.
 - **Progress printer.** Prints one line when a Step starts and one when it ends: timestamp, Ticket number and slug, Step id, outcome, duration, cost. On exit it prints a Goal summary. On `stuck` it also prints the failed Run's outcome, the log path, the resume hint and the reset command. It never prints agent text. Live following is `tail -f` on the log.
-- **Init.** Copies every file of the embedded starter (both Workflows under `workflows/`, prompts, starter code-style file) into `.punt/` verbatim and refuses if any of them already exists. It adds `.punt/goals/` to `.git/info/exclude`, asks whether the Workflow should be committed, and excludes all of `.punt/` if not.
+- **Init.** Copies every file of the embedded starter (both Workflows under `workflows/`, prompts, starter code-style file) into `.punt/` verbatim and refuses if any of them already exists. It adds `.punt-goals/` to `.git/info/exclude`, asks whether the Workflow should be committed, and excludes all of `.punt/` if not.
 
 ### Contracts
 

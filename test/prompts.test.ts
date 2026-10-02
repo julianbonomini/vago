@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { makeFakeClaude } from "./fake-claude.ts";
 import { goalText, makeProject, runPunt } from "./project.ts";
 
-const goalDir = ".punt/goals/hello";
+const goalDir = ".punt-goals/hello";
 const ticketPath = `${goalDir}/tickets/01-say-hello.md`;
 
 // A Project with one ready Ticket and `files` on top, the Workflow

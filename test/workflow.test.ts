@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { makeFakeClaude } from "./fake-claude.ts";
 import { goalText, makeProject, readTicketFile, runPunt } from "./project.ts";
 
-const goalDir = ".punt/goals/hello";
+const goalDir = ".punt-goals/hello";
 const ticketPath = `${goalDir}/tickets/01-say-hello.md`;
 const ticket = `+++\nstatus = "ready"\n+++\n\n# Say hello\n`;
 

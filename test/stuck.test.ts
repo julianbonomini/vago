@@ -8,7 +8,7 @@ import {
 } from "./fake-claude.ts";
 import { goalText, makeProject, readTicketFile, runPunt } from "./project.ts";
 
-const goalDir = ".punt/goals/hello";
+const goalDir = ".punt-goals/hello";
 
 function ticket(header: string, title: string): string {
 	return `+++\n${header}\n+++\n\n# ${title}\n`;
@@ -190,7 +190,7 @@ test("the stuck message shows the outcome, the log, the resume command and the r
 	const result = await runPunt(root, ["run", "hello"], claude.env);
 
 	expect(result.stdout).toContain(`01-greet is stuck after implement: exit 3
-  log:    .punt/goals/hello/logs/01-implement-1.jsonl
+  log:    .punt-goals/hello/logs/01-implement-1.jsonl
   resume: claude --resume f679b9c4-e75a-4f73-affd-0dedfe161e0d
   reset:  punt ticket reset hello 01
 `);
@@ -202,7 +202,7 @@ test("a stuck shell Step's message has no resume command", async () => {
 	const result = await runPunt(root, ["run", "hello"]);
 
 	expect(result.stdout).toContain(`01-greet is stuck after check: exit 4
-  log:    .punt/goals/hello/logs/01-check-1.log
+  log:    .punt-goals/hello/logs/01-check-1.log
   reset:  punt ticket reset hello 01
 `);
 });

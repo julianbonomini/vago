@@ -25,7 +25,7 @@ status = "ready"
 +++
 ${ticketBody}`;
 
-const goalDir = ".punt/goals/hello";
+const goalDir = ".punt-goals/hello";
 const ticketPath = `${goalDir}/tickets/01-say-hello.md`;
 
 test("a Ticket goes through every shell Step and ends done", async () => {

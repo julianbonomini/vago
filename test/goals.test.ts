@@ -11,7 +11,7 @@ type = "shell"
 run  = "true"
 `;
 
-const goalDir = ".punt/goals/hello";
+const goalDir = ".punt-goals/hello";
 
 function ticket(header: string, title: string): string {
 	return `+++\n${header}\n+++\n\n# ${title}\n`;
@@ -274,6 +274,8 @@ test("a missing Goal exits non-zero naming it", async () => {
 	const result = await runPunt(root, ["run", "nope"]);
 
 	expect(result.exitCode).not.toBe(0);
-	expect(result.stderr).toMatch(/Goal nope not found: .*goals\/nope\/goal\.md/);
+	expect(result.stderr).toMatch(
+		/Goal nope not found: .*\.punt-goals\/nope\/goal\.md/,
+	);
 	expect(result.stdout).toBe("");
 });

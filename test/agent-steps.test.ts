@@ -32,7 +32,7 @@ const ticketBody = `
 Print hello when the CLI starts.
 `;
 
-const goalDir = ".punt/goals/hello";
+const goalDir = ".punt-goals/hello";
 const ticketPath = `${goalDir}/tickets/01-say-hello.md`;
 
 async function agentProject(): Promise<string> {

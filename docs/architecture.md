@@ -12,6 +12,7 @@ src/harness/registry.ts     src/harness/claude-code.ts
 src/starter-imports.d.ts    types for init.ts's text imports of the starter
 starter/                    the starter Workflows embedded in the binary
 .punt/                      Punt's own Workflow: the starter plus Punt's docs as includes
+.punt-goals/                Goals and Tickets, untracked and kept apart from the .punt/ config
 test/                       CLI tests, the fake `claude`, recorded fixtures, a fixed Workflow
 ```
 
@@ -23,7 +24,7 @@ One file per module. A module becomes a folder only when it outgrows about 400 l
 |---|---|---|
 | `cli.ts` | Commands, argument parsing, each command's help and usage text, exit codes, printing errors, reading a `--body-file` from a path or stdin | `process.argv`, `process.exit`, which exit code means what, the `-` for stdin convention |
 | `workflow.ts` | Loading and checking `.punt/workflows/<name>.toml`, the Workflow a Goal names, and its prompt files, refusing a name that isn't there with a list of the names that are, returning the frozen Workflow, building an agent Step's prompt from it | Which Workflows exist in `.punt/workflows/`, the TOML schema, defaults (`idle_timeout`, `on_fail`), path resolution, include merging, substitution syntax (`{{ticket}}`, `{{goal}}`, `{{steps.<id>.output}}`) |
-| `tickets.ts` | Goal and Ticket files: creating them, a Goal or Ticket with a given body or a title to fill in, the `goal.md` header, which names only the Goal's `workflow` and which the human may edit by hand between runs, format checks, readiness, status, `[[runs]]`, log paths | The `+++` header format, the `.punt/goals/<goal>/` layout, log naming, atomic writes |
+| `tickets.ts` | Goal and Ticket files: creating them, a Goal or Ticket with a given body or a title to fill in, the `goal.md` header, which names only the Goal's `workflow` and which the human may edit by hand between runs, format checks, readiness, status, `[[runs]]`, log paths | The `+++` header format, the `.punt-goals/<goal>/` layout, log naming, atomic writes |
 | `goal-runner.ts` | Creating a Goal with the Workflow it names, refused when `punt run` would refuse it; the main loop: lost and stuck handling, picking Tickets, running Steps in order, marking `done` | The order of a Goal's lifecycle |
 | `step-runner.ts` | Running one Step on a Ticket as one Run: its `[[runs]]` entry, its Step lines, its prompt, its child process and its log | Spawning, process groups, signals, the idle timer, writing the log, reading the Harness stream |
 | `progress.ts` | Everything printed during a run: Step lines, the `stuck` message, the Goal summary. Also the Markdown Goal report `punt goal report` prints | Line formats, durations, cost formatting |
@@ -33,7 +34,7 @@ One file per module. A module becomes a folder only when it outgrows about 400 l
 
 ## Rules
 
-1. **Only `tickets.ts` touches `.punt/goals/`.** It reads and writes `goal.md` and Ticket files, and it names each Run's log path. `step-runner.ts` writes the log at the path it's given. No other module builds a path under `.punt/goals/`.
+1. **Only `tickets.ts` touches `.punt-goals/`.** It reads and writes `goal.md` and Ticket files, and it names each Run's log path. `step-runner.ts` writes the log at the path it's given. No other module builds a path under `.punt-goals/`.
 2. **Only `tickets.ts` writes status.** Agents never see a header: `{{ticket}}` is the title and body only, and `{{goal}}` is `goal.md` after its header (ADR 0003).
 3. **Every Step runs through `step-runner.ts`,** and it's the only module that spawns a process. A sandbox later wraps this one point.
 4. **Harness modules are pure.** They build a command, read one stream line, and give a resume hint. They do no I/O and import only the `Harness` type from `registry.ts`. The kernel owns spawning, the idle timer, logs, `[[runs]]` and outcomes. Adding a Harness is one module plus one registry entry.

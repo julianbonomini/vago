@@ -1,4 +1,4 @@
-// Creates and owns Goal and Ticket files under `.punt/goals/<goal>/`: the
+// Creates and owns Goal and Ticket files under `.punt-goals/<goal>/`: the
 // `+++` TOML header, the `goal.md` header naming the Goal's Workflow, status,
 // the `[[runs]]` history and where each Run's log goes. Every header rewrite
 // is atomic and keeps the body byte for byte.
@@ -410,7 +410,7 @@ function findBlockerCycle(
 	return undefined;
 }
 
-// The name becomes a folder or file under `.punt/goals/`, so a name that
+// The name becomes a folder or file under `.punt-goals/`, so a name that
 // could point anywhere else, like `../x` or `a/b`, is refused.
 function checkName(label: string, name: string): void {
 	if (!/^[\w-]+$/.test(name)) {
@@ -433,7 +433,7 @@ function twoDigits(number: number): string {
 
 function goalFolder(root: string, goal: string): string {
 	checkName("Goal name", goal);
-	return join(root, ".punt", "goals", goal);
+	return join(root, ".punt-goals", goal);
 }
 
 function ticketFile(ticket: Ticket): string {
