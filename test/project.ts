@@ -1,0 +1,45 @@
+// Test helper: a throwaway Project in a temp git repo, and `punt` run against
+// it as a child process, the one seam the CLI tests go through.
+
+import { mkdir, mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+
+const cli = join(import.meta.dir, "..", "src", "cli.ts");
+
+/**
+ * Makes a git repo in a fresh temp directory holding `files`, keyed by path
+ * relative to the repo root, and returns the repo root.
+ */
+export async function makeProject(
+	files: Record<string, string>,
+): Promise<string> {
+	const root = await mkdtemp(join(tmpdir(), "punt-test-"));
+	Bun.spawnSync(["git", "init", "--quiet"], { cwd: root });
+	for (const [path, text] of Object.entries(files)) {
+		await mkdir(dirname(join(root, path)), { recursive: true });
+		await Bun.write(join(root, path), text);
+	}
+	return root;
+}
+
+export type PuntExit = {
+	exitCode: number;
+	stdout: string;
+	stderr: string;
+};
+
+/** Runs `punt <args>` with `root` as the working directory and waits for it. */
+export async function runPunt(root: string, args: string[]): Promise<PuntExit> {
+	const child = Bun.spawn([process.execPath, cli, ...args], {
+		cwd: root,
+		stdout: "pipe",
+		stderr: "pipe",
+	});
+	const [stdout, stderr, exitCode] = await Promise.all([
+		new Response(child.stdout).text(),
+		new Response(child.stderr).text(),
+		child.exited,
+	]);
+	return { exitCode, stdout, stderr };
+}
