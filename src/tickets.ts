@@ -6,7 +6,8 @@ import { readdir, rename } from "node:fs/promises";
 import { join } from "node:path";
 import { parse, stringify } from "smol-toml";
 import { z } from "zod";
-import { type Outcome, outcomeText } from "./step-runner.ts";
+import { outcomeText, type StepEnd } from "./step-runner.ts";
+import type { Step } from "./workflow.ts";
 
 /** Where a Ticket stands. Only Alpha writes it. */
 export type TicketStatus = "ready" | "running" | "done" | "stuck";
@@ -39,6 +40,11 @@ const RunEntry = z.looseObject({
 	ended: z.date().optional(),
 	outcome: z.string().optional(),
 	log: z.string(),
+	harness: z.string().optional(),
+	model: z.string().optional(),
+	session_id: z.string().optional(),
+	tokens: z.object({ input: z.number(), output: z.number() }).optional(),
+	cost_usd: z.number().optional(),
 });
 
 const Header = z.looseObject({
@@ -82,6 +88,20 @@ export async function nextReadyTicket(
 	return undefined;
 }
 
+/** Returns the Ticket's title and body, without its header. */
+export async function readTicketText(ticket: Ticket): Promise<string> {
+	return (await readTicketFile(ticketFile(ticket))).body;
+}
+
+/** Returns the text of the Goal's `goal.md`, or "" when there is none. */
+export async function readGoalText(
+	root: string,
+	goal: string,
+): Promise<string> {
+	const file = Bun.file(join(goalFolder(root, goal), "goal.md"));
+	return (await file.exists()) ? await file.text() : "";
+}
+
 /** Sets the Ticket's status. */
 export async function setStatus(
 	ticket: Ticket,
@@ -93,13 +113,14 @@ export async function setStatus(
 }
 
 /**
- * Appends a `[[runs]]` entry for `step`, started at `started`. Call it before
- * the Step starts, so a crash mid-Step still leaves a trace. Returns the Run,
- * which carries the path its log must be written to.
+ * Appends a `[[runs]]` entry for `step`, started at `started`, naming the
+ * Harness and model for an agent Step. Call it before the Step starts, so a
+ * crash mid-Step still leaves a trace. Returns the Run, which carries the
+ * path its log must be written to.
  */
 export async function recordRunStart(
 	ticket: Ticket,
-	step: string,
+	step: Step,
 	started: Date,
 ): Promise<Run> {
 	const { position, log } = await rewriteHeader(
@@ -109,8 +130,19 @@ export async function recordRunStart(
 			const position = runs.length + 1;
 			// The position in the name gives a reset Ticket's new Runs new logs.
 			const paddedNumber = String(ticket.number).padStart(2, "0");
-			const log = `logs/${paddedNumber}-${step}-${position}.log`;
-			runs.push({ step, started, log });
+			const extension = step.type === "agent" ? "jsonl" : "log";
+			const log = `logs/${paddedNumber}-${step.id}-${position}.${extension}`;
+			runs.push(
+				step.type === "agent"
+					? {
+							step: step.id,
+							harness: step.harness,
+							model: step.model,
+							started,
+							log,
+						}
+					: { step: step.id, started, log },
+			);
 			header.runs = runs;
 			return { position, log };
 		},
@@ -122,10 +154,13 @@ export async function recordRunStart(
 	};
 }
 
-/** Fills in the Run's `[[runs]]` entry with when and how it ended. */
+/**
+ * Fills in the Run's `[[runs]]` entry with when and how it ended, and with
+ * what its Harness reported.
+ */
 export async function recordRunEnd(
 	run: Run,
-	outcome: Outcome,
+	end: StepEnd,
 	ended: Date,
 ): Promise<void> {
 	const file = ticketFile(run.ticket);
@@ -135,7 +170,11 @@ export async function recordRunEnd(
 			throw new Error(`${file} has no [[runs]] entry ${run.position}`);
 		}
 		entry.ended = ended;
-		entry.outcome = outcomeText(outcome);
+		entry.outcome = outcomeText(end.outcome);
+		const { sessionId, tokens, costUsd } = end.report;
+		if (sessionId !== undefined) entry.session_id = sessionId;
+		if (tokens !== undefined) entry.tokens = tokens;
+		if (costUsd !== undefined) entry.cost_usd = costUsd;
 	});
 }
 

@@ -30,10 +30,18 @@ export type PuntExit = {
 	stderr: string;
 };
 
-/** Runs `punt <args>` with `root` as the working directory and waits for it. */
-export async function runPunt(root: string, args: string[]): Promise<PuntExit> {
+/**
+ * Runs `punt <args>` with `root` as the working directory and waits for it.
+ * `env` is added to this process's environment, overriding what it names.
+ */
+export async function runPunt(
+	root: string,
+	args: string[],
+	env: Record<string, string> = {},
+): Promise<PuntExit> {
 	const child = Bun.spawn([process.execPath, cli, ...args], {
 		cwd: root,
+		env: { ...process.env, ...env },
 		stdout: "pipe",
 		stderr: "pipe",
 	});

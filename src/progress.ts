@@ -1,7 +1,8 @@
 // Everything `punt run` prints to stdout while it runs: one line when a Step
-// starts and one when it ends. Hides the line formats and how durations read.
+// starts and one when it ends. Hides the line formats and how durations and
+// costs read.
 
-import { type Outcome, outcomeText } from "./step-runner.ts";
+import { outcomeText, type StepEnd } from "./step-runner.ts";
 import type { Ticket } from "./tickets.ts";
 
 /** Prints the line saying `step` started on `ticket` at `started`. */
@@ -13,17 +14,24 @@ export function printStepStarted(
 	console.log(`${timestamp(started)} ${ticket.name} ${step} started`);
 }
 
-/** Prints the line saying how `step` on `ticket` ended, and how long it took. */
+/**
+ * Prints the line saying how `step` on `ticket` ended, how long it took and,
+ * when its Harness reported one, what it cost.
+ */
 export function printStepEnded(
 	ticket: Ticket,
 	step: string,
-	outcome: Outcome,
+	end: StepEnd,
 	started: Date,
 	ended: Date,
 ): void {
 	const took = duration(ended.getTime() - started.getTime());
+	const cost =
+		end.report.costUsd === undefined
+			? ""
+			: ` $${end.report.costUsd.toFixed(2)}`;
 	console.log(
-		`${timestamp(ended)} ${ticket.name} ${step} ${outcomeText(outcome)} ${took}`,
+		`${timestamp(ended)} ${ticket.name} ${step} ${outcomeText(end.outcome)} ${took}${cost}`,
 	);
 }
 
