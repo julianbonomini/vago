@@ -80,19 +80,26 @@ export type GoalState = {
 type TicketHeader = { ticket: Ticket; header: Header };
 
 /**
- * Creates Goal `goal` with a `goal.md` titled with its name, for the human
- * to describe the outcome in, and an empty `tickets/`. Returns the path of
- * `goal.md`. Throws an Error naming the file when the Goal already exists,
- * or naming the problem when `goal` isn't a valid name.
+ * Creates Goal `goal` with an empty `tickets/` and a `goal.md` that is
+ * `body` exactly as given, which is what `{{goal}}` will be. Without `body`,
+ * `goal.md` is a `# <goal>` title for the human to fill in. Returns the path
+ * of `goal.md`. Throws an Error naming the problem, and creates nothing, when
+ * `body` is empty or only whitespace, the Goal already exists, or `goal`
+ * isn't a valid name.
  */
-export async function createGoal(root: string, goal: string): Promise<string> {
+export async function createGoal(
+	root: string,
+	goal: string,
+	body?: string,
+): Promise<string> {
 	const folder = goalFolder(root, goal);
+	if (body !== undefined) checkBody(`Goal ${goal}`, body);
 	const goalFile = join(folder, "goal.md");
 	if (await Bun.file(goalFile).exists()) {
 		throw new Error(`Goal ${goal} already exists: ${goalFile}`);
 	}
 	await mkdir(join(folder, "tickets"), { recursive: true });
-	await Bun.write(goalFile, `# ${goal}\n`);
+	await Bun.write(goalFile, body ?? `# ${goal}\n`);
 	return goalFile;
 }
 
@@ -196,9 +203,7 @@ export async function addTicket(
 ): Promise<string> {
 	checkName("Ticket slug", slug);
 	if (body !== undefined) {
-		if (body.trim() === "") {
-			throw new Error(`The body for Ticket ${slug} is empty`);
-		}
+		checkBody(`Ticket ${slug}`, body);
 		// A header of the human's own could set status, which only Punt
 		// writes (ADR 0003). A +++ later in the body is fine: the header Punt
 		// writes closes before it.
@@ -374,6 +379,11 @@ function checkName(label: string, name: string): void {
 			`${label} "${name}" may hold only letters, digits, - and _`,
 		);
 	}
+}
+
+// A file with no body gives the agent nothing to work from.
+function checkBody(label: string, body: string): void {
+	if (body.trim() === "") throw new Error(`The body for ${label} is empty`);
 }
 
 // Ticket files and logs number Tickets with at least two digits, so a folder

@@ -8,7 +8,7 @@ import { addTicket, createGoal } from "./tickets.ts";
 
 const usage = `usage: punt init
        punt run <goal>
-       punt goal new <goal>
+       punt goal new <goal> [--body-file <path>]
        punt ticket add <goal> <slug> [--blocked-by <NN>]... [--body-file <path>]
        punt ticket reset <goal> <NN>`;
 
@@ -27,9 +27,16 @@ async function main(args: string[]): Promise<number> {
 	}
 	if (command === "goal") {
 		const [action, goal, ...extra] = operands;
-		if (action === "new" && goal !== undefined && extra.length === 0) {
-			console.log(await createGoal(root, goal));
-			return 0;
+		if (action === "new" && goal !== undefined) {
+			if (extra.length === 0) {
+				console.log(await createGoal(root, goal));
+				return 0;
+			}
+			const [flag, path, ...more] = extra;
+			if (flag === "--body-file" && path !== undefined && more.length === 0) {
+				console.log(await createGoal(root, goal, await readBodyFile(path)));
+				return 0;
+			}
 		}
 	}
 	if (command === "ticket") {
