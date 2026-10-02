@@ -6,7 +6,7 @@ These are the coding standards `/implement`, `/tdd` and `/code-review` work agai
 
 - `docs/code-style.md`: read before writing code.
 - `docs/architecture.md`: read before writing code. Modules, owners, and the rules between them.
-- `docs/aposd.md`: read before designing a new module or changing an exported interface. The design reference the style rules come from.
+- `docs/aposd.md`: read before writing code or designing a new module or changing an exported interface. The design reference the style rules come from.
 
 ### A ticket, start to finish
 
