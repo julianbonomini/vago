@@ -9,7 +9,7 @@ import { addTicket, createGoal } from "./tickets.ts";
 const usage = `usage: punt init
        punt run <goal>
        punt goal new <goal>
-       punt ticket add <goal> <slug> [--blocked-by <NN>]...
+       punt ticket add <goal> <slug> [--blocked-by <NN>]... [--body-file <path>]
        punt ticket reset <goal> <NN>`;
 
 async function main(args: string[]): Promise<number> {
@@ -43,9 +43,13 @@ async function main(args: string[]): Promise<number> {
 		}
 		if (action === "add" && goal !== undefined) {
 			const [slug, ...flags] = rest;
-			const blockedBy = blockersFrom(flags);
-			if (slug !== undefined && blockedBy !== undefined) {
-				console.log(await addTicket(root, goal, slug, blockedBy));
+			const parsed = ticketAddFlags(flags);
+			if (slug !== undefined && parsed !== undefined) {
+				const body =
+					parsed.bodyFile === undefined
+						? undefined
+						: await readBodyFile(parsed.bodyFile);
+				console.log(await addTicket(root, goal, slug, parsed.blockedBy, body));
 				return 0;
 			}
 		}
@@ -54,20 +58,42 @@ async function main(args: string[]): Promise<number> {
 	return 1;
 }
 
-// Reads `--blocked-by <NN>`, given once per blocker. Returns undefined when
-// `flags` holds anything else, so the caller prints the usage.
-function blockersFrom(flags: string[]): number[] | undefined {
-	const blockers: number[] = [];
+// Reads `--blocked-by <NN>`, given once per blocker, and `--body-file
+// <path>`, given at most once, in any order. The path is taken as given,
+// even `-` or one starting with `--`. Returns undefined when `flags` holds
+// anything else, so the caller prints the usage.
+function ticketAddFlags(
+	flags: string[],
+): { blockedBy: number[]; bodyFile: string | undefined } | undefined {
+	const blockedBy: number[] = [];
+	let bodyFile: string | undefined;
 	for (let index = 0; index < flags.length; index += 2) {
-		const number = flags[index + 1];
-		const isBlocker =
-			flags[index] === "--blocked-by" &&
-			number !== undefined &&
-			/^\d+$/.test(number);
-		if (!isBlocker) return undefined;
-		blockers.push(Number(number));
+		const flag = flags[index];
+		const value = flags[index + 1];
+		if (flag === "--blocked-by" && value !== undefined && /^\d+$/.test(value)) {
+			blockedBy.push(Number(value));
+		} else if (
+			flag === "--body-file" &&
+			value !== undefined &&
+			bodyFile === undefined
+		) {
+			bodyFile = value;
+		} else {
+			return undefined;
+		}
 	}
-	return blockers;
+	return { blockedBy, bodyFile };
+}
+
+// `-` means stdin, as it does for `cat`. A relative path resolves from the
+// working directory, the Project root `main` works in.
+async function readBodyFile(path: string): Promise<string> {
+	try {
+		return path === "-" ? await Bun.stdin.text() : await Bun.file(path).text();
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		throw new Error(`--body-file ${path} can't be read: ${message}`);
+	}
 }
 
 try {

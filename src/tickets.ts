@@ -177,19 +177,37 @@ export async function readGoal(root: string, goal: string): Promise<GoalState> {
 
 /**
  * Adds a Ticket named `slug` to `goal`, numbered one past its highest
- * Ticket, with status `ready`, blocked by the Tickets numbered in
- * `blockedBy` (each once, however often it's given), and a title for the
- * human to fill in. Returns the path of the new Ticket file. Throws an Error
- * naming the problem when the Goal doesn't exist or its format is bad, a
- * blocker isn't a Ticket of the Goal, or `goal` or `slug` isn't a valid name.
+ * Ticket, with status `ready` and blocked by the Tickets numbered in
+ * `blockedBy` (each once, however often it's given). The Ticket's body is
+ * `body` exactly as given, which is what `readTicketBody` will return.
+ * Without `body`, it's a `# <slug>` title for the human to fill in. Returns
+ * the path of the new Ticket file. Throws an Error naming the problem, and
+ * writes nothing, when `body` is empty or only whitespace, `body` starts with
+ * a `+++` header (only Punt writes a Ticket's header, ADR 0003), the Goal
+ * doesn't exist or its format is bad, a blocker isn't a Ticket of the Goal,
+ * or `goal` or `slug` isn't a valid name.
  */
 export async function addTicket(
 	root: string,
 	goal: string,
 	slug: string,
 	blockedBy: number[],
+	body?: string,
 ): Promise<string> {
 	checkName("Ticket slug", slug);
+	if (body !== undefined) {
+		if (body.trim() === "") {
+			throw new Error(`The body for Ticket ${slug} is empty`);
+		}
+		// A header of the human's own could set status, which only Punt
+		// writes (ADR 0003). A +++ later in the body is fine: the header Punt
+		// writes closes before it.
+		if (/^\s*\+\+\+[ \t]*(\r?\n|$)/.test(body)) {
+			throw new Error(
+				`The body for Ticket ${slug} starts with a +++ header; only Punt writes a Ticket's header`,
+			);
+		}
+	}
 	const { tickets } = await readGoal(root, goal);
 	for (const blocker of blockedBy) {
 		if (!tickets.some(({ ticket }) => ticket.number === blocker)) {
@@ -205,7 +223,7 @@ export async function addTicket(
 			? { status: "ready", blocked_by: [...new Set(blockedBy)] }
 			: { status: "ready" };
 	const file = ticketFile(ticket);
-	await Bun.write(file, ticketText(header, `\n# ${slug}\n`));
+	await Bun.write(file, ticketText(header, body ?? `\n# ${slug}\n`));
 	return file;
 }
 
