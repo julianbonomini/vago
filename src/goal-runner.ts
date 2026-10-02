@@ -2,7 +2,7 @@
 // and runs each through every Step of the Workflow. Hides the order of a
 // Goal's lifecycle.
 
-import { printGoalSummary } from "./progress.ts";
+import { printGoalSummary, printStuck } from "./progress.ts";
 import { runStep } from "./step-runner.ts";
 import { readGoal, setStatus, type Ticket } from "./tickets.ts";
 import { loadWorkflow, type Workflow } from "./workflow.ts";
@@ -29,15 +29,23 @@ export async function runGoal(root: string, goal: string): Promise<GoalEnd> {
 	return state.done ? "done" : "unfinished";
 }
 
-// Returns whether the Ticket got to `done`.
+// Returns whether the Ticket got to `done`. A failed Step leaves it `stuck`,
+// unless it's a shell Step whose failure the Workflow lets the Ticket go on
+// from.
 async function runTicket(workflow: Workflow, ticket: Ticket): Promise<boolean> {
 	await setStatus(ticket, "running");
 	const stepOutputs = new Map<string, string>();
 	for (const step of workflow.steps) {
-		const { outcome, output } = await runStep(step, ticket, stepOutputs);
-		stepOutputs.set(step.id, output);
-		// TODO(07): a failed Step marks the Ticket stuck.
-		if (outcome.kind !== "ok") return false;
+		const run = await runStep(step, ticket, stepOutputs);
+		stepOutputs.set(step.id, run.output);
+		const goesOn =
+			run.outcome.kind === "ok" ||
+			(step.type === "shell" && step.onFail === "continue");
+		if (!goesOn) {
+			await setStatus(ticket, "stuck");
+			printStuck(ticket, step.id, run.log, run.resumeHint);
+			return false;
+		}
 	}
 	await setStatus(ticket, "done");
 	return true;

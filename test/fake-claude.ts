@@ -23,22 +23,25 @@ export type FakeClaude = {
 	calls(): Promise<FakeClaudeCall[]>;
 };
 
-// Plain sh so the fake starts as fast as the real CLI would, and one argument
-// per line is enough since no flag Punt passes holds a newline. Each call
-// gets the next numbered folder, so calls never overwrite each other. The
-// count is safe because Punt runs one Step at a time.
-const script = `#!/bin/sh
+/**
+ * Writes a fake `claude` into a fresh temp directory. Each call replays the
+ * fixture, then runs the shell command `then`, such as `exit 3` or `sleep 30`.
+ */
+export async function makeFakeClaude(then = "exit 0"): Promise<FakeClaude> {
+	const dir = await mkdtemp(join(tmpdir(), "punt-fake-claude-"));
+	const program = join(dir, "claude");
+	// Plain sh so the fake starts as fast as the real CLI would, and one
+	// argument per line is enough since no flag Punt passes holds a newline.
+	// Each call gets the next numbered folder, so calls never overwrite each
+	// other. The count is safe because Punt runs one Step at a time.
+	const script = `#!/bin/sh
 call="$FAKE_CLAUDE_DIR/calls/$(ls "$FAKE_CLAUDE_DIR/calls" | wc -l | tr -d ' ')"
 mkdir "$call"
 printf '%s\\n' "$@" > "$call/argv"
 cat > "$call/stdin"
 cat "$FAKE_CLAUDE_FIXTURE"
+${then}
 `;
-
-/** Writes a fake `claude` into a fresh temp directory. */
-export async function makeFakeClaude(): Promise<FakeClaude> {
-	const dir = await mkdtemp(join(tmpdir(), "punt-fake-claude-"));
-	const program = join(dir, "claude");
 	await Bun.write(program, script);
 	await chmod(program, 0o755);
 	const callsDir = join(dir, "calls");

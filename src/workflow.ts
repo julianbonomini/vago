@@ -12,6 +12,11 @@ export type ShellStep = {
 	readonly id: string;
 	readonly type: "shell";
 	readonly run: string;
+	/**
+	 * Whether the Ticket goes on to its next Step when `run` exits non-zero.
+	 * `stop` unless the Workflow says otherwise.
+	 */
+	readonly onFail: "stop" | "continue";
 };
 
 /**
@@ -29,6 +34,11 @@ export type AgentStep = {
 	 * Workflow's, and it's empty when neither sets any.
 	 */
 	readonly args: readonly string[];
+	/**
+	 * How long the Harness may stream nothing before the Run is killed: the
+	 * Step's `idle_timeout`, else the Workflow's, else 30 minutes.
+	 */
+	readonly idleTimeoutMs: number;
 	/**
 	 * The include slots appended to the prompt, in order: the Workflow's
 	 * `[include]`, with the Step's own `include.<name>` replacing a slot of
@@ -52,9 +62,20 @@ const HarnessName = z.string().refine(knownHarness, {
 	error: (issue) => `unknown harness "${issue.input}"`,
 });
 
-const IdleTimeout = z.string().regex(/^[1-9]\d*(ms|s|m|h)$/, {
-	error: 'idle_timeout must be a duration like "30m"',
-});
+const millisecondsPer = { ms: 1, s: 1000, m: 60_000, h: 3_600_000 };
+
+// The amount is group 1 and the unit group 2.
+const duration = /^([1-9]\d*)(ms|s|m|h)$/;
+
+const IdleTimeout = z
+	.string()
+	.regex(duration, { error: 'idle_timeout must be a duration like "30m"' })
+	.transform((written) => {
+		const [, amount, unit] = duration.exec(written) ?? [];
+		return Number(amount) * millisecondsPer[unit as "ms" | "s" | "m" | "h"];
+	});
+
+const defaultIdleTimeoutMs = 30 * millisecondsPer.m;
 
 // `{{ticket}}` or `{{goal}}` is group 1, and the id in
 // `{{steps.<id>.output}}` is group 2.
@@ -64,8 +85,6 @@ const placeholder = /\{\{(ticket|goal)\}\}|\{\{steps\.([^{}]+?)\.output\}\}/g;
 // slot names that are integers come first, as in any JavaScript object.
 const IncludeSlots = z.record(z.string(), z.string());
 
-// TODO(07): give `on_fail` and `idle_timeout` their effect. Until then the
-// loader only checks them.
 const WorkflowFile = z.strictObject({
 	harness: HarnessName.optional(),
 	model: z.string().optional(),
@@ -139,7 +158,12 @@ export async function loadWorkflow(root: string): Promise<Workflow> {
 		}
 		if (step.type === "shell") {
 			steps.push(
-				Object.freeze({ id: step.id, type: step.type, run: step.run }),
+				Object.freeze({
+					id: step.id,
+					type: step.type,
+					run: step.run,
+					onFail: step.on_fail ?? "stop",
+				}),
 			);
 			continue;
 		}
@@ -184,6 +208,10 @@ export async function loadWorkflow(root: string): Promise<Workflow> {
 				harness,
 				model,
 				args: Object.freeze(step.args ?? checked.data.args ?? []),
+				idleTimeoutMs:
+					step.idle_timeout ??
+					checked.data.idle_timeout ??
+					defaultIdleTimeoutMs,
 				includes: Object.freeze(includes),
 			}),
 		);
