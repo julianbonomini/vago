@@ -9,7 +9,7 @@ import {
 	startPunt,
 } from "./project.ts";
 
-const goalDir = ".punt/goals/hello";
+const goalDir = ".punt-goals/hello";
 
 function project(idleTimeout: string): Promise<string> {
 	return makeProject({

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { makeFakeClaude } from "./fake-claude.ts";
 import { goalText, makeProject, readTicketFile, runPunt } from "./project.ts";
 
-const goalDir = ".punt/goals/hello";
+const goalDir = ".punt-goals/hello";
 const ticketPath = `${goalDir}/tickets/01-say-hello.md`;
 const ticket = `+++\nstatus = "ready"\n+++\n\n# Say hello\n`;
 
@@ -335,7 +335,7 @@ prompt = "prompts/implement.md"
 	const started = result.stdout
 		.split("\n")
 		.filter((line) => line.endsWith(" started"))
-		.map((line) => line.split(" ").slice(1, 3).join(" "));
+		.map((line) => line.split(/ +/).slice(1, 3).join(" "));
 	expect(started).toEqual([
 		"01-say-hello edit",
 		"01-say-hello implement",

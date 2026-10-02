@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { goalText, makeProject, runPunt } from "./project.ts";
 
-const goalDir = ".punt/goals/hello";
+const goalDir = ".punt-goals/hello";
 
 const greet = `+++
 status = "done"

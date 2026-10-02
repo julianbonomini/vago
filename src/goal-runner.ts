@@ -3,7 +3,12 @@
 // every Step of the Workflow, and resetting a stuck Ticket. Hides the order
 // of a Goal's lifecycle.
 
-import { printGoalSummary, printStuck, printStuckRefusal } from "./progress.ts";
+import {
+	alignStepLines,
+	printGoalSummary,
+	printStuck,
+	printStuckRefusal,
+} from "./progress.ts";
 import { runStep, spellOutcome } from "./step-runner.ts";
 import {
 	closeOpenRun,
@@ -66,6 +71,10 @@ export async function runGoal(root: string, goal: string): Promise<GoalEnd> {
 		printStuckRefusal(goal, stuck);
 		return "unfinished";
 	}
+	alignStepLines(
+		state.tickets.map(({ ticket }) => ticket.name),
+		workflow.steps.map(({ id }) => id),
+	);
 	while (state.nextReady !== undefined) {
 		const finished = await runTicket(workflow, state.nextReady);
 		state = await readGoal(root, goal);

@@ -9,7 +9,7 @@ import {
 	startPunt,
 } from "./project.ts";
 
-const goalDir = ".punt/goals/hello";
+const goalDir = ".punt-goals/hello";
 
 function ticket(header: string, title: string): string {
 	return `+++\n${header}\n+++\n\n# ${title}\n`;

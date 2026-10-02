@@ -32,7 +32,7 @@ const ticketBody = `
 Print hello when the CLI starts.
 `;
 
-const goalDir = ".punt/goals/hello";
+const goalDir = ".punt-goals/hello";
 const ticketPath = `${goalDir}/tickets/01-say-hello.md`;
 
 async function agentProject(): Promise<string> {
@@ -159,5 +159,7 @@ test("the end line shows the Run's cost", async () => {
 	const result = await runPunt(root, ["run", "hello"], claude.env);
 
 	const lines = result.stdout.trimEnd().split("\n");
-	expect(lines[1]).toMatch(/^\S+ 01-say-hello implement ok \d+\.\ds \$0\.01$/);
+	expect(lines[1]).toMatch(
+		/^\S+ +01-say-hello +implement +ok +\d+\.\ds +\$0\.01$/,
+	);
 });
