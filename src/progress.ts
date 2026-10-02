@@ -1,7 +1,9 @@
 // Everything `punt run` prints to stdout while it runs: one line when a Step
-// starts and one when it ends, and the Goal summary on exit. Hides the line
-// formats and how durations and costs read.
+// starts and one when it ends, where to look when a Ticket goes stuck, and
+// the Goal summary on exit. Hides the line formats and how durations and
+// costs read.
 
+import { relative } from "node:path";
 import type { GoalState, Ticket } from "./tickets.ts";
 
 /** Prints the line saying Step `stepId` started on `ticket` at `started`. */
@@ -34,6 +36,39 @@ export function printStepEnded(
 }
 
 /**
+ * Prints that `ticket` went stuck after Step `stepId`, with what the human
+ * needs next: the Run's log at the absolute path `log`, the command that
+ * resumes its Harness session when there is one, and the command that resets
+ * the Ticket.
+ */
+export function printStuck(
+	ticket: Ticket,
+	stepId: string,
+	log: string,
+	resumeHint?: string,
+): void {
+	console.log(`${ticket.name} is stuck after ${stepId}`);
+	// Relative to the repo root, which `punt run` runs in, so it's short
+	// enough to read and still opens from where the human is.
+	console.log(`  log:    ${relative(ticket.root, log)}`);
+	if (resumeHint !== undefined) console.log(`  resume: ${resumeHint}`);
+	console.log(`  reset:  ${resetCommand(ticket)}`);
+}
+
+/**
+ * Prints why `punt run` won't start `goal`: the Tickets in `stuck`, each with
+ * the command that resets it.
+ */
+export function printStuckRefusal(goal: string, stuck: Ticket[]): void {
+	console.log(
+		`${goal} has stuck Tickets. Check the checkout, then reset each one:`,
+	);
+	for (const ticket of stuck) {
+		console.log(`  ${ticket.name}: ${resetCommand(ticket)}`);
+	}
+}
+
+/**
  * Prints how `goal` ended: how many of its Tickets are `done`, then each
  * Ticket with its status.
  */
@@ -43,6 +78,11 @@ export function printGoalSummary(goal: string, state: GoalState): void {
 	for (const { ticket, status } of state.tickets) {
 		console.log(`  ${ticket.name} ${status}`);
 	}
+}
+
+// Numbered as the Ticket file is, so it reads like the name above it.
+function resetCommand(ticket: Ticket): string {
+	return `punt ticket reset ${ticket.goal} ${String(ticket.number).padStart(2, "0")}`;
 }
 
 // UTC like the Ticket header, cut to whole seconds since a glance needs no more.

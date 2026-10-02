@@ -16,15 +16,31 @@ import {
 } from "./tickets.ts";
 import { type AgentStep, buildPrompt, type Step } from "./workflow.ts";
 
-/** How a Run ended: it succeeded, or its process exited non-zero. */
-export type RunOutcome = { kind: "ok" } | { kind: "exit"; code: number };
-
 /**
- * How a Run ended, and its output for later Steps' prompts: a shell Step's
- * exit code and everything it wrote to stdout and stderr, an agent Step's
- * final result text.
+ * How a Run ended: it succeeded, its process exited non-zero, or its Harness
+ * streamed nothing for the Step's `idle_timeout` and was killed.
  */
-export type FinishedRun = { outcome: RunOutcome; output: string };
+export type RunOutcome =
+	| { kind: "ok" }
+	| { kind: "exit"; code: number }
+	| { kind: "idle-timeout" };
+
+/** How a Run ended, and what's left of it for later Steps and the human. */
+export type FinishedRun = {
+	outcome: RunOutcome;
+	/**
+	 * For later Steps' prompts: a shell Step's exit code and everything it
+	 * wrote to stdout and stderr, an agent Step's final result text.
+	 */
+	output: string;
+	/** Absolute path of the Run's log. */
+	log: string;
+	/**
+	 * The command that resumes the Run's Harness session. Absent for a shell
+	 * Step, and for a session that ended before reporting its id.
+	 */
+	resumeHint?: string;
+};
 
 /**
  * Runs `step` on `ticket` in the repo root and waits for it to end. The Run
@@ -48,9 +64,15 @@ export async function runStep(
 	let outcome: RunOutcome;
 	let output: string;
 	let session: HarnessSessionReport | undefined;
+	let resumeHint: string | undefined;
 	try {
 		if (step.type === "agent") {
-			({ outcome, session } = await runAgent(step, ticket, stepOutputs, fd));
+			({ outcome, session, resumeHint } = await runAgent(
+				step,
+				ticket,
+				stepOutputs,
+				fd,
+			));
 			output = session.resultText ?? "";
 		} else {
 			const child = Bun.spawn(["sh", "-c", step.run], {
@@ -69,11 +91,13 @@ export async function runStep(
 		closeSync(fd);
 	}
 	const ended = new Date();
-	// The header and the Step line spell the outcome the same way.
-	const spelled = outcome.kind === "ok" ? "ok" : `exit ${outcome.code}`;
+	// The header and the Step line spell the outcome the same way. Each kind
+	// is named as it's spelled, so only `exit` needs its code added.
+	const spelled =
+		outcome.kind === "exit" ? `exit ${outcome.code}` : outcome.kind;
 	await recordRunEnd(entry, spelled, ended, session);
 	printStepEnded(ticket, step.id, spelled, started, ended, session?.costUsd);
-	return { outcome, output };
+	return { outcome, output, log: entry.log, resumeHint };
 }
 
 // The log gets the raw stream and stderr together, so a Harness that fails
@@ -83,7 +107,11 @@ async function runAgent(
 	ticket: Ticket,
 	stepOutputs: ReadonlyMap<string, string>,
 	fd: number,
-): Promise<{ outcome: RunOutcome; session: HarnessSessionReport }> {
+): Promise<{
+	outcome: RunOutcome;
+	session: HarnessSessionReport;
+	resumeHint?: string;
+}> {
 	const prompt = buildPrompt(step, {
 		ticket: await readTicketBody(ticket),
 		goal: await readGoalBody(ticket),
@@ -95,11 +123,22 @@ async function runAgent(
 		stdin: new Blob([prompt]),
 		stdout: "pipe",
 		stderr: fd,
+		// TODO(08): in its own process group the session misses the terminal's
+		// Ctrl-C, so `punt run` must kill the group on SIGINT and SIGTERM.
+		detached: true,
 	});
+	let idle = false;
+	const idleTimer = setTimeout(() => {
+		idle = true;
+		// The whole process group, since a tool the Harness started would
+		// otherwise hold stdout open and the stream would never end.
+		process.kill(-child.pid, "SIGKILL");
+	}, step.idleTimeoutMs);
 	let session: HarnessSessionReport = {};
 	const decoder = new TextDecoder();
 	let partial = "";
 	for await (const chunk of child.stdout) {
+		idleTimer.refresh();
 		// Written as it arrives, so `tail -f` on the log follows the Run live.
 		writeSync(fd, chunk);
 		const lines = (partial + decoder.decode(chunk, { stream: true })).split(
@@ -110,8 +149,17 @@ async function runAgent(
 			session = { ...session, ...harness.readLine(line) };
 		}
 	}
+	clearTimeout(idleTimer);
 	session = { ...session, ...harness.readLine(partial + decoder.decode()) };
-	return { outcome: outcomeOf(await child.exited), session };
+	const code = await child.exited;
+	return {
+		outcome: idle ? { kind: "idle-timeout" } : outcomeOf(code),
+		session,
+		resumeHint:
+			session.sessionId === undefined
+				? undefined
+				: harness.resumeHint(session.sessionId),
+	};
 }
 
 function outcomeOf(code: number): RunOutcome {
