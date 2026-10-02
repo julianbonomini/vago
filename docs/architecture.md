@@ -21,7 +21,7 @@ One file per module. A module becomes a folder only when it outgrows about 400 l
 
 | Module | Owns | Hides from everyone else |
 |---|---|---|
-| `cli.ts` | Commands, argument parsing, exit codes, printing errors, reading a `--body-file` from a path or stdin | `process.argv`, `process.exit`, which exit code means what, the `-` for stdin convention |
+| `cli.ts` | Commands, argument parsing, each command's help and usage text, exit codes, printing errors, reading a `--body-file` from a path or stdin | `process.argv`, `process.exit`, which exit code means what, the `-` for stdin convention |
 | `workflow.ts` | Loading and checking `.punt/workflows/<name>.toml`, the Workflow a Goal names, and its prompt files, refusing a name that isn't there with a list of the names that are, returning the frozen Workflow, building an agent Step's prompt from it | Which Workflows exist in `.punt/workflows/`, the TOML schema, defaults (`idle_timeout`, `on_fail`), path resolution, include merging, substitution syntax (`{{ticket}}`, `{{goal}}`, `{{steps.<id>.output}}`) |
 | `tickets.ts` | Goal and Ticket files: creating them, a Goal or Ticket with a given body or a title to fill in, the `goal.md` header, which names only the Goal's `workflow` and which the human may edit by hand between runs, format checks, readiness, status, `[[runs]]`, log paths | The `+++` header format, the `.punt/goals/<goal>/` layout, log naming, atomic writes |
 | `goal-runner.ts` | Creating a Goal with the Workflow it names, refused when `punt run` would refuse it; the main loop: lost and stuck handling, picking Tickets, running Steps in order, marking `done` | The order of a Goal's lifecycle |
