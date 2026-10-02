@@ -6,9 +6,9 @@ Spec: [Punt Alpha](../../punt-alpha/spec.md).
 
 **Blocked by:** 04 (Goals of several Tickets).
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] `punt goal new` creates a Goal that `punt run` accepts.
-- [ ] `punt ticket add` numbers Tickets 01, 02, … in order and writes a valid `ready` header.
-- [ ] Blockers given to `ticket add` land in `blocked_by`. An unknown blocker is refused.
-- [ ] Creating a Goal that already exists is refused.
+- [x] `punt goal new` creates a Goal that `punt run` accepts.
+- [x] `punt ticket add` numbers Tickets 01, 02, … in order and writes a valid `ready` header.
+- [x] Blockers given to `ticket add` land in `blocked_by`. An unknown blocker is refused.
+- [x] Creating a Goal that already exists is refused.
