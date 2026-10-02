@@ -65,10 +65,7 @@ export function startPunt(
 	};
 }
 
-/**
- * Runs `punt <args>` with `root` as the working directory and waits for it.
- * `env` is added to this process's environment, overriding what it names.
- */
+/** Starts `punt <args>` as `startPunt` does and waits for it to exit. */
 export function runPunt(
 	root: string,
 	args: string[],

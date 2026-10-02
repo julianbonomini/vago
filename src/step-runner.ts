@@ -184,8 +184,8 @@ function killGroupOnAbort(leader: number, interrupt: AbortSignal): void {
 
 // The whole group, since a process the Step started would otherwise live on
 // and could hold the Harness's stdout open, so its stream would never end.
-// SIGKILL because a Step that ignores SIGTERM must still end. A group that's
-// already gone needs no kill.
+// SIGKILL because a Step that ignores SIGTERM must still end. The group is
+// gone already when the signal comes just after the Step ended.
 function killGroup(leader: number): void {
 	try {
 		process.kill(-leader, "SIGKILL");

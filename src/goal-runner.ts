@@ -30,10 +30,9 @@ export async function runGoal(root: string, goal: string): Promise<GoalEnd> {
 		await closeOpenRun(ticket, "lost", new Date());
 		await setStatus(ticket, "stuck");
 	}
-	// `state` was read before the marking, so lost Tickets still read
-	// `running` in it.
+	state = await readGoal(root, goal);
 	const stuck = state.tickets
-		.filter(({ status }) => status === "stuck" || status === "running")
+		.filter(({ status }) => status === "stuck")
 		.map(({ ticket }) => ticket);
 	if (stuck.length > 0) {
 		printStuckRefusal(goal, stuck);
