@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { join } from "node:path";
 import { makeFakeClaude } from "./fake-claude.ts";
 import { makeProject, readTicketFile, runPunt } from "./project.ts";
 
@@ -158,4 +159,69 @@ test("a stuck shell Step's message has no resume command", async () => {
   log:    .punt/goals/hello/logs/01-check-1.log
   reset:  punt ticket reset hello 01
 `);
+});
+
+test("punt run refuses while a Ticket is stuck, names it and runs nothing", async () => {
+	const root = await makeProject({
+		".punt/workflow.toml": checkWorkflow(""),
+		".punt/prompts/review.md": "Review it.\n",
+		[`${goalDir}/goal.md`]: "# Hello\n",
+		[`${goalDir}/tickets/01-greet.md`]: ticket(`status = "stuck"`, "Greet"),
+		// Not blocked by the stuck Ticket, so only the refusal keeps it unrun.
+		[`${goalDir}/tickets/02-wave.md`]: ticket(`status = "ready"`, "Wave"),
+	});
+
+	const result = await runPunt(root, ["run", "hello"]);
+
+	expect(result.exitCode).not.toBe(0);
+	expect(
+		result.stdout,
+	).toBe(`hello has stuck Tickets. Check the checkout, then reset each one:
+  01-greet: punt ticket reset hello 01
+`);
+	expect(runsOf(await headerOf(root, "02-wave"))).toEqual([]);
+});
+
+test("a reset Ticket is ready again, keeps its runs and logs, and runs with new logs", async () => {
+	const root = await stuckProject(checkWorkflow(""));
+	await runPunt(root, ["run", "hello"]);
+
+	const reset = await runPunt(root, ["ticket", "reset", "hello", "01"]);
+
+	expect(reset.stderr).toBe("");
+	expect(reset.exitCode).toBe(0);
+	const greet = await headerOf(root, "01-greet");
+	expect(greet.status).toBe("ready");
+	expect(runsOf(greet).map((run) => [run.outcome, run.log])).toEqual([
+		["exit 4", "logs/01-check-1.log"],
+	]);
+
+	await Bun.write(
+		join(root, ".punt/workflow.toml"),
+		checkWorkflow(`on_fail = "continue"`),
+	);
+	const claude = await makeFakeClaude();
+	const rerun = await runPunt(root, ["run", "hello"], claude.env);
+
+	expect(rerun.exitCode).toBe(0);
+	const runs = runsOf(await headerOf(root, "01-greet"));
+	expect(runs.map((run) => [run.outcome, run.log])).toEqual([
+		["exit 4", "logs/01-check-1.log"],
+		["exit 4", "logs/01-check-2.log"],
+		["ok", "logs/01-review-3.jsonl"],
+	]);
+	const log = (name: string) =>
+		Bun.file(join(root, goalDir, "logs", name)).text();
+	expect(await log("01-check-1.log")).toBe("2 tests failed\n");
+	expect(await log("01-check-2.log")).toBe("2 tests failed\n");
+});
+
+test("resetting a Ticket that isn't stuck fails and leaves it as it was", async () => {
+	const root = await stuckProject(agentWorkflow);
+
+	const reset = await runPunt(root, ["ticket", "reset", "hello", "01"]);
+
+	expect(reset.exitCode).not.toBe(0);
+	expect(reset.stderr).toContain("01-greet is ready, not stuck");
+	expect((await headerOf(root, "01-greet")).status).toBe("ready");
 });

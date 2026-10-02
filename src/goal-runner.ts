@@ -2,7 +2,7 @@
 // and runs each through every Step of the Workflow. Hides the order of a
 // Goal's lifecycle.
 
-import { printGoalSummary, printStuck } from "./progress.ts";
+import { printGoalSummary, printStuck, printStuckRefusal } from "./progress.ts";
 import { runStep } from "./step-runner.ts";
 import { readGoal, setStatus, type Ticket } from "./tickets.ts";
 import { loadWorkflow, type Workflow } from "./workflow.ts";
@@ -12,14 +12,22 @@ export type GoalEnd = "done" | "unfinished";
 
 /**
  * Runs `goal` of the Project at `root` until no Ticket is ready or a Ticket
- * fails, then prints the Goal summary. Throws an Error naming the problem
- * when the Workflow or the Goal's format is bad. The Goal is checked before
- * the first Run and again after each Ticket, so a Ticket file broken
- * mid-Goal stops it there, without a summary.
+ * goes stuck, then prints the Goal summary. While any Ticket of the Goal is
+ * stuck it runs nothing and prints which ones instead. Throws an Error
+ * naming the problem when the Workflow or the Goal's format is bad. The Goal
+ * is checked before the first Run and again after each Ticket, so a Ticket
+ * file broken mid-Goal stops it there, without a summary.
  */
 export async function runGoal(root: string, goal: string): Promise<GoalEnd> {
 	const workflow = await loadWorkflow(root);
 	let state = await readGoal(root, goal);
+	const stuck = state.tickets
+		.filter(({ status }) => status === "stuck")
+		.map(({ ticket }) => ticket);
+	if (stuck.length > 0) {
+		printStuckRefusal(goal, stuck);
+		return "unfinished";
+	}
 	while (state.nextReady !== undefined) {
 		const finished = await runTicket(workflow, state.nextReady);
 		state = await readGoal(root, goal);
@@ -27,6 +35,30 @@ export async function runGoal(root: string, goal: string): Promise<GoalEnd> {
 	}
 	printGoalSummary(goal, state);
 	return state.done ? "done" : "unfinished";
+}
+
+/**
+ * Sets Ticket `number` of `goal` from `stuck` back to `ready`, keeping its
+ * `[[runs]]`, so the next `punt run` takes it again. Throws an Error naming
+ * the problem when the Goal's format is bad, the Goal has no such Ticket, or
+ * the Ticket isn't stuck.
+ */
+export async function resetTicket(
+	root: string,
+	goal: string,
+	number: number,
+): Promise<void> {
+	const { tickets } = await readGoal(root, goal);
+	const found = tickets.find(({ ticket }) => ticket.number === number);
+	if (found === undefined) {
+		throw new Error(`Goal ${goal} has no Ticket ${number}`);
+	}
+	if (found.status !== "stuck") {
+		throw new Error(
+			`${found.ticket.name} is ${found.status}, not stuck, so there is nothing to reset`,
+		);
+	}
+	await setStatus(found.ticket, "ready");
 }
 
 // Returns whether the Ticket got to `done`. A failed Step leaves it `stuck`,

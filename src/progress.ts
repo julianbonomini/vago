@@ -56,6 +56,19 @@ export function printStuck(
 }
 
 /**
+ * Prints why `punt run` won't start `goal`: the Tickets in `stuck`, each with
+ * the command that resets it.
+ */
+export function printStuckRefusal(goal: string, stuck: Ticket[]): void {
+	console.log(
+		`${goal} has stuck Tickets. Check the checkout, then reset each one:`,
+	);
+	for (const ticket of stuck) {
+		console.log(`  ${ticket.name}: ${resetCommand(ticket)}`);
+	}
+}
+
+/**
  * Prints how `goal` ended: how many of its Tickets are `done`, then each
  * Ticket with its status.
  */
