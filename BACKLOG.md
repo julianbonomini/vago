@@ -8,12 +8,12 @@ Items marked _(grill)_ have design questions to settle before writing Tickets.
 
 - [x] A Workflow for developing Punt itself, in Punt's own `.punt/`. _(grill)_
 - [x] Goals and Tickets written from the CLI can't carry a body, a description or other detail yet. Add a way to give them that. _(grill)_
-- [ ] Better `punt --help` and per-command help.
-- [ ] Punt goals currently get erased when you delete punt to re-run punt init. punt goals should be tracked in a different folder like .punt-goals and .punt for the config. git ignore should exlude .punt-goals always, while punt init asks if you want to include .punt
-- [ ] A README for developers who want to use Punt: install, `punt init`, writing a Goal and its Tickets, `punt run`, recovering a stuck Ticket. Architecture and philosophy can wait.
-- [ ] Improve the logs from cli (colours, spacing, maybe a table, idk)
+- [n] Better `punt --help` and per-command help.
+- [n] Punt goals currently get erased when you delete punt to re-run punt init. punt goals should be tracked in a different folder like .punt-goals and .punt for the config. git ignore should exlude .punt-goals always, while punt init asks if you want to include .punt
+- [n] A README for developers who want to use Punt: install, `punt init`, writing a Goal and its Tickets, `punt run`, recovering a stuck Ticket. Architecture and philosophy can wait.
+- [n] Improve the logs from cli (colours, spacing, maybe a table, idk)
 - [x] Goal PR description sucks. title could be improved as well. should contain usefull info as well as cost, time, etc. some metrics...
-- [ ] Prompt/skill / way to make grilling and to-tickets clone go directly into punt goals with correct format.
+- [x] Prompt/skill / way to make grilling and to-tickets clone go directly into punt goals with correct format.
 
 ## From the Alpha map's out-of-scope list
 
