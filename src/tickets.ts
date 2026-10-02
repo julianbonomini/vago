@@ -61,13 +61,28 @@ const ticketFileName = /^((\d+)-.+)\.md$/;
 const headerStart = "+++\n";
 const headerEnd = "\n+++\n";
 
+/** One entry of a Ticket's `[[runs]]` as `readGoal` found it. */
+export type TicketRun = {
+	step: string;
+	started: Date;
+	/** Absent while the Run is still going. */
+	ended?: Date;
+	/** As spelled in the header, like `ok` or `exit 1`. Absent like `ended`. */
+	outcome?: string;
+	/** What the Harness reported the Run cost. Absent for a shell Step. */
+	costUsd?: number;
+};
+
 /**
  * A Goal's Tickets as `readGoal` found them. Statuses change while Alpha
  * runs, so read the Goal again after a Ticket moves.
  */
 export type GoalState = {
-	/** Every Ticket of the Goal with its status, lowest number first. */
-	tickets: { ticket: Ticket; status: TicketStatus }[];
+	/**
+	 * Every Ticket of the Goal with its status and its `[[runs]]` in the
+	 * order they ran, lowest number first.
+	 */
+	tickets: { ticket: Ticket; status: TicketStatus; runs: TicketRun[] }[];
 	/**
 	 * The lowest-numbered Ticket that is `ready` and whose blockers are all
 	 * `done`, or undefined when there is none.
@@ -176,6 +191,13 @@ export async function readGoal(root: string, goal: string): Promise<GoalState> {
 		tickets: entries.map(({ ticket, header }) => ({
 			ticket,
 			status: header.status,
+			runs: (header.runs ?? []).map((run) => ({
+				step: run.step,
+				started: run.started,
+				ended: run.ended,
+				outcome: run.outcome,
+				costUsd: run.cost_usd,
+			})),
 		})),
 		nextReady: nextReady?.ticket,
 		done: entries.every(({ header }) => header.status === "done"),
@@ -241,11 +263,14 @@ export async function readTicketBody(ticket: Ticket): Promise<string> {
 }
 
 /**
- * Returns the `goal.md` of the Ticket's Goal as the human wrote it. Throws an
- * Error naming the file when it doesn't exist.
+ * Returns the `goal.md` of `goal` as the human wrote it. Throws an Error
+ * naming the file when it doesn't exist.
  */
-export async function readGoalBody(ticket: Ticket): Promise<string> {
-	const path = join(goalFolder(ticket.root, ticket.goal), "goal.md");
+export async function readGoalBody(
+	root: string,
+	goal: string,
+): Promise<string> {
+	const path = join(goalFolder(root, goal), "goal.md");
 	const file = Bun.file(path);
 	if (!(await file.exists())) throw new Error(`${path} not found`);
 	return await file.text();
