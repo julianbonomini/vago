@@ -19,9 +19,9 @@ One file per module. A module becomes a folder only when it outgrows about 400 l
 
 | Module | Owns | Hides from everyone else |
 |---|---|---|
-| `cli.ts` | Commands, argument parsing, exit codes, printing errors | `process.argv`, `process.exit`, which exit code means what |
+| `cli.ts` | Commands, argument parsing, exit codes, printing errors and the files `goal new` and `ticket add` create | `process.argv`, `process.exit`, which exit code means what |
 | `workflow.ts` | Loading and checking `.punt/workflow.toml` and its prompt files, returning the frozen Workflow, building an agent Step's prompt from it | The TOML schema, defaults (`idle_timeout`, `on_fail`), path resolution, include merging, substitution syntax (`{{ticket}}`, `{{goal}}`, `{{steps.<id>.output}}`) |
-| `tickets.ts` | Goal and Ticket files: format checks, readiness, status, `[[runs]]`, log paths | The `+++` header format, the `.punt/goals/<goal>/` layout, log naming, atomic writes |
+| `tickets.ts` | Goal and Ticket files: creating them, format checks, readiness, status, `[[runs]]`, log paths | The `+++` header format, the `.punt/goals/<goal>/` layout, log naming, atomic writes |
 | `goal-runner.ts` | The main loop: lost and stuck handling, picking Tickets, running Steps in order, marking `done` | The order of a Goal's lifecycle |
 | `step-runner.ts` | Running one Step on a Ticket as one Run: its `[[runs]]` entry, its Step lines, its prompt, its child process and its log | Spawning, process groups, signals, the idle timer, writing the log, reading the Harness stream |
 | `progress.ts` | Everything printed during a run: Step lines, the `stuck` message, the Goal summary | Line formats, durations, cost formatting |
@@ -40,6 +40,6 @@ One file per module. A module becomes a folder only when it outgrows about 400 l
 7. **Only `progress.ts` writes stdout during a run.** It never prints agent text. `cli.ts` writes errors to stderr.
 8. **Only `cli.ts` reads `process.argv` or calls `process.exit`.**
 9. **The kernel does no git** (ADR 0002). The one exception is `init.ts` appending to `.git/info/exclude`.
-10. **Imports go one way:** `cli.ts` → `goal-runner.ts` / `init.ts` → the rest, `cli.ts` → `tickets.ts` for `goal new` and `ticket add`, which write files and run nothing, and `step-runner.ts` → `harness/registry.ts` → Harness modules. No cycles. `tickets.ts` and `progress.ts` are leaves: they take plain values and never import the modules that call them. A type lives with the module that owns the concept it describes, never where it happens to avoid a cycle. A Harness module's type-only import of `Harness` (rule 4) is erased at runtime and doesn't count.
+10. **Imports go one way:** `cli.ts` → `goal-runner.ts` / `init.ts` → the rest, and `step-runner.ts` → `harness/registry.ts` → Harness modules. `cli.ts` also imports `tickets.ts` for `goal new` and `ticket add`, which only write files. No cycles. `tickets.ts` and `progress.ts` are leaves: they take plain values and never import the modules that call them. A type lives with the module that owns the concept it describes, never where it happens to avoid a cycle. A Harness module's type-only import of `Harness` (rule 4) is erased at runtime and doesn't count.
 11. **Each module owns its types** and exports them beside its functions. There's no shared `types.ts`.
 12. **Ticket writes survive a crash.** Every header rewrite writes a temp file and renames it over the Ticket, keeping the body byte for byte. A Run's `[[runs]]` entry is written before its Step starts and filled in when it ends.

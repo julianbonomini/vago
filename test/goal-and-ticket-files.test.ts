@@ -79,7 +79,7 @@ test("ticket add numbers Tickets in order with a ready header punt run takes", a
 	);
 });
 
-test("ticket add numbers past the highest Ticket and writes its blockers", async () => {
+test("ticket add numbers past the highest Ticket and writes each blocker once", async () => {
 	const root = await makeProject({
 		".punt/workflow.toml": workflow,
 		[`${goalDir}/goal.md`]: "# Hello\n",
@@ -96,6 +96,8 @@ test("ticket add numbers past the highest Ticket and writes its blockers", async
 		"3",
 		"--blocked-by",
 		"1",
+		"--blocked-by",
+		"3",
 	]);
 
 	expect(result.stderr).toBe("");
@@ -139,11 +141,14 @@ for (const name of ["../escape", "a/b", ""]) {
 
 		const goal = await runPunt(root, ["goal", "new", name]);
 		const ticket = await runPunt(root, ["ticket", "add", "hello", name]);
+		const ticketOfGoal = await runPunt(root, ["ticket", "add", name, "wave"]);
 
 		expect(goal.exitCode).not.toBe(0);
 		expect(goal.stderr).toMatch(/may hold only letters, digits, - and _/);
 		expect(ticket.exitCode).not.toBe(0);
 		expect(ticket.stderr).toMatch(/may hold only letters, digits, - and _/);
+		expect(ticketOfGoal.exitCode).not.toBe(0);
+		expect(ticketOfGoal.stderr).toMatch(/Goal name .* may hold only/);
 		const files = await readdir(join(root, ".punt"), { recursive: true });
 		expect(files.sort()).toEqual([
 			"goals",

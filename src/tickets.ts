@@ -1,6 +1,6 @@
-// Owns Goal and Ticket files under `.punt/goals/<goal>/`: the `+++` TOML
-// header, status, the `[[runs]]` history and where each Run's log goes.
-// Every header rewrite is atomic and keeps the body byte for byte.
+// Creates and owns Goal and Ticket files under `.punt/goals/<goal>/`: the
+// `+++` TOML header, status, the `[[runs]]` history and where each Run's log
+// goes. Every header rewrite is atomic and keeps the body byte for byte.
 
 import { existsSync } from "node:fs";
 import { mkdir, readdir, rename } from "node:fs/promises";
@@ -86,7 +86,6 @@ type TicketHeader = { ticket: Ticket; header: Header };
  * or naming the problem when `goal` isn't a valid name.
  */
 export async function createGoal(root: string, goal: string): Promise<string> {
-	checkName("Goal name", goal);
 	const folder = goalFolder(root, goal);
 	const goalFile = join(folder, "goal.md");
 	if (await Bun.file(goalFile).exists()) {
@@ -179,10 +178,10 @@ export async function readGoal(root: string, goal: string): Promise<GoalState> {
 /**
  * Adds a Ticket named `slug` to `goal`, numbered one past its highest
  * Ticket, with status `ready`, blocked by the Tickets numbered in
- * `blockedBy`, and a title for the human to fill in. Returns the path of the
- * new Ticket file. Throws an Error naming the problem when the Goal's format
- * is bad, as `readGoal` does, a blocker isn't a Ticket of the Goal, or
- * `slug` isn't a valid name.
+ * `blockedBy` (each once, however often it's given), and a title for the
+ * human to fill in. Returns the path of the new Ticket file. Throws an Error
+ * naming the problem when the Goal doesn't exist or its format is bad, a
+ * blocker isn't a Ticket of the Goal, or `goal` or `slug` isn't a valid name.
  */
 export async function addTicket(
 	root: string,
@@ -203,7 +202,7 @@ export async function addTicket(
 	const ticket = { root, goal, name: `${twoDigits(number)}-${slug}`, number };
 	const header: Header =
 		blockedBy.length > 0
-			? { status: "ready", blocked_by: blockedBy }
+			? { status: "ready", blocked_by: [...new Set(blockedBy)] }
 			: { status: "ready" };
 	const file = ticketFile(ticket);
 	await Bun.write(file, ticketText(header, `\n# ${slug}\n`));
@@ -366,6 +365,7 @@ function twoDigits(number: number): string {
 }
 
 function goalFolder(root: string, goal: string): string {
+	checkName("Goal name", goal);
 	return join(root, ".punt", "goals", goal);
 }
 
