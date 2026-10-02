@@ -32,9 +32,12 @@ export async function runGoal(root: string, goal: string): Promise<GoalEnd> {
 // Returns whether the Ticket got to `done`.
 async function runTicket(workflow: Workflow, ticket: Ticket): Promise<boolean> {
 	await setStatus(ticket, "running");
+	const stepOutputs = new Map<string, string>();
 	for (const step of workflow.steps) {
+		const { outcome, output } = await runStep(step, ticket, stepOutputs);
+		stepOutputs.set(step.id, output);
 		// TODO(07): a failed Step marks the Ticket stuck.
-		if ((await runStep(step, ticket)).kind !== "ok") return false;
+		if (outcome.kind !== "ok") return false;
 	}
 	await setStatus(ticket, "done");
 	return true;

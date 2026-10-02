@@ -20,12 +20,24 @@ import { type AgentStep, buildPrompt, type Step } from "./workflow.ts";
 export type RunOutcome = { kind: "ok" } | { kind: "exit"; code: number };
 
 /**
+ * How a Run ended, and its output for later Steps' `{{steps.<id>.output}}`:
+ * a shell Step's exit code and everything it wrote to stdout and stderr, an
+ * agent Step's final result text.
+ */
+export type FinishedRun = { outcome: RunOutcome; output: string };
+
+/**
  * Runs `step` on `ticket` in the repo root and waits for it to end. The Run
  * gets a `[[runs]]` entry before it starts and its end filled in after, a
- * line on stdout at each, and a log of everything it wrote. Returns how it
- * ended.
+ * line on stdout at each, and a log of everything it wrote. An agent Step's
+ * prompt reads `stepOutputs`, the outputs of the Steps already run on this
+ * Ticket by Step id.
  */
-export async function runStep(step: Step, ticket: Ticket): Promise<RunOutcome> {
+export async function runStep(
+	step: Step,
+	ticket: Ticket,
+	stepOutputs: ReadonlyMap<string, string>,
+): Promise<FinishedRun> {
 	const started = new Date();
 	const entry = await recordRunStart(ticket, step, started);
 	printStepStarted(ticket, step.id, started);
@@ -34,10 +46,12 @@ export async function runStep(step: Step, ticket: Ticket): Promise<RunOutcome> {
 	// Step wrote them, which two separate pipes can't promise.
 	const fd = openSync(entry.log, "w");
 	let outcome: RunOutcome;
+	let output: string;
 	let session: HarnessSessionReport | undefined;
 	try {
 		if (step.type === "agent") {
-			({ outcome, session } = await runAgent(step, ticket, fd));
+			({ outcome, session } = await runAgent(step, ticket, stepOutputs, fd));
+			output = session.resultText ?? "";
 		} else {
 			const child = Bun.spawn(["sh", "-c", step.run], {
 				cwd: ticket.root,
@@ -45,7 +59,11 @@ export async function runStep(step: Step, ticket: Ticket): Promise<RunOutcome> {
 				stdout: fd,
 				stderr: fd,
 			});
-			outcome = outcomeOf(await child.exited);
+			const code = await child.exited;
+			outcome = outcomeOf(code);
+			// The log holds stdout and stderr in the order the Step wrote them,
+			// which is how a review prompt should read them.
+			output = `exit code ${code}\n${await Bun.file(entry.log).text()}`;
 		}
 	} finally {
 		closeSync(fd);
@@ -55,7 +73,7 @@ export async function runStep(step: Step, ticket: Ticket): Promise<RunOutcome> {
 	const spelled = outcome.kind === "ok" ? "ok" : `exit ${outcome.code}`;
 	await recordRunEnd(entry, spelled, ended, session);
 	printStepEnded(ticket, step.id, spelled, started, ended, session?.costUsd);
-	return outcome;
+	return { outcome, output };
 }
 
 // The log gets the raw stream and stderr together, so a Harness that fails
@@ -63,11 +81,13 @@ export async function runStep(step: Step, ticket: Ticket): Promise<RunOutcome> {
 async function runAgent(
 	step: AgentStep,
 	ticket: Ticket,
+	stepOutputs: ReadonlyMap<string, string>,
 	fd: number,
 ): Promise<{ outcome: RunOutcome; session: HarnessSessionReport }> {
 	const prompt = buildPrompt(step, {
 		ticket: await readTicketBody(ticket),
 		goal: await readGoalBody(ticket),
+		stepOutputs,
 	});
 	const harness = findHarness(step.harness);
 	const child = Bun.spawn(harness.command(step.model, step.args), {

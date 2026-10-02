@@ -9,6 +9,8 @@ export type HarnessSessionReport = {
 	sessionId?: string;
 	tokens?: { input: number; output: number };
 	costUsd?: number;
+	/** The session's final answer, which later Steps read as its output. */
+	resultText?: string;
 };
 
 /**

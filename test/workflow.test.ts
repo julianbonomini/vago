@@ -152,6 +152,31 @@ test.each([
 		message: 'prompts/implement.md of step "implement" not found',
 	},
 	{
+		problem: "a missing Workflow include file",
+		workflow: `[include]\nstyle = "docs/code-style.md"\n${shellStep("check")}`,
+		message: "docs/code-style.md of the Workflow not found",
+	},
+	{
+		problem: "a missing Step include file",
+		workflow: agentWorkflow('include.style = "docs/code-style.md"'),
+		files: { ".punt/prompts/implement.md": "Implement it.\n" },
+		message: 'docs/code-style.md of step "implement" not found',
+	},
+	{
+		problem: "a reference to an unknown Step's output",
+		workflow: agentWorkflow(""),
+		files: { ".punt/prompts/implement.md": "{{steps.chek.output}}\n" },
+		message:
+			'step "implement" reads {{steps.chek.output}}, but no step "chek" runs before it',
+	},
+	{
+		problem: "a reference to a later Step's output",
+		workflow: agentWorkflow("") + shellStep("check"),
+		files: { ".punt/prompts/implement.md": "{{steps.check.output}}\n" },
+		message:
+			'step "implement" reads {{steps.check.output}}, but no step "check" runs before it',
+	},
+	{
 		problem: "an invalid on_fail",
 		workflow: `${shellStep("check")}on_fail = "retry"\n`,
 		message: 'expected one of "stop"|"continue"\n  → at steps[0].on_fail',
@@ -174,8 +199,11 @@ test.each([
 	},
 ])(
 	"$problem fails before any Ticket changes, naming the problem",
-	async ({ workflow, message }) => {
-		const root = await workflowProject({ ".punt/workflow.toml": workflow });
+	async ({ workflow, files, message }) => {
+		const root = await workflowProject({
+			".punt/workflow.toml": workflow,
+			...files,
+		});
 
 		const result = await runPunt(root, ["run", "hello"]);
 
