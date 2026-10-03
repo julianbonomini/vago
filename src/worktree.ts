@@ -1,6 +1,7 @@
-// A Goal's worktree, where its Steps run: creating it, reusing it, and the
-// way back from it to the main checkout. Hides the `VAGO_HOME` layout, the
-// branch name, the default-branch rule, the git commands, and what gets copied.
+// A Goal's worktree, where its Steps run: creating it, recreating it from its
+// branch, reusing it, and the way back from it to the main checkout. Hides the
+// `VAGO_HOME` layout, the branch name, the default-branch rule, the git
+// commands, and what gets copied.
 
 import { existsSync } from "node:fs";
 import { cp, mkdir, realpath, rm } from "node:fs/promises";
@@ -10,13 +11,15 @@ import { goalsFolderName } from "./tickets.ts";
 
 /**
  * Gives Goal `goal` of the Project at `root` its worktree and returns the
- * worktree's absolute path. The first time, it checks out a new branch
- * `vago/<goal>`, cut from the Project's default branch, in a folder under
- * `$VAGO_HOME/worktrees/` (`~/.vago` by default), and copies in every
- * untracked and ignored file of `root` except `.vago-goals/`. A worktree that
- * exists is reused with its work. Either way, when `.vago/` is untracked the
+ * worktree's absolute path. A worktree that exists is reused with its work.
+ * Otherwise one is made in a folder under `$VAGO_HOME/worktrees/`
+ * (`~/.vago` by default), checking out `vago/<goal>` with the Goal's work
+ * when that branch exists, or else a new `vago/<goal>` cut from the
+ * Project's default branch, and it gets every untracked and ignored file of
+ * `root` except `.vago-goals/`. Either way, when `.vago/` is untracked the
  * worktree's `.vago/` is `root`'s as it is now. Throws an Error naming the
- * problem when `root`'s default branch can't be told or git fails.
+ * problem when a new branch is needed and `root`'s default branch can't be
+ * told, or when git fails.
  */
 export async function openWorktree(
 	root: string,
@@ -26,17 +29,24 @@ export async function openWorktree(
 	const untracked = await untrackedEntries(root);
 	if (!existsSync(path)) {
 		await mkdir(dirname(path), { recursive: true });
-		const start = await defaultBranch(root);
-		await git(root, [
-			"worktree",
-			"add",
-			"--quiet",
-			"--no-track",
-			"-b",
-			`vago/${goal}`,
-			path,
-			start,
-		]);
+		const branch = `vago/${goal}`;
+		if (await hasBranch(root, `refs/heads/${branch}`)) {
+			// A worktree deleted by hand can leave git's record of it behind,
+			// which keeps the branch checked out there.
+			await git(root, ["worktree", "prune"]);
+			await git(root, ["worktree", "add", "--quiet", path, branch]);
+		} else {
+			await git(root, [
+				"worktree",
+				"add",
+				"--quiet",
+				"--no-track",
+				"-b",
+				branch,
+				path,
+				await defaultBranch(root),
+			]);
+		}
 		await copyUntracked(root, path, untracked);
 	}
 	// The Workflow is read from `root` on every run, so the scripts and

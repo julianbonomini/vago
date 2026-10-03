@@ -9,6 +9,6 @@ This supersedes ADR 0002, which kept the kernel free of git. With Steps in the h
 - The human may use the main checkout while Goals run, and its branch and files never change.
 - Goal and Ticket state, `[[runs]]` and logs stay in the main checkout's `.vago-goals/`. A `vago` command started inside a Goal's worktree finds the main checkout, and shell Steps get its path in `VAGO_PROJECT_ROOT`.
 - `.git/info/exclude` and git config are shared by every worktree of the repo.
-- Running a Goal again reuses its worktree with the work in it. Untracked files are copied only when the worktree is created, except an untracked `.vago/`, which is copied again on every run so its scripts and prompts match the Workflow read from the main checkout.
+- Running a Goal again reuses its worktree with the work in it. Untracked files are copied only when the worktree is created, except an untracked `.vago/`, which is copied again on every run so its scripts and prompts match the Workflow read from the main checkout. A worktree the human deleted, by `rm -rf` or `git worktree remove`, is recreated from `vago/<goal>` with its commits and gets the untracked files copied again. To do that, Vago runs `git worktree prune`, which also clears git's record of any other worktree of the repo deleted by hand.
 - `vago/<goal>` is cut with no upstream, so a Workflow's `git push` never aims at the default branch by accident.
 - `VAGO_HOME` moves the folder, which the tests use to stay out of the real home folder.

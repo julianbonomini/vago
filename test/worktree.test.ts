@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, realpath } from "node:fs/promises";
+import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -9,6 +9,7 @@ import {
 	makeProject,
 	readTicketFile,
 	runVago,
+	type VagoExit,
 	vagoHome,
 	vagoOnPath,
 } from "./project.ts";
@@ -240,4 +241,93 @@ test("re-running a Goal reuses its worktree, with its work and the main checkout
 	expect(header.status).toBe("done");
 	const worktree = await goalWorktree(root, "hello");
 	expect(await Bun.file(join(worktree, "version.txt")).text()).toBe("v2\n");
+});
+
+// Runs Goal hello, whose Ticket 01 commits one.txt on vago/hello and whose
+// Ticket 02 runs `check`, failing until PASS is set. Then it deletes the
+// worktree the way `remove` says, resets 02 and runs the Goal again with
+// PASS=1.
+async function rerunWithDeletedWorktree(
+	files: Record<string, string>,
+	check: string,
+	remove: "rm -rf" | "git worktree remove",
+): Promise<{ root: string; first: VagoExit; again: VagoExit }> {
+	const root = await makeProject({
+		...files,
+		".vago/workflows/test.toml": oneStep(
+			`if [ "$VAGO_TICKET" = 01-one ]; then echo one > one.txt && git add one.txt && git ${gitIdentity.join(" ")} commit -qm one; else ${check}; fi`,
+		),
+		[`${goalDir}/goal.md`]: goalText("test"),
+		[`${goalDir}/tickets/01-one.md`]: ticket,
+		[`${goalDir}/tickets/02-two.md`]: ticket,
+	});
+	const first = await runVago(root, ["run", "hello"]);
+	expect(first.exitCode).not.toBe(0);
+	const worktree = await goalWorktree(root, "hello");
+	if (remove === "rm -rf") {
+		await rm(worktree, { recursive: true, force: true });
+	} else {
+		// The copied untracked files leave the worktree dirty.
+		const removed = Bun.spawnSync(
+			["git", "worktree", "remove", "--force", worktree],
+			{ cwd: root },
+		);
+		expect(removed.exitCode).toBe(0);
+	}
+	await runVago(root, ["ticket", "reset", "hello", "2"]);
+	const again = await runVago(root, ["run", "hello"], { PASS: "1" });
+	return { root, first, again };
+}
+
+test("a worktree deleted by hand is recreated from vago/<goal> with its commits, and the remaining Tickets finish", async () => {
+	const { root, first, again } = await rerunWithDeletedWorktree(
+		{},
+		'test -e one.txt && test -n "$PASS"',
+		"rm -rf",
+	);
+
+	expect(again.stderr).toBe("");
+	expect(again.exitCode).toBe(0);
+	const { header } = await readTicketFile(root, `${goalDir}/tickets/02-two.md`);
+	expect(header.status).toBe("done");
+	const worktreeLine = (stdout: string) => stdout.split("\n")[0];
+	expect(worktreeLine(again.stdout)).toBe(worktreeLine(first.stdout));
+	const worktree = await goalWorktree(root, "hello");
+	const git = (...args: string[]) =>
+		Bun.spawnSync(["git", ...args], { cwd: worktree }).stdout.toString();
+	expect(git("branch", "--show-current").trim()).toBe("vago/hello");
+	expect(git("log", "--format=%s").split("\n")).toContain("one");
+});
+
+test("a recreated worktree holds the main checkout's untracked and ignored files, but not .vago-goals/", async () => {
+	const { root, again } = await rerunWithDeletedWorktree(
+		{ ".gitignore": ".env\n", ".env": "secret\n", "notes.txt": "note\n" },
+		'test -e one.txt && cat .env notes.txt > seen.txt && test ! -e .vago-goals && test -n "$PASS"',
+		"rm -rf",
+	);
+
+	expect(again.stderr).toBe("");
+	expect(again.exitCode).toBe(0);
+	const { header } = await readTicketFile(root, `${goalDir}/tickets/02-two.md`);
+	expect(header.status).toBe("done");
+	const worktree = await goalWorktree(root, "hello");
+	expect(await Bun.file(join(worktree, "seen.txt")).text()).toBe(
+		"secret\nnote\n",
+	);
+});
+
+test("a worktree removed with git worktree remove is recreated too", async () => {
+	const { root, again } = await rerunWithDeletedWorktree(
+		{},
+		'test -e one.txt && test -n "$PASS"',
+		"git worktree remove",
+	);
+
+	expect(again.stderr).toBe("");
+	expect(again.exitCode).toBe(0);
+	const { header } = await readTicketFile(root, `${goalDir}/tickets/02-two.md`);
+	expect(header.status).toBe("done");
+	const worktree = await goalWorktree(root, "hello");
+	const log = Bun.spawnSync(["git", "log", "--format=%s"], { cwd: worktree });
+	expect(log.stdout.toString().split("\n")).toContain("one");
 });
