@@ -5,7 +5,13 @@ import { beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { makeProject, oneStep, projectWithGoals, vagoHome } from "./project.ts";
+import {
+	makeProject,
+	oneStep,
+	projectWithGoals,
+	ticketText,
+	vagoHome,
+} from "./project.ts";
 import { type TerminalScreen, terminalScreen } from "./terminal-screen.ts";
 
 setDefaultTimeout(120_000);
@@ -153,4 +159,42 @@ test("the compiled vago still runs every command", async () => {
 	expect(await Bun.file(join(root, ".vago-goals/x/goal.md")).exists()).toBe(
 		true,
 	);
+});
+
+test("a Ticket changed on disk shows in the next frame, redrawing only its row", async () => {
+	const root = await projectWithGoals(["alpha", "beta", "gamma"]);
+	const ticket = join(root, ".vago-goals/gamma/tickets/01-first.md");
+	await Bun.write(ticket, ticketText("ready"));
+	const tui = openVago(root);
+	const first = await tui.screen.frameWhere((lines) =>
+		[" 1/3 ", "gamma"].every((text) => rowOf(lines, text) !== -1),
+	);
+	const noted = tui.screen.printed().length;
+
+	await Bun.write(ticket, ticketText("done"));
+	const second = await tui.screen.frameWhere((lines) =>
+		(lines[rowOf(lines, "gamma")] ?? "").includes("1/1"),
+	);
+
+	for (const name of ["alpha", "beta", "gamma"]) {
+		expect(rowOf(second, name)).toBe(rowOf(first, name));
+	}
+	expect(tui.screen.scrolls()).toBe(0);
+	const redrawn = tui.screen.printed().slice(noted);
+	expect(redrawn).not.toContain("alpha");
+	expect(redrawn).not.toContain("beta");
+	tui.kill("SIGKILL");
+});
+
+test("with nothing changing vago writes nothing, and a key lands at once", async () => {
+	const tui = await openOnGoals();
+	const drawn = tui.screen.printed().length;
+
+	await Bun.sleep(2500);
+	expect(tui.screen.printed().length).toBe(drawn);
+
+	tui.press("\x1b[B");
+	// The quiet window of `frameWhere` and less than a quarter of a re-read.
+	await tui.screen.frameWhere((lines) => rowOf(lines, " 2/3 ") !== -1, 200);
+	tui.kill("SIGKILL");
 });

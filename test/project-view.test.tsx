@@ -1,11 +1,13 @@
 import { afterEach, expect, test } from "bun:test";
-import { basename } from "node:path";
+import { rm } from "node:fs/promises";
+import { basename, join } from "node:path";
 import { RGBA } from "@opentui/core";
 import type { TestRendererSetup } from "@opentui/core/testing";
 import { testRender } from "@opentui/solid";
 import { ProjectView } from "../src/tui/project-view.tsx";
 import {
 	goalText,
+	type HeldLock,
 	heldLock,
 	makeProject,
 	projectWithGoals,
@@ -31,7 +33,8 @@ async function renderView(
 }
 
 // Draws frames until one contains `text`, and returns it. The view reads its
-// Goals from disk, so the first frames can come before the read is done.
+// Goals from disk, so the first frames can come before the read is done, and
+// a change on disk shows within one second's re-read.
 async function frameWith(
 	view: TestRendererSetup,
 	text: string,
@@ -40,7 +43,7 @@ async function frameWith(
 		await view.renderOnce();
 		const frame = view.captureCharFrame();
 		if (frame.includes(text)) return frame;
-		if (tries === 100) throw new Error(`No frame shows ${text}:\n${frame}`);
+		if (tries === 300) throw new Error(`No frame shows ${text}:\n${frame}`);
 		await Bun.sleep(10);
 	}
 }
@@ -133,6 +136,10 @@ function rowOf(frame: string, goal: string): string {
 	if (row === undefined) throw new Error(`No row shows ${goal}:\n${frame}`);
 	return row;
 }
+
+// The number of the frame's first line that holds `text`, -1 with none.
+const lineOf = (frame: string, text: string) =>
+	frame.split("\n").findIndex((line) => line.includes(text));
 
 const at = (time: string) => new Date(`2026-10-01T${time}:00Z`);
 
@@ -454,9 +461,7 @@ test("rows sort running, lost, stuck, ready, done, then latest activity first", 
 	const frame = await frameWith(view, " z-new ");
 
 	const order = ["e-run", "d-lost", "c-stuck", "b-ready", "z-new", "a-old"];
-	const rows = order.map((goal) =>
-		frame.split("\n").findIndex((line) => line.includes(` ${goal} `)),
-	);
+	const rows = order.map((goal) => lineOf(frame, ` ${goal} `));
 	expect(rows).toEqual([...rows].sort((a, b) => a - b));
 	expect(rows[0]).toBeGreaterThan(-1);
 });
@@ -722,7 +727,7 @@ test("moving the cursor shifts no row of the table or the preview", async () => 
 	const view = await renderView(root);
 	const slots = (frame: string) =>
 		[" a ", " b ", "LATEST RUNS", "Workflow w", "Tickets"].map((text) =>
-			frame.split("\n").findIndex((line) => line.includes(text)),
+			lineOf(frame, text),
 		);
 
 	const first = slots(await frameWith(view, " 1/2 "));
@@ -731,4 +736,152 @@ test("moving the cursor shifts no row of the table or the preview", async () => 
 
 	expect(first).not.toContain(-1);
 	expect(second).toEqual(first);
+});
+
+// Writes `text` to the file at `path` under the Project at `root`.
+const rewrite = (root: string, path: string, text: string) =>
+	Bun.write(join(root, path), text);
+
+test("a Ticket's status changing on disk shows with no key pressed", async () => {
+	const root = await projectWithTickets({ "01-first": ticketText("ready") });
+	const view = await renderView(root, wide);
+	await frameWith(view, "0/1");
+
+	await rewrite(root, ".vago-goals/a/tickets/01-first.md", ticketText("done"));
+
+	expect(rowOf(await frameWith(view, "finished"), "a")).toContain(" 1/1 ");
+});
+
+test("a Run starting and then ending shows with no key pressed", async () => {
+	const design = {
+		step: "design",
+		started: at("09:00"),
+		ended: at("09:10"),
+		outcome: "ok",
+	};
+	const root = await projectWithTickets({
+		"01-first": ticketText("done"),
+		"02-second": ticketText("running", { runs: [design] }),
+	});
+	await heldLock(root, "a");
+	const view = await renderView(root, wide);
+	await frameWith(view, `${clock(at("09:00"))} 02 design`);
+	const architecture = `${clock(at("09:10"))} 02 architecture`;
+	const second = ".vago-goals/a/tickets/02-second.md";
+
+	await rewrite(
+		root,
+		second,
+		ticketText("running", {
+			runs: [design, { step: "architecture", started: at("09:10") }],
+		}),
+	);
+	expect(lineWith(await frameWith(view, architecture), architecture)).toContain(
+		"● live",
+	);
+
+	await rewrite(
+		root,
+		second,
+		ticketText("running", {
+			runs: [
+				design,
+				{
+					step: "architecture",
+					started: at("09:10"),
+					ended: at("09:25"),
+					outcome: "ok",
+				},
+			],
+		}),
+	);
+	expect(lineWith(await frameWith(view, "15m 0s"), architecture)).toMatch(
+		/✓ ok +15m 0s/,
+	);
+});
+
+for (const [how, drop] of [
+	["holder dies", (lock: HeldLock) => lock.release()],
+	[
+		"file is deleted",
+		(_lock: HeldLock, root: string) =>
+			rm(join(root, ".vago-goals/a/running.lock")),
+	],
+] as const) {
+	test(`a Goal turns lost with no key pressed when its lock's ${how}`, async () => {
+		const root = await lostProject();
+		const lock = await heldLock(root, "a");
+		const view = await renderView(root, wide);
+		await frameWith(view, "● running");
+
+		await drop(lock, root);
+
+		expect(rowOf(await frameWith(view, " 0 running"), "a")).toContain("? lost");
+	});
+}
+
+test("a Goal added on disk shows with no key pressed", async () => {
+	const root = await projectWithGoals(["a", "b"]);
+	const view = await renderView(root);
+	await frameWith(view, " 1/2 ");
+
+	await rewrite(root, ".vago-goals/c/goal.md", goalText("w"));
+
+	expect(rowOf(await frameWith(view, " 1/3 "), "c")).toContain("○ ready");
+});
+
+// Makes Goal `gamma` of the Project at `root` run: a held lock and a running
+// Ticket, so its row moves to the top.
+async function startGamma(root: string): Promise<void> {
+	await rewrite(
+		root,
+		".vago-goals/gamma/tickets/01-first.md",
+		ticketText("running", { runs: [{ step: "design", started: at("09:00") }] }),
+	);
+	await heldLock(root, "gamma");
+}
+
+test("a lock taken shows with no key pressed, and the selection stays on its Goal", async () => {
+	const root = await projectWithGoals(["alpha", "beta", "gamma"]);
+	const view = await renderView(root);
+	await frameWith(view, " 1/3 ");
+	view.mockInput.pressArrow("down");
+	await frameWith(view, " 2/3 ");
+	expect(isAccented(view, "beta")).toBe(true);
+
+	await startGamma(root);
+
+	const frame = await frameWith(view, "● running");
+	expect(lineOf(frame, " gamma ")).toBeLessThan(lineOf(frame, " alpha "));
+	expect(isAccented(view, "beta")).toBe(true);
+	expect(frame).toContain(" 3/3 ");
+});
+
+test("before any key the selection stays on the first Goal read when rows reorder", async () => {
+	const root = await projectWithGoals(["alpha", "beta", "gamma"]);
+	const view = await renderView(root);
+	await frameWith(view, " 1/3 ");
+	expect(isAccented(view, "alpha")).toBe(true);
+
+	await startGamma(root);
+
+	const frame = await frameWith(view, "● running");
+	expect(lineOf(frame, " gamma ")).toBeLessThan(lineOf(frame, " alpha "));
+	expect(isAccented(view, "alpha")).toBe(true);
+	expect(frame).toContain(" 2/3 ");
+});
+
+test("a Ticket that can't be read for a moment keeps the last rows on screen", async () => {
+	const root = await projectWithTickets({ "01-first": ticketText("ready") });
+	const view = await renderView(root, wide);
+	await frameWith(view, "0/1");
+	const first = ".vago-goals/a/tickets/01-first.md";
+
+	await rewrite(root, first, "+++\nstatus = \n");
+	await Bun.sleep(1500);
+	await view.renderOnce();
+	expect(rowOf(view.captureCharFrame(), "a")).toContain(" 0/1 ");
+
+	await rewrite(root, first, ticketText("done"));
+	expect(rowOf(await frameWith(view, "finished"), "a")).toContain(" 1/1 ");
 });

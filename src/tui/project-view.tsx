@@ -1,10 +1,19 @@
 // The Project view: the Goals table, one row per Goal in the order
 // `goal-rows.ts` gives, with the selection moved by keys. Hides the columns,
-// their widths and which drop out on a narrow terminal.
+// their widths, which drop out on a narrow terminal, and when the Goals are
+// read again.
 
 import { basename } from "node:path";
 import { type JSX, useKeyboard, useTerminalDimensions } from "@opentui/solid";
-import { createResource, createSignal, For, Show } from "solid-js";
+import {
+	createEffect,
+	createMemo,
+	createSignal,
+	For,
+	onCleanup,
+	Show,
+} from "solid-js";
+import { createStore, reconcile } from "solid-js/store";
 import { GoalPreview } from "./goal-preview.tsx";
 import { type GoalRow, projectTotals, readGoalRows } from "./goal-rows.ts";
 import { fitText } from "./text-fit.ts";
@@ -12,22 +21,82 @@ import { color, goalColor, symbol } from "./theme.ts";
 import { TicketBar, ticketTotal } from "./ticket-bar.tsx";
 import { duration, money } from "./time-and-money.ts";
 
+// How often the Goals are read again: a change on disk shows within this.
+const refreshMs = 1000;
+
+// The rows of every Goal of the Project at `root`, undefined until the
+// first read ends, then read again every `refreshMs` for as long as the
+// calling component lives. A row that didn't change keeps its object, so
+// its line in the table isn't drawn again. The accessor throws the first
+// read's error. A later read that fails keeps the last rows, until Ticket 07
+// shows broken Goals as rows of their own.
+function liveGoalRows(root: string): () => GoalRow[] | undefined {
+	const [store, setStore] = createStore<{ rows: GoalRow[] | undefined }>({
+		rows: undefined,
+	});
+	// Wrapped, so that a thrown `undefined` still counts as a failure.
+	const [failed, setFailed] = createSignal<{ error: unknown }>();
+	let last = "";
+	let reading = false;
+	const refresh = async () => {
+		if (reading) return;
+		reading = true;
+		try {
+			const rows = await readGoalRows(root, new Date());
+			const read = JSON.stringify(rows);
+			if (read === last) return;
+			last = read;
+			setStore("rows", reconcile(rows, { key: "goal" }));
+		} catch (error) {
+			if (store.rows === undefined) setFailed({ error });
+		} finally {
+			reading = false;
+		}
+	};
+	refresh();
+	const timer = setInterval(refresh, refreshMs);
+	onCleanup(() => clearInterval(timer));
+	return () => {
+		const failure = failed();
+		if (failure !== undefined) throw failure.error;
+		return store.rows;
+	};
+}
+
 /**
  * The Project view of the Project at `root`: a header line with the
  * Project's counts and spend, and a Goals box with one row per Goal showing
  * its standing, Tickets, time, cost, what it is doing and its title, the
  * selected one in the accent colour, moved by ↑↓ and j k, with `n/N` on the
  * box's bottom border. Below it, the selected Goal's preview fills the rest
- * of the screen. Reads the Goals itself.
+ * of the screen. Reads the Goals itself, and again every second, so changes
+ * on disk show without a key; the selection stays on its Goal when the rows
+ * reorder. Throws what the first read throws.
  */
 export function ProjectView(props: { root: string }): JSX.Element {
-	const [rows] = createResource(() => readGoalRows(props.root, new Date()));
-	const [selected, setSelected] = createSignal(0);
+	const rows = liveGoalRows(props.root);
+	const [chosen, setChosen] = createSignal<string>();
+	// Pinned on the first read, so the selection follows its Goal from the
+	// start, not the top row.
+	createEffect(() => {
+		const first = rows()?.[0];
+		if (chosen() === undefined && first !== undefined) setChosen(first.goal);
+	});
+	// The selected Goal's row, or, once that Goal is gone, the row now where it
+	// was.
+	const selectedIndex = createMemo<number>((previous) => {
+		const list = rows() ?? [];
+		const index = list.findIndex(({ goal }) => goal === chosen());
+		if (index !== -1) return index;
+		return Math.max(0, Math.min(list.length - 1, previous));
+	}, 0);
 	// Clamped, not wrapped, so holding a key stops at the end of the list.
-	const move = (by: number) =>
-		setSelected((index) =>
-			Math.max(0, Math.min((rows()?.length ?? 0) - 1, index + by)),
-		);
+	const move = (by: number) => {
+		const list = rows() ?? [];
+		const row =
+			list[Math.max(0, Math.min(list.length - 1, selectedIndex() + by))];
+		if (row !== undefined) setChosen(row.goal);
+	};
 	useKeyboard((key) => {
 		if (key.name === "up" || key.name === "k") move(-1);
 		if (key.name === "down" || key.name === "j") move(1);
@@ -37,7 +106,9 @@ export function ProjectView(props: { root: string }): JSX.Element {
 	const position = () => {
 		const list = rows();
 		if (list === undefined) return undefined;
-		return list.length === 0 ? " 0/0 " : ` ${selected() + 1}/${list.length} `;
+		return list.length === 0
+			? " 0/0 "
+			: ` ${selectedIndex() + 1}/${list.length} `;
 	};
 	const terminal = useTerminalDimensions();
 	const wide = () => terminal().width >= wideFrom;
@@ -87,14 +158,14 @@ export function ProjectView(props: { root: string }): JSX.Element {
 					{(row, index) => (
 						<GoalRowLine
 							row={row}
-							selected={index() === selected()}
+							selected={index() === selectedIndex()}
 							widths={widths()}
 							wide={wide()}
 						/>
 					)}
 				</For>
 			</box>
-			<Show when={rows()?.[selected()]}>
+			<Show when={rows()?.[selectedIndex()]}>
 				{(row: () => GoalRow) => (
 					<GoalPreview row={row()} width={terminal().width} />
 				)}
