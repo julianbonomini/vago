@@ -1,13 +1,13 @@
-# Squash-merges this Ticket's branch into the Goal's branch as one commit,
-# pushes the Goal's branch and makes sure it has a PR to main, described by
-# `vago goal report`, and writes the report's Runs to the end of the Goal's
-# goal.md too. After the Goal's last Ticket, the PR also gets the
-# ready-for-review label and a comment mentioning the human `gh` is logged in
-# as. Fails, and so leaves the Ticket stuck, when the tree is dirty or the
-# Ticket changed nothing.
+# Squash-merges this Ticket's branch as one commit into vago/<goal>, the
+# Goal's branch, which Vago creates and owns, pushes it and makes sure it has
+# a PR to the repo's default branch, described by `vago goal report`, and
+# writes the report's Runs to the end of the Goal's goal.md too. After the
+# Goal's last Ticket, the PR also gets the ready-for-review label and a
+# comment mentioning the human `gh` is logged in as. Fails, and so leaves the
+# Ticket stuck, when the tree is dirty or the Ticket changed nothing.
 set -eu
 
-goal="goal/$VAGO_GOAL"
+goal="vago/$VAGO_GOAL"
 ticket="$VAGO_GOAL/$VAGO_TICKET"
 
 if [ -n "$(git status --porcelain)" ]; then
@@ -34,7 +34,7 @@ printf '%s\n\n%s\n' "$kept" "$(printf '%s\n' "$body" | sed -n '/^## Runs$/,$p')"
 if gh pr view "$goal" >/dev/null 2>&1; then
 	gh pr edit "$goal" --body "$body"
 else
-	gh pr create --base main --head "$goal" --title "$VAGO_GOAL" --body "$body"
+	gh pr create --head "$goal" --title "$VAGO_GOAL" --body "$body"
 fi
 
 if [ "$VAGO_LAST_TICKET" = true ]; then

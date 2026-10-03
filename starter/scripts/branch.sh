@@ -1,9 +1,9 @@
-# Puts the checkout on a fresh branch for this Ticket, cut from the Goal's
-# branch. The Goal's first Ticket also cuts the Goal's branch from main.
-# A reset Ticket starts over: its old branch is replaced.
+# Puts the Goal's worktree on a fresh branch for this Ticket, cut from
+# vago/<goal>, the Goal's branch, which Vago creates and owns. A reset Ticket
+# starts over: its old branch is replaced.
 set -eu
 
-goal="goal/$VAGO_GOAL"
+goal="vago/$VAGO_GOAL"
 ticket="$VAGO_GOAL/$VAGO_TICKET"
 
 if [ -n "$(git status --porcelain)" ]; then
@@ -11,5 +11,4 @@ if [ -n "$(git status --porcelain)" ]; then
 	exit 1
 fi
 
-git rev-parse --verify --quiet "refs/heads/$goal" >/dev/null || git branch "$goal" main
 git switch -C "$ticket" "$goal"

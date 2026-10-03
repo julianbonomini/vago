@@ -36,6 +36,8 @@ export type FakeGh = {
  * knows the subcommands the starter's scripts call, ignores `--jq` and
  * prints what the scripts ask it for, and fails, as `gh` does, on a `pr`
  * call for a branch with no PR and on adding a label the repo doesn't have.
+ * A `pr create` with no `--base` targets the repo's default branch, as on
+ * GitHub: the branch that the `origin` remote's HEAD points to.
  */
 export async function makeFakeGh(login: string): Promise<FakeGh> {
 	const dir = await mkdtemp(join(tmpdir(), "vago-fake-gh-"));
@@ -77,7 +79,7 @@ export async function runFakeGh(
 		if (!state.labels.includes(target)) state.labels.push(target);
 	} else if (call === "pr create") {
 		state.pullRequests[flag("--head") ?? ""] = {
-			base: flag("--base") ?? "",
+			base: flag("--base") ?? originHead(),
 			title: flag("--title") ?? "",
 			body: flag("--body") ?? "",
 			labels: [],
@@ -105,4 +107,20 @@ export async function runFakeGh(
 		fail(`the fake gh doesn't know: gh ${argv.join(" ")}`);
 	}
 	await Bun.write(stateFile, JSON.stringify(state));
+}
+
+// The branch the bare repo behind the `origin` remote of the current
+// directory has its HEAD on.
+function originHead(): string {
+	const git = (...args: string[]) =>
+		Bun.spawnSync(["git", ...args])
+			.stdout.toString()
+			.trim();
+	return git(
+		"-C",
+		git("remote", "get-url", "origin"),
+		"symbolic-ref",
+		"--short",
+		"HEAD",
+	);
 }
