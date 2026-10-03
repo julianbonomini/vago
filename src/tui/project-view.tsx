@@ -1,9 +1,11 @@
 // The Project view: the Goals table, one row per Goal in the order
-// `goal-rows.ts` gives, with the selection moved by keys. Hides the columns,
-// their widths, which drop out on a narrow terminal, and when the Goals are
-// read again.
+// `goal-rows.ts` gives, with the selection moved by keys and the mouse, and
+// the screen's keys. Hides the columns, their widths, which drop out on a
+// narrow terminal, how much of the screen the table takes, and when the
+// Goals are read again.
 
 import { basename } from "node:path";
+import type { ScrollBoxRenderable } from "@opentui/core";
 import { type JSX, useKeyboard, useTerminalDimensions } from "@opentui/solid";
 import {
 	createEffect,
@@ -16,6 +18,12 @@ import {
 import { createStore, reconcile } from "solid-js/store";
 import { GoalPreview } from "./goal-preview.tsx";
 import { type GoalRow, projectTotals, readGoalRows } from "./goal-rows.ts";
+import {
+	type FooterKey,
+	type HelpKey,
+	KeyFooter,
+	KeyHelp,
+} from "./screen-keys.tsx";
 import { fitText } from "./text-fit.ts";
 import { color, goalColor, symbol } from "./theme.ts";
 import { TicketBar, ticketTotal } from "./ticket-bar.tsx";
@@ -67,10 +75,13 @@ function liveGoalRows(root: string): () => GoalRow[] | undefined {
  * The Project view of the Project at `root`: a header line with the
  * Project's counts and spend, and a Goals box with one row per Goal showing
  * its standing, Tickets, time, cost, what it is doing and its title, the
- * selected one in the accent colour, moved by ↑↓ and j k, with `n/N` on the
- * box's bottom border. Below it, the selected Goal's preview fills the rest
- * of the screen. Reads the Goals itself, and again every second, so changes
- * on disk show without a key; the selection stays on its Goal when the rows
+ * selected one in the accent colour, moved by ↑↓ and j k, g and G, or a
+ * click, with `n/N` on the box's bottom border. The box scrolls, by wheel
+ * or to follow the selection, once the Goals outgrow its share of the
+ * screen. Below it, the selected Goal's preview fills the rest of the
+ * screen, then a footer names the keys, and `?` shows them all until `?` or
+ * Esc. Reads the Goals itself, and again every second, so changes on disk
+ * show without a key; the selection stays on its Goal when the rows
  * reorder. Throws what the first read throws.
  */
 export function ProjectView(props: { root: string }): JSX.Element {
@@ -90,16 +101,21 @@ export function ProjectView(props: { root: string }): JSX.Element {
 		if (index !== -1) return index;
 		return Math.max(0, Math.min(list.length - 1, previous));
 	}, 0);
+	const [helpShown, setHelpShown] = createSignal(false);
 	// Clamped, not wrapped, so holding a key stops at the end of the list.
-	const move = (by: number) => {
+	// The help screen hides the selection, so it holds still meanwhile.
+	const select = (index: number) => {
+		if (helpShown()) return;
 		const list = rows() ?? [];
-		const row =
-			list[Math.max(0, Math.min(list.length - 1, selectedIndex() + by))];
+		const row = list[Math.max(0, Math.min(list.length - 1, index))];
 		if (row !== undefined) setChosen(row.goal);
 	};
 	useKeyboard((key) => {
-		if (key.name === "up" || key.name === "k") move(-1);
-		if (key.name === "down" || key.name === "j") move(1);
+		if (key.name === "?") setHelpShown(!helpShown());
+		if (key.name === "escape") setHelpShown(false);
+		if (key.name === "up" || key.name === "k") select(selectedIndex() - 1);
+		if (key.name === "down" || key.name === "j") select(selectedIndex() + 1);
+		if (key.name === "g") select(key.shift ? (rows() ?? []).length - 1 : 0);
 	});
 	// No count until the Goals are read, so an empty Project and a slow read
 	// never look alike.
@@ -112,6 +128,22 @@ export function ProjectView(props: { root: string }): JSX.Element {
 	};
 	const terminal = useTerminalDimensions();
 	const wide = () => terminal().width >= wideFrom;
+	// The Goals box takes what its rows need, up to its share of the screen,
+	// and scrolls the rest.
+	const shownRows = () =>
+		Math.min(
+			(rows() ?? []).length,
+			Math.max(
+				minShownRows,
+				Math.floor(terminal().height * goalsShare) - goalsBoxChrome,
+			),
+		);
+	const scrolls = () => (rows() ?? []).length > shownRows();
+	let list: ScrollBoxRenderable | undefined;
+	createEffect(() => {
+		const row = rows()?.[selectedIndex()];
+		if (row !== undefined) list?.scrollChildIntoView(rowId(row.goal));
+	});
 	const nameWidth = () =>
 		Math.min(
 			30,
@@ -148,31 +180,70 @@ export function ProjectView(props: { root: string }): JSX.Element {
 				bottomTitle={position()}
 				bottomTitleAlignment="right"
 				paddingLeft={1}
-				paddingRight={1}
+				// The scrollbar, when there is one, takes the padding's column.
+				paddingRight={scrolls() ? 0 : 1}
+				height={goalsBoxChrome + shownRows()}
 				flexShrink={0}
 			>
 				<text fg={color.dim} flexShrink={0} wrapMode="none">
 					{`${"  STATE".padEnd(stateWidth)}${"GOAL".padEnd(nameWidth())} ${"TICKETS".padEnd(ticketsWidth)}${wide() ? `${"ELAPSED".padEnd(timesWidth)}${"COST".padEnd(timesWidth)}` : ""}${fitText("NOW", widths().now)}${fitText("TITLE", widths().title)}`}
 				</text>
-				<For each={rows() ?? []}>
-					{(row, index) => (
-						<GoalRowLine
-							row={row}
-							selected={index() === selectedIndex()}
-							widths={widths()}
-							wide={wide()}
-						/>
-					)}
-				</For>
+				<scrollbox
+					ref={(box: ScrollBoxRenderable) => {
+						list = box;
+					}}
+					flexGrow={1}
+					verticalScrollbarOptions={{
+						trackOptions: {
+							foregroundColor: color.faint,
+							backgroundColor: color.bg,
+						},
+					}}
+				>
+					<For each={rows() ?? []}>
+						{(row, index) => (
+							<GoalRowLine
+								row={row}
+								selected={index() === selectedIndex()}
+								widths={widths()}
+								wide={wide()}
+								onClick={() => select(index())}
+							/>
+						)}
+					</For>
+				</scrollbox>
 			</box>
 			<Show when={rows()?.[selectedIndex()]}>
 				{(row: () => GoalRow) => (
 					<GoalPreview row={row()} width={terminal().width} />
 				)}
 			</Show>
+			<box flexShrink={0} paddingLeft={1} paddingRight={1}>
+				<KeyFooter keys={footerKeys} width={terminal().width - 2} />
+			</box>
+			<Show when={helpShown()}>
+				<KeyHelp keys={helpKeys} />
+			</Show>
 		</box>
 	);
 }
+
+// `q` and Ctrl-C belong to `tui.tsx`, which quits on them on every screen.
+const footerKeys: FooterKey[] = [
+	{ keys: "↑↓", label: "Goal", use: 4 },
+	{ keys: "g G", label: "First, last", use: 1 },
+	{ keys: "?", label: "Help", use: 3 },
+	{ keys: "q", label: "Quit", use: 2 },
+];
+
+const helpKeys: HelpKey[] = [
+	{ keys: "↑↓ j k", meaning: "select the Goal above, below" },
+	{ keys: "g G", meaning: "select the first, the last Goal" },
+	{ keys: "click", meaning: "select the Goal clicked" },
+	{ keys: "wheel", meaning: "scroll the Goals" },
+	{ keys: "? Esc", meaning: "show, hide these keys" },
+	{ keys: "q Ctrl-C", meaning: "quit" },
+];
 
 // The Project's name and its counts on one line above the Goals box. Not
 // drawn until the Goals are read, so a slow read never shows zero Goals.
@@ -197,6 +268,15 @@ function HeaderLine(props: { root: string; rows: GoalRow[] }): JSX.Element {
 
 // The Goals box's border and padding, on both sides.
 const boxEdges = 4;
+// The Goals box's lines around its rows: its border and the column names.
+const goalsBoxChrome = 3;
+// The most of the screen's height the Goals box takes, and the fewest rows
+// it shows, so the preview below keeps its slots.
+const goalsShare = 0.4;
+const minShownRows = 3;
+
+// The id of Goal `goal`'s row, which the Goals box scrolls to.
+const rowId = (goal: string) => `goal-row-${goal}`;
 // The symbol, a space and the longest standing word, then a space.
 const stateWidth = 10;
 // Below this many columns the ELAPSED and COST columns drop out.
@@ -216,12 +296,15 @@ function GoalRowLine(props: {
 	selected: boolean;
 	widths: { name: number; now: number; title: number };
 	wide: boolean;
+	onClick: () => void;
 }): JSX.Element {
 	// The selected row is drawn in bg on accent throughout, so its own
 	// colours don't fight the highlight.
 	const fg = (own: string) => (props.selected ? color.bg : own);
 	return (
 		<text
+			id={rowId(props.row.goal)}
+			onMouseDown={props.onClick}
 			fg={fg(color.fg)}
 			bg={props.selected ? color.accent : undefined}
 			flexShrink={0}

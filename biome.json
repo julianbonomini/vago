@@ -21,6 +21,12 @@
 			}
 		}
 	},
+	"overrides": [
+		{
+			"includes": ["src/tui/**/*.tsx"],
+			"linter": { "rules": { "a11y": "off" } }
+		}
+	],
 	"javascript": {
 		"formatter": {
 			"quoteStyle": "double"

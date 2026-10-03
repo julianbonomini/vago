@@ -89,6 +89,154 @@ test("the selection stops at the first and the last Goal", async () => {
 	await frameWith(view, " 2/3 ");
 });
 
+test("g and G move the selection to the first and the last Goal", async () => {
+	const root = await projectWithGoals(["alpha", "beta", "gamma"]);
+	const view = await renderView(root);
+	await frameWith(view, " 1/3 ");
+
+	view.mockInput.pressKey("G");
+	await frameWith(view, " 3/3 ");
+	view.mockInput.pressKey("g");
+	await frameWith(view, " 1/3 ");
+});
+
+// Draws frames until none contains `text`, and returns the last.
+async function frameWithout(
+	view: TestRendererSetup,
+	text: string,
+): Promise<string> {
+	for (let tries = 0; ; tries++) {
+		await view.renderOnce();
+		const frame = view.captureCharFrame();
+		if (!frame.includes(text)) return frame;
+		if (tries === 300) throw new Error(`Every frame shows ${text}:\n${frame}`);
+		await Bun.sleep(10);
+	}
+}
+
+test("? shows every key, and Esc or ? hides them", async () => {
+	const root = await projectWithGoals(["alpha", "beta"]);
+	const view = await renderView(root);
+	await frameWith(view, " 1/2 ");
+
+	view.mockInput.pressKey("?");
+	const help = await frameWith(view, " Keys ");
+	for (const key of ["↑↓ j k", "g G", "click", "wheel", "Esc", "q Ctrl-C"]) {
+		expect(help).toContain(key);
+	}
+	view.mockInput.pressEscape();
+	await frameWithout(view, " Keys ");
+	view.mockInput.pressKey("?");
+	await frameWith(view, " Keys ");
+	view.mockInput.pressKey("?");
+	await frameWithout(view, " Keys ");
+});
+
+test("while the keys show, the selection keys move nothing", async () => {
+	const root = await projectWithGoals(["alpha", "beta"]);
+	const view = await renderView(root);
+	await frameWith(view, " 1/2 ");
+
+	view.mockInput.pressKey("?");
+	await frameWith(view, " Keys ");
+	view.mockInput.pressArrow("down");
+	view.mockInput.pressKey("G");
+	view.mockInput.pressEscape();
+
+	expect(await frameWithout(view, " Keys ")).toContain(" 1/2 ");
+});
+
+test("while the keys show, a click on a Goal beside them selects nothing", async () => {
+	const root = await projectWithGoals(["alpha", "beta", "gamma"]);
+	const view = await renderView(root);
+	const frame = await frameWith(view, " 1/3 ");
+
+	view.mockInput.pressKey("?");
+	await frameWith(view, " Keys ");
+	await view.mockMouse.click(4, lineOf(frame, " gamma "));
+	view.mockInput.pressEscape();
+
+	expect(await frameWithout(view, " Keys ")).toContain(" 1/3 ");
+});
+
+test("the footer names the keys of the Project view", async () => {
+	const root = await projectWithGoals(["alpha"]);
+	const view = await renderView(root);
+
+	const frame = await frameWith(view, " 1/1 ");
+
+	expect(frame.trimEnd().split("\n").at(-1)).toMatch(
+		/^ ↑↓ Goal {3}g G First, last {3}\? Help {3}q Quit *$/,
+	);
+});
+
+test("on a narrow terminal the footer drops its least used keys first", async () => {
+	const root = await projectWithGoals(["alpha"]);
+	const view = await renderView(root, { width: 34, height: 24 });
+
+	const frame = await frameWith(view, " 1/1 ");
+
+	expect(frame.trimEnd().split("\n").at(-1)).toMatch(
+		/^ ↑↓ Goal {3}\? Help {3}q Quit *$/,
+	);
+});
+
+test("clicking a Goal's row selects it", async () => {
+	const root = await projectWithGoals(["alpha", "beta", "gamma"]);
+	const view = await renderView(root);
+	const frame = await frameWith(view, " 1/3 ");
+
+	await view.mockMouse.click(20, lineOf(frame, " gamma "));
+
+	await frameWith(view, " 3/3 ");
+});
+
+// Twenty Goals, `goal-00` to `goal-19`: more than the Goals box shows at 24
+// rows.
+const manyGoals = Array.from(
+	{ length: 20 },
+	(_, index) => `goal-${String(index).padStart(2, "0")}`,
+);
+
+test("a list longer than the Goals box keeps the preview and footer on screen", async () => {
+	const root = await projectWithGoals(manyGoals);
+	const view = await renderView(root);
+
+	const frame = await frameWith(view, " 1/20 ");
+
+	expect(lineOf(frame, "ready   goal-00 ")).toBeGreaterThan(-1);
+	expect(lineOf(frame, "ready   goal-19 ")).toBe(-1);
+	expect(frame).toContain("Workflow w");
+	expect(frame).toContain("q Quit");
+});
+
+test("the wheel scrolls the Goals and leaves the selection where it was", async () => {
+	const root = await projectWithGoals(manyGoals);
+	const view = await renderView(root);
+	const frame = await frameWith(view, " 1/20 ");
+	const row = lineOf(frame, " goal-01 ");
+
+	for (const _ of manyGoals) await view.mockMouse.scroll(20, row, "down");
+
+	const scrolled = await frameWith(view, " goal-19 ");
+	expect(lineOf(scrolled, "ready   goal-00 ")).toBe(-1);
+	expect(scrolled).toContain(" 1/20 ");
+});
+
+test("moving the selection past the Goals box's last row scrolls to it", async () => {
+	const root = await projectWithGoals(manyGoals);
+	const view = await renderView(root);
+	await frameWith(view, " 1/20 ");
+
+	view.mockInput.pressKey("G");
+
+	const last = await frameWith(view, " 20/20 ");
+	expect(lineOf(last, "ready   goal-19 ")).toBeGreaterThan(-1);
+	view.mockInput.pressKey("g");
+	const first = await frameWith(view, " 1/20 ");
+	expect(lineOf(first, "ready   goal-00 ")).toBeGreaterThan(-1);
+});
+
 const accent = RGBA.fromHex("#ff8a3d");
 
 // Whether the row that shows `name` has the accent colour behind it.
@@ -708,7 +856,7 @@ test("the description reads as paragraphs and is cut to the space it has", async
 	expect(frame).toMatch(/columns line\d+ of/);
 	expect(frame).not.toContain("line39");
 	const lines = frame.trimEnd().split("\n");
-	expect(lines.at(-1)).toMatch(/^└─+ Workflow w/);
+	expect(lines.at(-2)).toMatch(/^└─+ Workflow w/);
 });
 
 test("moving the cursor shifts no row of the table or the preview", async () => {
