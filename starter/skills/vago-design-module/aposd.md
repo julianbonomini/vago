@@ -1,6 +1,6 @@
 # A Philosophy of Software Design
 
-The design reference for building Vago. It summarises John Ousterhout's *A Philosophy of Software Design* (2nd ed.). `.vago/rules/code-style.md` turns it into rules. When a rule doesn't settle a case, decide from this file.
+The design reference for this Project's code. It summarises John Ousterhout's *A Philosophy of Software Design* (2nd ed.). The `vago-write-code` skill turns it into rules for code, `vago-check-red-flags` checks code against its red flags, and `vago-design-module` applies it to designs. When a rule doesn't settle a case, decide from this file.
 
 It's paraphrase unless text is in quotation marks. Quoted text is either a list-item title from the book's summaries or a phrase confirmed in a source below.
 
@@ -52,24 +52,9 @@ Complexity is incremental. It builds up from many small choices, and no single o
 
 ## 3. Red flags (the book's closing summary)
 
-| Red flag | Meaning | What it looks like in TypeScript |
-|---|---|---|
-| **Shallow Module** | The interface isn't much simpler than the implementation. | `class FileWrapper { read(p) { return fs.readFileSync(p) } }`, or a 3-line exported function with 4 options. |
-| **Information Leakage** | One design decision shows up in several modules. | Two files each parse the Ticket `+++` header, or both know the `.vago-goals/<goal>/` layout. |
-| **Temporal Decomposition** | Code is split by the order things run, not by what knowledge they hide. | `read-workflow.ts`, `validate-workflow.ts`, `freeze-workflow.ts`, all of which know the Workflow schema. |
-| **Overexposure** | To use the common feature you have to learn about rare ones. | `run(cmd, { retries, shell, env, cwd, encoding, signal })` with no defaults, so every call site fills them in. |
-| **Pass-Through Method** | A method does little except forward to another with a similar signature. | `getStatus(id) { return store.getStatus(id) }` repeated across layers. |
-| **Repetition** | The same nontrivial code appears in several places. | The same `try { parse(...) } catch { ... }` plus a shape check copied into each command. |
-| **Special-General Mixture** | A general mechanism contains code for one particular use. | A general `runStep()` with `if (step.id === "review")` inside it. |
-| **Conjoined Methods** | You can't understand one method without reading another. | `prepare()` sets module state and `finish()` silently depends on it, so callers must pair them correctly. |
-| **Comment Repeats Code** | All of the comment's information is obvious from the adjacent code. | `// increment i` above `i++`, or `/** Gets the name */ getName()`. |
-| **Implementation Documentation Contaminates Interface** | The interface comment describes internals callers don't need. | A TSDoc on an exported function explaining which `Map` it caches into and the loop order. |
-| **Vague Name** | A name broad enough to mean different things. | `data`, `info`, `result`, `handle()`, `manager`, `utils.ts`. |
-| **Hard to Pick Name** | You can't find a precise, intuitive name for an entity. | You're stuck choosing between `processAndSaveOrSkip` and `doStuff`. The entity is doing two jobs. |
-| **Hard to Describe** | A complete interface comment has to be long. | The TSDoc needs "if X then ... unless Y, in which case ..." to be accurate. |
-| **Nonobvious Code** | You can't understand the behaviour or meaning from a quick read. | A magic `exitCode === 3`, a boolean positional argument `run(t, true, false)`, an untyped `any` flowing through. |
+Shallow Module, Information Leakage, Temporal Decomposition, Overexposure, Pass-Through Method, Repetition, Special-General Mixture, Conjoined Methods, Comment Repeats Code, Implementation Documentation Contaminates Interface, Vague Name, Hard to Pick Name, Hard to Describe, Nonobvious Code. The chapters name two more: adjacent layers with similar abstractions, and pass-through *variables*. [S4]
 
-The chapters name two more: adjacent layers with similar abstractions, and pass-through *variables*. [S4]
+The `vago-check-red-flags` skill holds the table of what each one means and looks like.
 
 ## 4. Guidance by chapter
 

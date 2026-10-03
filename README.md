@@ -42,12 +42,26 @@ vago init
 
 - `workflows/small.toml` and `workflows/try-hard.toml`, the two starter Workflows.
 - `prompts/`, the prompt of each agent Step.
-- `rules/aposd.md` and `rules/code-style.md`, the design and code rules the agent Steps work to.
 - `scripts/branch.sh` and `scripts/merge.sh`, the git work of the `branch` and `merge` Steps.
 
-Before it writes anything, it asks `Commit the Workflow? [y/N]`. Answer `y` to leave `.vago/` for git, so everyone who clones the repo gets your Workflows. Any other answer adds `.vago/` to `.git/info/exclude`, so it stays in your checkout. Either way it adds `.vago-goals/`, where Goals and Tickets live, to `.git/info/exclude`. Since Goals sit outside `.vago/`, you can delete `.vago/` and run `vago init` again for a fresh starter without losing a Goal.
+It also puts five skills into `.claude/skills/`, where Claude Code finds them:
 
-`vago init` refuses, and changes nothing, when the directory has no `.git` or a file it would write already exists in `.vago/`.
+- `vago-write-code`, `vago-check-red-flags` and `vago-design-module` hold the design and code rules, from John Ousterhout's *A Philosophy of Software Design*. Each starter prompt names the ones its Step runs, and you can use them in your own sessions too.
+- `vago-to-goal` and `vago-to-tickets` are for you, after a planning conversation: `/vago-to-goal` writes the conversation up as a Goal, and `/vago-to-tickets` slices that Goal into Tickets. They run only when you type their name.
+
+Before it writes anything, it asks `Commit the Workflow? [y/N]`. Answer `y` to leave `.vago/` and the skills for git, so everyone who clones the repo gets your Workflows. Any other answer adds `.vago/` and each skill's folder to `.git/info/exclude`, so they stay in your checkout. Anything else in `.claude/` stays as git saw it. Either way it adds `.vago-goals/`, where Goals and Tickets live, to `.git/info/exclude`.
+
+`vago init` refuses, and changes nothing, when the directory has no `.git` or a file it would write already exists in `.vago/` or `.claude/skills/`.
+
+### Update a Project
+
+After installing a newer `vago`, run `vago update` to bring `.vago/` and the skills to the starter it ships:
+
+```sh
+vago update
+```
+
+It overwrites each starter file that differs, writes any that are missing, and prints the path of every file it changed, so you see which tuned prompt it replaced. Files you added, like your own Workflow or prompt, stay as they are, and so does every Goal in `.vago-goals/`. It keeps your commit answer: if `.git/info/exclude` lists `.vago/`, the Workflow stays private and any new skill is excluded too. It asks again only when the exclude lists neither `.vago/` nor `.vago-goals/`. Run it twice and the second run prints nothing.
 
 ### Pick a Workflow
 
@@ -56,14 +70,13 @@ Both starter Workflows run each Ticket through these Steps, in order, with Claud
 | Workflow | Steps | Pick it when |
 |---|---|---|
 | `small` | branch, implement, check, review, merge | The Tickets are small and already clear. One agent builds each Ticket and a fresh one reviews it. |
-| `try-hard` | branch, design, product, architecture, implement, check, review, merge | A Ticket leaves design questions open. One agent proposes two or three designs, a second checks them against the Ticket, a third picks one and fixes it to the rules, then implement builds it and review checks it. It takes three more agent Runs per Ticket than `small`. |
+| `try-hard` | branch, design, product, architecture, implement, check, review, merge | A Ticket leaves design questions open. One agent proposes two or three designs, a second checks them against the Ticket, a third picks one and fixes it until it passes the skills, then implement builds it and review checks it. It takes three more agent Runs per Ticket than `small`. |
 
 The starter files are yours to change, and a few of them assume things about the Project that you may need to change first:
 
 - The `check` and `merge` Steps run `bun run check`, and the prompts tell agents to make it pass. In a Project without that script, change the command in `.vago/workflows/*.toml` and the prompts that name it.
 - `branch.sh` cuts the Goal's branch from `main`, and `merge.sh` pushes to `origin` and opens the PR against `main`.
 - The prompts send agents to the docs that the Project's `AGENTS.md` names.
-- `rules/code-style.md` is written for TypeScript on Bun.
 
 ## Write a Goal and its Tickets
 

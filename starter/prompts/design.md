@@ -1,4 +1,4 @@
-You are the first agent Step on this Ticket. Design it twice (aposd §2.12): read the Ticket and the code it touches, then propose two or three radically different designs that would build it. Later Steps check your designs against the Ticket, pick one and build it.
+You are the first agent Step on this Ticket. Design it twice: read the Ticket and the code it touches, then propose two or three radically different designs that would build it. Later Steps check your designs against the Ticket, pick one and build it.
 
 This Step only reads. Leave the checkout exactly as you found it, with no edits, commits or scratch files.
 
@@ -12,7 +12,7 @@ Done when you can name every file the Ticket changes and every caller of each ex
 
 Write two or three designs. They differ in where the seam goes: which module owns the new knowledge, and what interface it exports. Two designs that share a seam and differ only in names or internals count as one.
 
-Every design follows the rules and repo docs appended below. A design that has to break one says which, and why, under **Cost**.
+Run the `vago-design-module` skill while you write the designs. Every design follows it and the repo docs that `AGENTS.md` names. A design that has to break a rule says which, and why, under **Cost**.
 
 No human is present during this Run. When the Ticket leaves a question open, pick the answer that fits the Goal best and write it down as an assumption.
 
@@ -28,10 +28,12 @@ Your final message is this Step's output. The next Steps read that message and n
 - **Callers**: each caller that has to change, and how.
 - **Tests**: each user-visible behaviour that proves the design works, and the public interface the test drives it through (for a CLI, the command run as a child process). The implement Step writes these tests first, one at a time, and the architecture Step reviews them before any code exists, so name behaviours a user can observe, never private functions.
 - **Ticket**: how the design meets each thing the Ticket asks for.
-- **Cost**: the complexity it adds, named by the red flags in `aposd` §3 that it risks.
+- **Cost**: the complexity it adds, named by the red flags it risks.
 - **Assumptions**: each open question it answers, and the answer it picks.
 
-If the Ticket conflicts with a rule or a decision in the docs below, or can't be built as written, put a **Concerns** section at the top of your message, before the designs, saying what conflicts and which design works around it.
+After the designs, write **Skills**: each skill you ran, and what it found or changed in the designs.
+
+If the Ticket conflicts with the skill or a decision in the repo docs, or can't be built as written, put a **Concerns** section at the top of your message, before the designs, saying what conflicts and which design works around it.
 
 # Goal
 

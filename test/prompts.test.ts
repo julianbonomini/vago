@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { join } from "node:path";
 import { makeFakeClaude } from "./fake-claude.ts";
 import { goalText, makeProject, runVago } from "./project.ts";
 
@@ -177,4 +178,74 @@ prompt = "prompts/review.md"
 	const [, review] = await claude.calls();
 	// "done" is the `result` of the fixture's final event.
 	expect(review?.stdin).toBe("The implementer said: done\n");
+});
+
+// The `vago-` skills each agent Step of a starter Workflow names, in Step
+// order: the skills the Steps run instead of reading the rules in the prompt.
+const starterStepSkills: Record<string, string[][]> = {
+	"try-hard": [
+		["vago-design-module"],
+		[],
+		["vago-check-red-flags", "vago-design-module"],
+		["vago-check-red-flags", "vago-write-code"],
+		["vago-check-red-flags"],
+	],
+	small: [
+		["vago-check-red-flags", "vago-write-code"],
+		["vago-check-red-flags"],
+	],
+};
+
+test("starter prompts name their skills and carry none of the rules", async () => {
+	// The skills hold what the old rule docs said, so any of their longer
+	// lines in a prompt means the rules are still pasted in.
+	const skills = join(import.meta.dir, "..", "starter", "skills");
+	const ruleLines = new Set<string>();
+	for await (const path of new Bun.Glob("**/*.md").scan(skills)) {
+		const text = await Bun.file(join(skills, path)).text();
+		for (const line of text.split("\n")) {
+			if (line.length > 40) ruleLines.add(line);
+		}
+	}
+
+	for (const [workflow, stepSkills] of Object.entries(starterStepSkills)) {
+		const root = await makeProject({});
+		await runVago(root, ["init"], {}, "n\n");
+		// The branch Step cuts the Goal's branch from a committed main.
+		Bun.spawnSync(
+			[
+				"git",
+				"-c",
+				"user.name=t",
+				"-c",
+				"user.email=t@t",
+				"commit",
+				"--quiet",
+				"--allow-empty",
+				"-m",
+				"start",
+			],
+			{ cwd: root },
+		);
+		Bun.spawnSync(["git", "branch", "-M", "main"], { cwd: root });
+		await runVago(root, ["goal", "new", "hello", "--workflow", workflow]);
+		await runVago(root, ["ticket", "add", "hello", "greet"]);
+		const claude = await makeFakeClaude();
+
+		await runVago(root, ["run", "hello"], claude.env);
+
+		const prompts = (await claude.calls()).map((call) => call.stdin);
+		const named = prompts.map((prompt) =>
+			[
+				...new Set(
+					[...prompt.matchAll(/`(vago-[a-z-]+)`/g)].map(([, skill]) => skill),
+				),
+			].sort(),
+		);
+		expect(named).toEqual(stepSkills);
+		for (const prompt of prompts) {
+			const pasted = prompt.split("\n").filter((line) => ruleLines.has(line));
+			expect(pasted).toEqual([]);
+		}
+	}
 });

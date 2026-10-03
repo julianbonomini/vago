@@ -1,6 +1,11 @@
-# Code style
+---
+name: vago-write-code
+description: Code style rules for every line of code in this Project, from A Philosophy of Software Design. Use while writing, editing or refactoring code, comments or tests.
+---
 
-The rules for every line of Vago's code. They come from `.vago/rules/aposd.md`, and each rule names its source there. When a case isn't covered here, decide from `.vago/rules/aposd.md`.
+# Write code
+
+The rules for every line of code. They come from John Ousterhout's *A Philosophy of Software Design*, summarised in [aposd.md](../vago-design-module/aposd.md), and each rule names its source there as a § number. When a case isn't covered here, read that file and decide from it.
 
 The goal is **zero complexity added**. Complexity is anything that makes the system harder to understand or change (aposd §1). A change that adds complexity is wrong even when it works.
 
@@ -19,11 +24,11 @@ Before adding anything (a file, an export, a parameter, an option, a type, a bra
 - **Errors defined out of existence.** Choose semantics where the error can't happen: an idempotent write, an empty list instead of a missing one. (§2.11)
 - **Long, obvious functions.** A function reads top to bottom and does one thing completely. Split only when the piece is a real abstraction that someone can understand without reading its caller. No line limits. (§4 better together or apart)
 - **General core, special edges.** Kernel modules carry no special case for one Step, Harness or command; those live in `cli.ts` and the Harness modules. (red flag: Special-General Mixture)
-- **Design it twice** when you add a module or change a module's exported interface. Write both options in two or three lines each in the PR body, with the choice and why. (§2.12)
+- **Design it twice** when you add a module or change a module's exported interface: run the `vago-design-module` skill. Write both options in two or three lines each in the PR body, with the choice and why. (§2.12)
 
 ## Red flags
 
-Any red flag in `.vago/rules/aposd.md` §3 blocks the PR. The session finds and fixes them before asking the human to review: Shallow Module, Information Leakage, Temporal Decomposition, Overexposure, Pass-Through Method, Repetition, Special-General Mixture, Conjoined Methods, Comment Repeats Code, Implementation Documentation Contaminates Interface, Vague Name, Hard to Pick Name, Hard to Describe, Nonobvious Code.
+Any red flag in aposd §3 blocks the PR: Shallow Module, Information Leakage, Temporal Decomposition, Overexposure, Pass-Through Method, Repetition, Special-General Mixture, Conjoined Methods, Comment Repeats Code, Implementation Documentation Contaminates Interface, Vague Name, Hard to Pick Name, Hard to Describe, Nonobvious Code. Before asking the human to review, run the `vago-check-red-flags` skill on your diff and fix every finding.
 
 ## TypeScript
 

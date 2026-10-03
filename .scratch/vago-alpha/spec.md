@@ -34,12 +34,12 @@ The bar for Alpha: on Vago's own repo, `vago run <goal>` takes a Goal of two Tic
 ### Setting up a Project
 
 1. As the human, I want `vago init` to copy a starter Workflow into my Project's `.vago/`, so that I can start from a working implement → check → review → merge flow.
-2. As the human, I want the starter Workflow to include its prompts and a starter code-style file, so that the agents have house rules from day one.
+2. As the human, I want the starter Workflow to come with its prompts and starter skills for code style and design, so that the agents have house rules from day one.
 3. As the human, I want the starter files to be plain copies I own and can edit, so that Vago imposes no opinions I can't change.
 4. As the human, I want `vago init` to keep `.vago-goals/` out of git via `.git/info/exclude`, never `.gitignore`, so that Vago leaves no trace in a repo other people share.
 5. As the human, I want `vago init` to ask whether to commit the Workflow and explain what that means, so that I can share a Workflow with a team or keep it private.
 6. As the human, I want the Workflow kept private by default, so that using Vago on someone else's open-source repo doesn't pollute it.
-7. As the human, I want `vago init` to refuse to overwrite any file already in `.vago/`, so that I don't lose a Workflow or prompt I've tuned.
+7. As the human, I want `vago init` to refuse to overwrite any file already in `.vago/`, and `vago update` to bring a set-up Project to the current starter while printing each file it overwrote and leaving my own Workflows, prompts and Goals alone, so that I don't lose a Workflow or prompt I've tuned without seeing it.
 8. As the human, I want the starter Workflow shipped inside the binary, so that `vago init` works offline and matches the installed version.
 
 ### Defining the Workflow
@@ -132,7 +132,7 @@ Recorded in ADR 0001 (TypeScript on Bun, driving Harness CLIs), ADR 0002 (the ke
 
 ### Modules
 
-- **CLI.** Parses `init`, `goal new`, `ticket add`, `run` and `ticket reset`. `goal new` takes `--workflow <name>`, required, and `--body-file <path>`, optional, in either order. It maps outcomes to exit codes: 0 when the command succeeded or the Goal is done, non-zero otherwise. Which non-zero code it uses carries no meaning.
+- **CLI.** Parses `init`, `update`, `goal new`, `ticket add`, `run` and `ticket reset`. `goal new` takes `--workflow <name>`, required, and `--body-file <path>`, optional, in either order. It maps outcomes to exit codes: 0 when the command succeeded or the Goal is done, non-zero otherwise. Which non-zero code it uses carries no meaning.
 - **Workflow loader.** Reads `.vago/workflows/<name>.toml` once per `vago run`, for the name the Goal gives, checks it and returns a frozen Workflow. The checks: the TOML parses, Step `id`s are unique, every `type` is `agent` or `shell`, prompt and include files exist, every `harness` name is registered, `on_fail` and `idle_timeout` values are valid, and every `{{steps.<id>.output}}` points at an earlier Step. It fails closed with a message naming the problem, and refuses a name that isn't in `.vago/workflows/`, listing the ones that are.
 - **Ticket store.** Owns `.vago-goals/<goal>/goal.md` and `.vago-goals/<goal>/tickets/NN-<slug>.md`:
   - reads and writes the TOML front matter (`+++`);
@@ -170,7 +170,7 @@ Recorded in ADR 0001 (TypeScript on Bun, driving Harness CLIs), ADR 0002 (the ke
   The kernel owns everything else.
 - **Claude Code module.** Runs `claude -p --output-format stream-json --verbose --permission-mode auto --model <model>`, adding the Step's `args`. It takes the session ID from the `system/init` event and tokens and `total_cost_usd` from the final result event. A `permissionMode` in a `system/init` or `system/status` event other than the mode the command asked for is a fallback: Claude Code doesn't offer auto mode on every model, and it falls back without an error. The mode asked for is `auto` unless the Step's `args` choose another: the last `--permission-mode` wins, and `--dangerously-skip-permissions` asks for `bypassPermissions`. A `system/permission_denied` event is a refused tool call. Its resume hint is `claude --resume <session_id>`. It never adds `--dangerously-skip-permissions`.
 - **Progress printer.** Prints one line when a Step starts and one when it ends, in aligned columns: timestamp, Ticket number and slug, Step id, outcome, duration, cost. A blank line sets each Ticket's lines apart. On exit it prints a Goal summary: a table of each Ticket with its status, Runs, time and cost, and a total row. On a terminal the start lines are dimmed, `ok` is green, and a failed Step and the `stuck` message are red. Piped output, or any output with `NO_COLOR` set, is plain text in the same columns. On `stuck` it also prints the failed Run's outcome, the log path, the resume hint and the reset command. It never prints agent text. Live following is `tail -f` on the log.
-- **Init.** Copies every file of the embedded starter (both Workflows under `workflows/`, prompts, starter code-style file) into `.vago/` verbatim and refuses if any of them already exists. It adds `.vago-goals/` to `.git/info/exclude`, asks whether the Workflow should be committed, and excludes all of `.vago/` if not.
+- **Init.** Copies every file of the embedded starter (both Workflows under `workflows/`, prompts, scripts) into `.vago/` verbatim, and the starter's five `vago-` skills into `.claude/skills/`, where Claude Code finds them. It refuses, before writing anything, if any of those files already exists. It adds `.vago-goals/` to `.git/info/exclude`, asks whether the Workflow should be committed, and if not excludes all of `.vago/` and each `vago-` skill's folder, leaving the rest of `.claude/` as git saw it. `vago update` brings a Project that has `.vago/` to the embedded starter. It writes each starter file in `.vago/` and `.claude/skills/` whose text differs or that is missing, and prints each path it wrote. Files outside the starter's list and `.vago-goals/` stay untouched. It reads the earlier commit answer from `.git/info/exclude`: `.vago/` listed means private, `.vago-goals/` alone means committed, and neither means it asks as init does. It adds any exclude line the answer needs and is missing, and prints `.git/info/exclude` when it does. A second run changes and prints nothing. It refuses a Project with no `.vago/`.
 
 ### Contracts
 

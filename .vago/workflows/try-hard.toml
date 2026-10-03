@@ -22,8 +22,6 @@ run  = "sh .vago/scripts/branch.sh"
 id     = "design"
 type   = "agent"
 prompt = "prompts/design.md"
-include.aposd = ".vago/rules/aposd.md"
-include.style = ".vago/rules/code-style.md"
 
 [[steps]]
 id     = "product"
@@ -34,15 +32,11 @@ prompt = "prompts/product.md"
 id     = "architecture"
 type   = "agent"
 prompt = "prompts/architecture.md"
-include.aposd = ".vago/rules/aposd.md"
-include.style = ".vago/rules/code-style.md"
 
 [[steps]]
 id     = "implement"
 type   = "agent"
 prompt = "prompts/implement.md"
-include.aposd = ".vago/rules/aposd.md"
-include.style = ".vago/rules/code-style.md"
 
 [[steps]]
 id      = "check"
@@ -54,8 +48,6 @@ on_fail = "continue"   # review reads a failed check and fixes it
 id     = "review"
 type   = "agent"
 prompt = "prompts/review.md"
-include.aposd = ".vago/rules/aposd.md"
-include.style = ".vago/rules/code-style.md"
 
 [[steps]]
 id   = "merge"
