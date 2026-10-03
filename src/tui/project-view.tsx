@@ -17,7 +17,12 @@ import {
 } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { GoalPreview } from "./goal-preview.tsx";
-import { type GoalRow, projectTotals, readGoalRows } from "./goal-rows.ts";
+import {
+	type GoalRow,
+	projectTotals,
+	readGoalRows,
+	ticketTotal,
+} from "./goal-rows.ts";
 import {
 	type FooterKey,
 	type HelpKey,
@@ -26,7 +31,7 @@ import {
 } from "./screen-keys.tsx";
 import { fitText } from "./text-fit.ts";
 import { goalColor, theme } from "./theme.ts";
-import { TicketBar, ticketTotal } from "./ticket-bar.tsx";
+import { TicketBar } from "./ticket-bar.tsx";
 import { duration, money } from "./time-and-money.ts";
 
 // How often the Goals are read again: a change on disk shows within this.

@@ -4,13 +4,12 @@
 
 import type { JSX } from "@opentui/solid";
 import { For } from "solid-js";
-import type { GoalStanding, GoalTicketCounts } from "./goal-rows.ts";
+import {
+	type GoalStanding,
+	type GoalTicketCounts,
+	ticketTotal,
+} from "./goal-rows.ts";
 import { theme, ticketColor } from "./theme.ts";
-
-/** How many Tickets `tickets` counts in all. */
-export function ticketTotal(tickets: GoalTicketCounts): number {
-	return barStatuses.reduce((sum, status) => sum + tickets[status], 0);
-}
 
 // The order of a bar's segments, left to right.
 const barStatuses = ["done", "running", "stuck", "ready"] as const;

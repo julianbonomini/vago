@@ -6,11 +6,12 @@
 // line formats, columns and colours, and how durations and costs read.
 
 import { relative } from "node:path";
-import type {
-	GoalState,
-	Ticket,
-	TicketRun,
-	TicketStatus,
+import {
+	type GoalState,
+	type Ticket,
+	type TicketRun,
+	type TicketStatus,
+	ticketNumberText,
 } from "./tickets/tickets.ts";
 import type { WorktreeClose } from "./worktree.ts";
 
@@ -316,7 +317,7 @@ function dollars(usd: number | undefined): string {
 
 // Numbered as the Ticket file is, so it reads like the name above it.
 function resetCommand(ticket: Ticket): string {
-	return `vago ticket reset ${ticket.goal} ${String(ticket.number).padStart(2, "0")}`;
+	return `vago ticket reset ${ticket.goal} ${ticketNumberText(ticket.number)}`;
 }
 
 // UTC like the Ticket header, cut to whole seconds since a glance needs no more.

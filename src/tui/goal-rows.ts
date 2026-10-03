@@ -1,7 +1,7 @@
 // What the Project view knows of each Goal: its standing, the "now" phrase
-// saying what it is doing or waiting for, its elapsed time and cost, the
-// order of the rows, the header line's totals, and what the preview shows of
-// the selected Goal. Hides the rules behind each.
+// saying what it is doing or waiting for, how many Tickets it has, its
+// elapsed time and cost, the order of the rows, the header line's totals, and
+// what the preview shows of the selected Goal. Hides the rules behind each.
 
 import { sep } from "node:path";
 import {
@@ -10,6 +10,7 @@ import {
 	listGoals,
 	readGoal,
 	type TicketStatus,
+	ticketNumberText,
 } from "../tickets/tickets.ts";
 
 /**
@@ -31,6 +32,11 @@ export type GoalTicketCounts = {
 	stuck: number;
 	ready: number;
 };
+
+/** How many Tickets `tickets` counts in all. */
+export function ticketTotal(tickets: GoalTicketCounts): number {
+	return tickets.done + tickets.running + tickets.stuck + tickets.ready;
+}
 
 /** One row of the Goals table, with what the preview shows of its Goal. */
 export type GoalRow = {
@@ -68,7 +74,8 @@ export type GoalRow = {
 /** One Run as the preview lists it. */
 export type GoalRowRun = {
 	started: Date;
-	ticketNumber: number;
+	/** The Run's Ticket number as file names spell it, like `02`. */
+	ticketNumber: string;
 	step: string;
 	/** As spelled in the header, like `ok`; absent while the Run is open. */
 	outcome?: string;
@@ -206,7 +213,7 @@ function goalRow(
 			.flatMap(({ ticket, runs }) =>
 				runs.map((run) => ({
 					started: run.started,
-					ticketNumber: ticket.number,
+					ticketNumber: ticketNumberText(ticket.number),
 					step: run.step,
 					outcome: run.outcome,
 					durationMs: (run.ended ?? now).getTime() - run.started.getTime(),
@@ -262,7 +269,7 @@ function goalStanding(
 	const running = first("running");
 	const runningStep =
 		running &&
-		`${twoDigits(running.ticket.number)} ${running.runs.at(-1)?.step ?? "starting"}`;
+		`${ticketNumberText(running.ticket.number)} ${running.runs.at(-1)?.step ?? "starting"}`;
 	if (claimed) {
 		return { standing: "running", phrase: runningStep ?? "between Tickets" };
 	}
@@ -274,7 +281,7 @@ function goalStanding(
 	}
 	const stuck = first("stuck");
 	if (stuck !== undefined) {
-		const number = twoDigits(stuck.ticket.number);
+		const number = ticketNumberText(stuck.ticket.number);
 		const last = stuck.runs.at(-1);
 		return {
 			standing: "stuck",
@@ -303,8 +310,4 @@ function lastActivity(state: GoalState): Date | undefined {
 		runs.map((run) => (run.ended ?? run.started).getTime()),
 	);
 	return times.length === 0 ? undefined : new Date(Math.max(...times));
-}
-
-function twoDigits(number: number): string {
-	return String(number).padStart(2, "0");
 }

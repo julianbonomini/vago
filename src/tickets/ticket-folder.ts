@@ -1,6 +1,6 @@
-// A Goal's `tickets/` folder: how Ticket files are named, reading them with
-// their headers, and the checks across them (numbers unique, every blocker a
-// Ticket of the Goal, no cycles). Hides the file naming and the cycle walk.
+// A Goal's `tickets/` folder: reading its Ticket files with their headers,
+// and the checks across them (numbers unique, every blocker a Ticket of the
+// Goal, no cycles). Hides the file-name pattern and the cycle walk.
 
 import { existsSync } from "node:fs";
 import { readdir } from "node:fs/promises";
@@ -28,19 +28,6 @@ type TicketFile = {
 
 // The name without `.md` is group 1 and the Ticket number group 2.
 const ticketFileName = /^((\d+)-.+)\.md$/;
-
-/** The name of Ticket `number` with slug `slug`, like `01-say-hello`. */
-export function ticketName(number: number, slug: string): string {
-	return `${ticketNumberText(number)}-${slug}`;
-}
-
-/**
- * Ticket `number` as file names spell it, with at least two digits, so a
- * folder listing shows up to 99 Tickets in number order.
- */
-export function ticketNumberText(number: number): string {
-	return String(number).padStart(2, "0");
-}
 
 /** The path of the Ticket file named `name` in `ticketFolder`. */
 export function ticketFilePath(ticketFolder: string, name: string): string {

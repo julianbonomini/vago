@@ -2,8 +2,9 @@
 // `.vago-goals/<goal>/`: which Goals a Project has, the `goal.md` header
 // naming the Goal's Workflow, the Workflow a Ticket names in place of it,
 // Goal and Ticket titles, status, blockers, the `[[runs]]` history and where
-// each Run's log goes, and the lock that marks a Goal as taken by a
-// `vago run`. Only this file is imported from outside `tickets/`.
+// each Run's log goes, how a Ticket number is spelled, and the lock that
+// marks a Goal as taken by a `vago run`. Only this file is imported from
+// outside `tickets/`.
 
 import { mkdir, readdir } from "node:fs/promises";
 import { join } from "node:path";
@@ -17,12 +18,7 @@ import {
 	rewriteHeader,
 	type TicketHeader,
 } from "./header.ts";
-import {
-	readTicketFolder,
-	ticketFilePath,
-	ticketName,
-	ticketNumberText,
-} from "./ticket-folder.ts";
+import { readTicketFolder, ticketFilePath } from "./ticket-folder.ts";
 
 /** Where a Ticket stands. Only Alpha writes it. */
 export type TicketStatus = "ready" | "running" | "done" | "stuck";
@@ -35,6 +31,15 @@ export type Ticket = {
 	name: string;
 	number: number;
 };
+
+/**
+ * Ticket `number` as file names spell it, with at least two digits, so a
+ * folder listing shows up to 99 Tickets in number order. Anything that shows
+ * a Ticket's number to the human spells it this way.
+ */
+export function ticketNumberText(number: number): string {
+	return String(number).padStart(2, "0");
+}
 
 /**
  * One entry in a Ticket's `[[runs]]`, as `recordRunStart` opened it. Pass it
@@ -484,6 +489,11 @@ function runLogPath(ticket: Ticket, log: string): string {
 
 function goalLockPath(root: string, goal: string): string {
 	return join(goalFolder(root, goal), "running.lock");
+}
+
+// The name of Ticket `number` with slug `slug`, like `01-say-hello`.
+function ticketName(number: number, slug: string): string {
+	return `${ticketNumberText(number)}-${slug}`;
 }
 
 function ticketFile(ticket: Ticket): string {

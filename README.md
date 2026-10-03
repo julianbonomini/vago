@@ -150,6 +150,12 @@ A Step ends `ok`, `exit <code>` for a shell Step or Claude Code exiting non-zero
 
 `vago goal report search` prints the Goal's text followed by a Markdown table of each Ticket's Runs, time and cost, with every Run in a collapsed table below. It is the same text the PR description holds.
 
+## Watch every Goal
+
+`vago` with no command, on a terminal, opens a full-screen view of every Goal of the Project: its state (running, lost, stuck, ready or done), a progress bar with its Tickets done of total, its elapsed time and cost, and what it is doing or waiting for. The selected Goal's latest Runs and description show below the list. It reads `.vago-goals/` again every second, so you can leave it open while Goals run in other terminals. It starts, stops and changes nothing.
+
+A Goal shows as lost when one of its Tickets says `running` but no live `vago run` has the Goal; the next `vago run` makes that Ticket stuck. Move with `↑↓` or `j k`, jump with `g` and `G`, press `?` for the keys and `q` to quit. Set `NO_COLOR` to drop the colours and `VAGO_ASCII=1` for a terminal without the box and symbol glyphs. Run from inside a Goal's worktree, it shows the main checkout's Project. Without a terminal, `vago` prints the usage and exits 1.
+
 ## Recover a stuck Ticket
 
 A Ticket goes stuck when one of its Steps fails. `vago run` stops there and tells you where to look:

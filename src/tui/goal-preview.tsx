@@ -6,10 +6,15 @@
 import type { ColorInput } from "@opentui/core";
 import type { JSX } from "@opentui/solid";
 import { For, Show } from "solid-js";
-import type { GoalRow, GoalRowRun, GoalStanding } from "./goal-rows.ts";
+import {
+	type GoalRow,
+	type GoalRowRun,
+	type GoalStanding,
+	ticketTotal,
+} from "./goal-rows.ts";
 import { fitText, wrapText } from "./text-fit.ts";
 import { theme } from "./theme.ts";
-import { TicketBar, ticketTotal } from "./ticket-bar.tsx";
+import { TicketBar } from "./ticket-bar.tsx";
 import { clock, duration, money } from "./time-and-money.ts";
 
 /**
@@ -146,11 +151,13 @@ function RunLine(props: {
 			left -= cells;
 			return fitText(text, cells);
 		};
-		const ticket = String(props.run.ticketNumber).padStart(2, "0");
 		const cost =
 			props.run.costUsd === undefined ? "" : money(props.run.costUsd);
 		return {
-			start: take(`${clock(props.run.started)} ${ticket}`, startWidth),
+			start: take(
+				`${clock(props.run.started)} ${props.run.ticketNumber}`,
+				startWidth,
+			),
 			step: take(props.run.step, stepWidth),
 			outcome: take(mark().text, outcomeWidth),
 			rest: take(
