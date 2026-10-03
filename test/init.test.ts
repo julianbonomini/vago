@@ -325,3 +325,95 @@ test("init refuses a directory that isn't a git repo and changes nothing", async
 	expect(existsSync(join(root, ".git"))).toBe(false);
 	expect(existsSync(join(root, ".vago"))).toBe(false);
 });
+
+test("update brings a set-up Project to the starter, keeps what the human added, and prints what it changed", async () => {
+	const root = await makeProject({});
+	await runVago(root, ["init"], {}, "n\n");
+	await runVago(root, ["goal", "new", "hello", "--workflow", "small"]);
+	await runVago(root, ["ticket", "add", "hello", "greet"]);
+	const goalFiles = await filesIn(join(root, ".vago-goals"));
+	const ticketText = await Bun.file(
+		join(root, ".vago-goals/hello/tickets/01-greet.md"),
+	).text();
+	await writeFiles(root, {
+		".vago/prompts/review.md": "Review it.\n",
+		".claude/skills/vago-write-code/SKILL.md": "# Old rules\n",
+		".vago/workflows/mine.toml": "# my own\n",
+		".vago/prompts/mine.md": "My prompt.\n",
+	});
+	await rm(join(root, ".vago/scripts/merge.sh"));
+	// A starter from before the skill existed left it out of the exclude.
+	const exclude = join(root, ".git/info/exclude");
+	await Bun.write(
+		exclude,
+		(await Bun.file(exclude).text()).replace(
+			".claude/skills/vago-design-module/\n",
+			"",
+		),
+	);
+
+	const update = await runVago(root, ["update"]);
+
+	expect(update.stderr).toBe("");
+	expect(update.exitCode).toBe(0);
+	expect(update.stdout.split("\n").sort()).toEqual(
+		[
+			"",
+			".claude/skills/vago-write-code/SKILL.md",
+			".git/info/exclude",
+			".vago/prompts/review.md",
+			".vago/scripts/merge.sh",
+		].sort(),
+	);
+	await rm(join(root, ".vago/workflows/mine.toml"));
+	await rm(join(root, ".vago/prompts/mine.md"));
+	await expectStarterIn(root);
+	expect((await excludeLines(root)).sort()).toEqual(
+		[...privateExcludeLines].sort(),
+	);
+	expect(await filesIn(join(root, ".vago-goals"))).toEqual(goalFiles);
+	expect(
+		await Bun.file(join(root, ".vago-goals/hello/tickets/01-greet.md")).text(),
+	).toBe(ticketText);
+
+	const again = await runVago(root, ["update"]);
+
+	expect(again.exitCode).toBe(0);
+	expect(again.stdout).toBe("");
+});
+
+test("update keeps a committed Workflow committed without asking", async () => {
+	const root = await makeProject({});
+	await runVago(root, ["init"], {}, "y\n");
+	await Bun.write(join(root, ".vago/prompts/review.md"), "Review it.\n");
+
+	const update = await runVago(root, ["update"], {}, "n\n");
+
+	expect(update.exitCode).toBe(0);
+	expect(update.stdout).toBe(".vago/prompts/review.md\n");
+	expect(await excludeLines(root)).toEqual([".vago-goals/", ""]);
+});
+
+test("update asks whether to commit the Workflow when the exclude doesn't say", async () => {
+	const root = await makeProject({});
+	await runVago(root, ["init"], {}, "n\n");
+	await Bun.write(join(root, ".git/info/exclude"), "");
+
+	const update = await runVago(root, ["update"], {}, "n\n");
+
+	expect(update.exitCode).toBe(0);
+	expect(update.stdout).toContain("[y/N]");
+	expect(update.stdout).toEndWith(".git/info/exclude\n");
+	expect(await excludeLines(root)).toEqual(privateExcludeLines);
+});
+
+test("update refuses a Project with no .vago/ and changes nothing", async () => {
+	const root = await makeProject({});
+
+	const update = await runVago(root, ["update"], {}, "n\n");
+
+	expect(update.exitCode).not.toBe(0);
+	expect(update.stderr).toMatch(/\S* has no \.vago\/, so run vago init/);
+	expect(existsSync(join(root, ".vago"))).toBe(false);
+	expect(existsSync(join(root, ".claude"))).toBe(false);
+});

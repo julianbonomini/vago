@@ -12,6 +12,7 @@ run  = "true"
 
 const commands = [
 	"init",
+	"update",
 	"run",
 	"goal new",
 	"goal report",
@@ -305,6 +306,7 @@ test("vago nope prints every command's usage, lined up, then points at --help", 
 
 	expect(result.exitCode).toBe(1);
 	expect(result.stderr).toBe(`usage: vago init
+       vago update
        vago run <goal>
        vago goal new <goal> --workflow <name> [--body-file <path>]
        vago goal report <goal>

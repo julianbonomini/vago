@@ -46,9 +46,19 @@ vago init
 
 It also puts three skills into `.claude/skills/`, where Claude Code finds them: `vago-write-code`, `vago-check-red-flags` and `vago-design-module`. They hold the design and code rules, from John Ousterhout's *A Philosophy of Software Design*, and each starter prompt names the ones its Step runs. You can use them in your own sessions too.
 
-Before it writes anything, it asks `Commit the Workflow? [y/N]`. Answer `y` to leave `.vago/` and the three skills for git, so everyone who clones the repo gets your Workflows. Any other answer adds `.vago/` and each skill's folder to `.git/info/exclude`, so they stay in your checkout. Anything else in `.claude/` stays as git saw it. Either way it adds `.vago-goals/`, where Goals and Tickets live, to `.git/info/exclude`. Since Goals sit outside `.vago/`, you can delete `.vago/` and the three skill folders and run `vago init` again for a fresh starter without losing a Goal.
+Before it writes anything, it asks `Commit the Workflow? [y/N]`. Answer `y` to leave `.vago/` and the three skills for git, so everyone who clones the repo gets your Workflows. Any other answer adds `.vago/` and each skill's folder to `.git/info/exclude`, so they stay in your checkout. Anything else in `.claude/` stays as git saw it. Either way it adds `.vago-goals/`, where Goals and Tickets live, to `.git/info/exclude`.
 
 `vago init` refuses, and changes nothing, when the directory has no `.git` or a file it would write already exists in `.vago/` or `.claude/skills/`.
+
+### Update a Project
+
+After installing a newer `vago`, run `vago update` to bring `.vago/` and the three skills to the starter it ships:
+
+```sh
+vago update
+```
+
+It overwrites each starter file that differs, writes any that are missing, and prints the path of every file it changed, so you see which tuned prompt it replaced. Files you added, like your own Workflow or prompt, stay as they are, and so does every Goal in `.vago-goals/`. It keeps your commit answer: if `.git/info/exclude` lists `.vago/`, the Workflow stays private and any new skill is excluded too. It asks again only when the exclude lists neither `.vago/` nor `.vago-goals/`. Run it twice and the second run prints nothing.
 
 ### Pick a Workflow
 

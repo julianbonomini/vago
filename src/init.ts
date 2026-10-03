@@ -1,7 +1,8 @@
-// `vago init`: puts the starter, embedded in the binary with every Workflow,
-// into a Project's `.vago/` and its `vago-` skills into `.claude/skills/`.
-// Hides the starter's file list, where each file goes, and the lines it adds
-// to `.git/info/exclude`.
+// `vago init` and `vago update`: put the starter, embedded in the binary with
+// every Workflow, into a Project's `.vago/` and its `vago-` skills into
+// `.claude/skills/`, the first time or over an older starter. Hides the
+// starter's file list, where each file goes, and the lines it adds to
+// `.git/info/exclude`.
 
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
@@ -97,37 +98,103 @@ export async function initProject(root: string): Promise<void> {
 		const projectPath = join(root, path);
 		if (await Bun.file(projectPath).exists()) {
 			throw new Error(
-				`${projectPath} already exists, and vago init never replaces a file`,
+				`${projectPath} already exists, and vago init never replaces a file. vago update brings a set-up Project to the current starter`,
 			);
 		}
 	}
-	const git = join(root, ".git");
-	// `Bun.file().exists()` is false for a directory, so it can't tell a repo.
-	const isRepo = await stat(git).then(
-		(found) => found.isDirectory(),
-		() => false,
-	);
-	if (!isRepo) {
-		throw new Error(
-			`${root} has no .git directory, and vago init needs .git/info/exclude to keep Goals out of git`,
-		);
-	}
-	console.log(commitExplanation);
-	const answer = prompt("Commit the Workflow? [y/N]") ?? "";
-	const commitWorkflow = /^y(es)?$/i.test(answer.trim());
+	const git = await gitFolder(root);
+	const commitWorkflow = askCommitWorkflow();
 	for (const [path, text] of Object.entries(starterFiles)) {
 		await Bun.write(join(root, path), text);
 	}
+	await addExcludeLines(git, commitWorkflow);
+}
+
+/**
+ * Brings the Project at `root`, set up by `vago init`, to the starter this
+ * binary ships: writes every starter file in `.vago/` and `.claude/skills/`
+ * whose text differs or is missing, and prints each path it wrote, relative
+ * to `root`. Files that aren't the starter's, and `.vago-goals/`, stay as they
+ * are. It keeps the commit answer `.git/info/exclude` records, adding any
+ * exclude line a newer starter needs and printing `.git/info/exclude` when it
+ * does; it asks, as init does, only when the exclude names neither `.vago/`
+ * nor the Goals folder. Prints nothing when the Project already matches.
+ * Throws an Error naming the problem, before changing anything, when `root`
+ * has no `.vago/` or no `.git` directory.
+ */
+export async function updateProject(root: string): Promise<void> {
+	if (!(await isDirectory(join(root, ".vago")))) {
+		throw new Error(`${root} has no .vago/, so run vago init to set it up`);
+	}
+	const git = await gitFolder(root);
+	const excluded = (await excludeText(git)).split("\n");
+	// Init always excludes the Goals folder, and `.vago/` only when the answer
+	// was no, so the Goals line alone means the answer was yes.
+	const commitWorkflow = excluded.includes(".vago/")
+		? false
+		: excluded.includes(goalsExcludeLine) || askCommitWorkflow();
+	for (const [path, text] of Object.entries(starterFiles)) {
+		const file = Bun.file(join(root, path));
+		if ((await file.exists()) && (await file.text()) === text) continue;
+		await Bun.write(file, text);
+		console.log(path);
+	}
+	if (await addExcludeLines(git, commitWorkflow)) {
+		console.log(".git/info/exclude");
+	}
+}
+
+// `Bun.file().exists()` is false for a directory, so it can't tell one.
+async function isDirectory(path: string): Promise<boolean> {
+	return stat(path).then(
+		(found) => found.isDirectory(),
+		() => false,
+	);
+}
+
+// The Project's `.git` directory. Throws when there is none, since every
+// Project needs `.git/info/exclude` to keep Goals out of git.
+async function gitFolder(root: string): Promise<string> {
+	const git = join(root, ".git");
+	if (!(await isDirectory(git))) {
+		throw new Error(
+			`${root} has no .git directory, and vago needs .git/info/exclude to keep Goals out of git`,
+		);
+	}
+	return git;
+}
+
+// Explains the choice and asks on stdin. An empty answer, or no stdin, is no.
+function askCommitWorkflow(): boolean {
+	console.log(commitExplanation);
+	const answer = prompt("Commit the Workflow? [y/N]") ?? "";
+	return /^y(es)?$/i.test(answer.trim());
+}
+
+async function excludeText(git: string): Promise<string> {
 	const exclude = Bun.file(join(git, "info", "exclude"));
-	const excluded = (await exclude.exists()) ? await exclude.text() : "";
+	return (await exclude.exists()) ? await exclude.text() : "";
+}
+
+// Appends the exclude lines the commit answer needs and the file lacks, and
+// says whether it appended any.
+async function addExcludeLines(
+	git: string,
+	commitWorkflow: boolean,
+): Promise<boolean> {
+	const excluded = await excludeText(git);
 	const wantedLines = commitWorkflow
 		? [goalsExcludeLine]
 		: [goalsExcludeLine, ...workflowExcludeLines];
 	const missing = wantedLines.filter(
 		(line) => !excluded.split("\n").includes(line),
 	);
-	if (missing.length === 0) return;
+	if (missing.length === 0) return false;
 	// A last line without its newline would run into the first added one.
 	const separator = excluded === "" || excluded.endsWith("\n") ? "" : "\n";
-	await Bun.write(exclude, `${excluded}${separator}${missing.join("\n")}\n`);
+	await Bun.write(
+		join(git, "info", "exclude"),
+		`${excluded}${separator}${missing.join("\n")}\n`,
+	);
+	return true;
 }
