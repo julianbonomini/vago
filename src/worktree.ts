@@ -10,9 +10,7 @@ import { cp, lstat, mkdir, readlink, realpath, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, relative, sep } from "node:path";
 import { goalsFolderName } from "./tickets.ts";
-
-// The Project's Workflows, with the prompts and scripts they run.
-const vagoFolderName = ".vago";
+import { vagoFolderName } from "./workflow.ts";
 
 /**
  * Gives Goal `goal` of the Project at `root` its worktree and returns the

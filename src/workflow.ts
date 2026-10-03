@@ -10,7 +10,16 @@ import { join } from "node:path";
 import { z } from "zod";
 import { knownHarness } from "./harness/registry.ts";
 
-/** A Step that runs `run` with `sh -c` in the Goal's checkout. */
+/**
+ * The name of the folder, directly at a Project's root, that holds the
+ * Project's Workflows with the prompts and scripts they run. Other modules
+ * may name the folder, to copy it or keep it out of git, but never build a
+ * path inside it: only this module and `init.ts`, which writes the starter
+ * there, do.
+ */
+export const vagoFolderName = ".vago";
+
+/** A Step that runs `run` with `sh -c` in the Goal's worktree. */
 export type ShellStep = {
 	readonly id: string;
 	readonly type: "shell";
@@ -137,7 +146,7 @@ export async function loadWorkflow(
 	root: string,
 	name: string,
 ): Promise<Workflow> {
-	const vago = join(root, ".vago");
+	const vago = join(root, vagoFolderName);
 	const folder = join(vago, "workflows");
 	// node:fs because Bun.file can't tell whether a directory exists.
 	const names = existsSync(folder)
