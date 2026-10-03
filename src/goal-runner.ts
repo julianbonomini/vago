@@ -6,6 +6,7 @@
 
 import {
 	printGoalSummary,
+	printStepSkipped,
 	printStuck,
 	printStuckRefusal,
 	printTicketStarted,
@@ -16,6 +17,7 @@ import { runStep, spellOutcome } from "./step-runner.ts";
 import {
 	closeOpenRun,
 	createGoal,
+	isLastTicket,
 	readGoal,
 	setStatus,
 	type Ticket,
@@ -125,7 +127,8 @@ export async function resetTicket(
 	await setStatus(found.ticket, "ready");
 }
 
-// Runs every Step of `workflow` on `ticket` in `worktree`, and returns
+// Runs every Step of `workflow` on `ticket` in `worktree`, skipping a
+// `last-ticket` Step unless this is the Goal's last Ticket, and returns
 // whether the Ticket got to `done`. A failed Step leaves it `stuck`,
 // unless it's a shell Step whose failure the Workflow lets the Ticket go on
 // from. `on_fail` covers a Step that exits non-zero, never one the human
@@ -139,6 +142,10 @@ async function runTicket(
 	printTicketStarted(ticket);
 	const stepOutputs = new Map<string, string>();
 	for (const step of workflow.steps) {
+		if (step.when === "last-ticket" && !(await isLastTicket(ticket))) {
+			printStepSkipped(step.id, new Date());
+			continue;
+		}
 		const run = await runStep(step, ticket, worktree, stepOutputs);
 		stepOutputs.set(step.id, run.output);
 		const goesOn =

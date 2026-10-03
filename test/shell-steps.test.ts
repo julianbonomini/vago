@@ -111,6 +111,69 @@ run  = 'echo "$VAGO_LAST_TICKET"'
 	expect(await log("02-last-1.log")).toBe("true\n");
 });
 
+test("a Ticket a Step adds to the Goal ends the last Ticket for the later Steps and runs next", async () => {
+	const root = await makeProject({
+		".vago/workflows/test.toml": `
+[[steps]]
+id   = "add"
+type = "shell"
+run  = '''
+added="$VAGO_PROJECT_ROOT/.vago-goals/hello/tickets/02-wave.md"
+[ -e "$added" ] || printf '+++\\nstatus = "ready"\\n+++\\n# Wave\\n' >"$added"
+'''
+
+[[steps]]
+id   = "last"
+type = "shell"
+run  = 'echo "$VAGO_LAST_TICKET"'
+`,
+		[`${goalDir}/goal.md`]: goalText("test"),
+		[ticketPath]: ticket,
+	});
+
+	const result = await runVago(root, ["run", "hello"]);
+
+	expect(result.exitCode).toBe(0);
+	const log = (name: string) =>
+		Bun.file(join(root, goalDir, "logs", name)).text();
+	expect(await log("01-last-2.log")).toBe("false\n");
+	expect(await log("02-last-2.log")).toBe("true\n");
+});
+
+test('a Step with when = "last-ticket" runs only on the Goal\'s last Ticket and is skipped with no Run on the others', async () => {
+	const root = await makeProject({
+		".vago/workflows/test.toml": `
+[[steps]]
+id   = "greet"
+type = "shell"
+run  = "echo hello"
+
+[[steps]]
+id   = "wrap-up"
+type = "shell"
+run  = "echo wrapped up"
+when = "last-ticket"
+`,
+		[`${goalDir}/goal.md`]: goalText("test"),
+		[ticketPath]: ticket,
+		[`${goalDir}/tickets/02-wave.md`]: ticket,
+	});
+
+	const result = await runVago(root, ["run", "hello"]);
+
+	expect(result.exitCode).toBe(0);
+	const steps = async (path: string) =>
+		((await readTicketFile(root, path)).header.runs as { step: string }[]).map(
+			({ step }) => step,
+		);
+	expect(await steps(ticketPath)).toEqual(["greet"]);
+	expect(await steps(`${goalDir}/tickets/02-wave.md`)).toEqual([
+		"greet",
+		"wrap-up",
+	]);
+	expect(result.stdout.match(/wrap-up skipped/g)).toHaveLength(1);
+});
+
 test("each Step gets a [[runs]] entry and a log of its stdout and stderr", async () => {
 	const root = await makeProject({
 		".vago/workflows/test.toml": workflow,

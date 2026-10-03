@@ -256,6 +256,11 @@ test.each([
 		message: 'expected one of "stop"|"continue"\n  → at steps[0].on_fail',
 	},
 	{
+		problem: "an invalid when",
+		workflow: `${shellStep("check")}when = "first-ticket"\n`,
+		message: 'expected "last-ticket"\n  → at steps[0].when',
+	},
+	{
 		problem: "a key the Step type doesn't take",
 		workflow: agentWorkflow('on_fail = "continue"'),
 		message: 'Unrecognized key: "on_fail"\n  → at steps[0]',

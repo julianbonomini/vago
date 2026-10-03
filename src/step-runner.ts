@@ -8,7 +8,7 @@ import { dirname } from "node:path";
 import { findHarness, type HarnessSessionReport } from "./harness/registry.ts";
 import { printStepEnded, printStepStarted } from "./progress.ts";
 import {
-	readGoal,
+	isLastTicket,
 	readGoalBody,
 	readTicketBody,
 	recordRunEnd,
@@ -55,11 +55,11 @@ export type FinishedRun = {
  * Run gets a `[[runs]]` entry before it starts and its end filled in after, a
  * line on stdout at each, and a log of everything it wrote. An agent Step's
  * prompt reads `stepOutputs`, the outputs of the Steps already run on this
- * Ticket by Step id. A shell Step's command gets the Goal's and Ticket's
- * names in `VAGO_GOAL` and `VAGO_TICKET`, like `hello` and `01-say-hello`,
- * and `VAGO_LAST_TICKET`, `true` when every other Ticket of the Goal is
- * `done` and `false` otherwise. A shell Step's command also gets
- * `VAGO_PROJECT_ROOT`, the main checkout's path.
+ * Ticket by Step id, and the Goal's name. A shell Step's command gets the
+ * Goal's and Ticket's names in `VAGO_GOAL` and `VAGO_TICKET`, like `hello`
+ * and `01-say-hello`, and `VAGO_LAST_TICKET`, `true` when every other Ticket
+ * of the Goal is `done` and `false` otherwise. A shell Step's command also
+ * gets `VAGO_PROJECT_ROOT`, the main checkout's path.
  * SIGINT or SIGTERM while the Step runs kills every process it started
  * and ends the Run `interrupted`, instead of ending `vago`.
  */
@@ -101,10 +101,7 @@ export async function runStep(
 			// Agents read the Goal and Ticket in their prompt; a command needs
 			// the names, for example to name a branch per Goal and Ticket, and
 			// whether the Goal ends with this Ticket, to announce it.
-			const { tickets } = await readGoal(ticket.root, ticket.goal);
-			const lastTicket = tickets.every(
-				(other) => other.ticket.name === ticket.name || other.status === "done",
-			);
+			const lastTicket = await isLastTicket(ticket);
 			const child = Bun.spawn(["sh", "-c", step.run], {
 				cwd: worktree,
 				env: {
@@ -157,6 +154,7 @@ async function runAgent(
 	const prompt = buildPrompt(step, {
 		ticket: await readTicketBody(ticket),
 		goal: await readGoalBody(ticket.root, ticket.goal),
+		goalName: ticket.goal,
 		stepOutputs,
 	});
 	const harness = findHarness(step.harness);

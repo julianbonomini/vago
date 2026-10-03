@@ -10,6 +10,9 @@ import architecturePrompt from "../starter/prompts/architecture.md" with {
 	type: "text",
 };
 import designPrompt from "../starter/prompts/design.md" with { type: "text" };
+import goalReviewPrompt from "../starter/prompts/goal-review.md" with {
+	type: "text",
+};
 import implementPrompt from "../starter/prompts/implement.md" with {
 	type: "text",
 };
@@ -62,6 +65,7 @@ const starterFiles: Record<string, string> = {
 	".vago/prompts/review.md": reviewPrompt,
 	".vago/prompts/small-implement.md": smallImplementPrompt,
 	".vago/prompts/small-review.md": smallReviewPrompt,
+	".vago/prompts/goal-review.md": goalReviewPrompt,
 	".vago/scripts/branch.sh": branchScript,
 	".vago/scripts/merge.sh": mergeScript,
 	".claude/skills/vago-check-red-flags/SKILL.md": checkRedFlagsSkill,

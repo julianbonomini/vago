@@ -24,6 +24,11 @@ export function printStepStarted(stepId: string, started: Date): void {
 	console.log(paint(stepLine(started, stepId, "started"), "dim"));
 }
 
+/** Prints the indented line saying Step `stepId` was skipped on this Ticket. */
+export function printStepSkipped(stepId: string, at: Date): void {
+	console.log(paint(stepLine(at, stepId, "skipped"), "dim"));
+}
+
 /**
  * Prints the indented line saying how Step `stepId` ended, with `outcome` as
  * spelled in the header (`ok`, `exit 1`), how long it took and, when the
