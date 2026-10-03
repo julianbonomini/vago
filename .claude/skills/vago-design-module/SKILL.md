@@ -36,3 +36,5 @@ Done when the module has one chosen interface with its interface comments, and t
 ## Approving a design
 
 Read the design and the code it touches, then ask every question above of it. Check that it was designed twice: two radically different options were written down and compared. Approve only when each question has a good answer. Otherwise name each failing question, where it fails, and the change that fixes it.
+
+Done when every question has an answer, and each failing one names where it fails and its fix.
