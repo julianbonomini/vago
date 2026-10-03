@@ -285,7 +285,7 @@ async function main(args: string[]): Promise<number> {
 		// Only a bare `vago` on a terminal opens the TUI. It's loaded here and
 		// nowhere else, so no command loads OpenTUI or needs Solid's transform.
 		if (args.length === 0 && process.stdin.isTTY && process.stdout.isTTY) {
-			const { openTui } = await import("./tui.tsx");
+			const { openTui } = await import("./tui/tui.tsx");
 			await openTui(await projectRoot(process.cwd()));
 			return 0;
 		}

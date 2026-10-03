@@ -1,5 +1,6 @@
 // The `running.lock` that marks a Goal as taken by a `vago run`: taking it
-// with this process's pid, taking over one a dead run left, and releasing it.
+// with this process's pid, taking over one a dead run left, releasing it, and
+// telling whether another live process holds it.
 // Hides the lock's format and how a holder is found alive or dead.
 
 import { link, rm } from "node:fs/promises";
@@ -31,6 +32,15 @@ export async function releaseLock(lock: string): Promise<void> {
 	// A lock holding another pid was taken over from this run, so it's not
 	// this run's to remove.
 	if ((await lockHolder(lock)) === process.pid) await rm(lock, { force: true });
+}
+
+/**
+ * Whether a live process other than this one holds the lock at `lock`.
+ * False when there is no lock or it holds no pid.
+ */
+export async function isLockHeld(lock: string): Promise<boolean> {
+	const holder = await lockHolder(lock);
+	return holder !== undefined && isRunning(holder);
 }
 
 // Creates the lock holding this process's pid, and returns false when it

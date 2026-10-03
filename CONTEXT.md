@@ -36,6 +36,10 @@ _Avoid_: epic, mission
 One Harness session performing one agent Step on one Ticket, such as implement, review or discuss; a Ticket usually takes several.
 _Avoid_: session, job, attempt
 
+**Lost**:
+A Goal whose Ticket says `running` while no live `vago run` has the Goal. The next `vago run` ends that Ticket's open Run with outcome `lost`.
+_Avoid_: crashed, orphaned
+
 **Ticket**:
 One unit of work that belongs to a Goal; done when it reaches the end of its Workflow.
 _Avoid_: issue, task, story

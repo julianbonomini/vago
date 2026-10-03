@@ -1,18 +1,14 @@
-// The TUI that a bare `vago` opens on a terminal: the Project view, and how
-// the terminal is held while it is open and given back on every way out. It
+// The entry to the TUI that a bare `vago` opens on a terminal: how the
+// terminal is held while it is open and given back on every way out. It
 // is read-only (ADR 0005) and drawn with OpenTUI and Solid (ADR 0006). Only
 // `cli.ts` imports this file, and only lazily, so no command loads OpenTUI.
 
 import { format } from "node:util";
 import { createCliRenderer } from "@opentui/core";
 import { type JSX, render, useKeyboard } from "@opentui/solid";
-import { createResource, createSignal, ErrorBoundary, For } from "solid-js";
-import { listGoals } from "./tickets/tickets.ts";
-
-const bg = "#0c0c0c";
-const fg = "#d6d6d6";
-const border = "#2e2e2e";
-const accent = "#ff8a3d";
+import { ErrorBoundary } from "solid-js";
+import { ProjectView } from "./project-view.tsx";
+import { color } from "./theme.ts";
 
 /**
  * Shows the Project at `root` full-screen until the human quits with `q` or
@@ -38,7 +34,7 @@ async function holdTerminal(view: () => JSX.Element): Promise<void> {
 		exitSignals: [],
 		screenMode: "alternate-screen",
 		consoleMode: "disabled",
-		backgroundColor: bg,
+		backgroundColor: color.bg,
 	});
 	// Past ten listeners Node prints a leak warning to stderr, which would
 	// scroll the alternate screen and shift every later frame.
@@ -112,52 +108,4 @@ function QuitKeys(props: {
 		if (key.name === "q" || (key.ctrl && key.name === "c")) props.onQuit();
 	});
 	return props.children;
-}
-
-/**
- * The Project view of the Project at `root`: a Goals box listing every Goal
- * by name, the selected one in the accent colour, moved by ↑↓ and j k, with
- * `n/N` on the box's bottom border. Reads the Goals itself.
- */
-export function ProjectView(props: { root: string }): JSX.Element {
-	const [goals] = createResource(() => listGoals(props.root));
-	const [selected, setSelected] = createSignal(0);
-	// Clamped, not wrapped, so holding a key stops at the end of the list.
-	const move = (by: number) =>
-		setSelected((index) =>
-			Math.max(0, Math.min((goals()?.length ?? 0) - 1, index + by)),
-		);
-	useKeyboard((key) => {
-		if (key.name === "up" || key.name === "k") move(-1);
-		if (key.name === "down" || key.name === "j") move(1);
-	});
-	// No count until the Goals are read, so an empty Project and a slow read
-	// never look alike.
-	const position = () => {
-		const list = goals();
-		if (list === undefined) return undefined;
-		return list.length === 0 ? " 0/0 " : ` ${selected() + 1}/${list.length} `;
-	};
-	return (
-		<box
-			border
-			borderColor={border}
-			title=" Goals "
-			bottomTitle={position()}
-			bottomTitleAlignment="right"
-		>
-			<For each={goals() ?? []}>
-				{(goal, index) => (
-					<text
-						fg={index() === selected() ? bg : fg}
-						bg={index() === selected() ? accent : undefined}
-						flexShrink={0}
-						wrapMode="none"
-					>
-						{goal}
-					</text>
-				)}
-			</For>
-		</box>
-	);
 }

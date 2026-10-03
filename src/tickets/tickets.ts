@@ -1,15 +1,15 @@
 // The entry to the module that creates and owns Goal and Ticket files under
 // `.vago-goals/<goal>/`: which Goals a Project has, the `goal.md` header
 // naming the Goal's Workflow, the Workflow a Ticket names in place of it,
-// status, the `[[runs]]` history and where each Run's log goes, and the lock
-// that marks a Goal as taken by a `vago run`. Only this file is imported from
-// outside `tickets/`.
+// Goal and Ticket titles, status, blockers, the `[[runs]]` history and where
+// each Run's log goes, and the lock that marks a Goal as taken by a
+// `vago run`. Only this file is imported from outside `tickets/`.
 
 import { mkdir, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { HarnessSessionReport } from "../harness/registry.ts";
 import type { Step } from "../workflow.ts";
-import { claimLock, releaseLock } from "./goal-lock.ts";
+import { claimLock, isLockHeld, releaseLock } from "./goal-lock.ts";
 import {
 	headedText,
 	readGoalFile,
@@ -63,6 +63,12 @@ export type TicketRun = {
 	ended?: Date;
 	/** As spelled in the header, like `ok` or `exit 1`. Absent like `ended`. */
 	outcome?: string;
+	/** Absolute path of the Run's log. */
+	log: string;
+	/** The model an agent Step ran on. Absent for a shell Step. */
+	model?: string;
+	/** What the Harness reported the Run used. Absent like `costUsd`. */
+	tokens?: { input: number; output: number };
 	/** What the Harness reported the Run cost. Absent for a shell Step. */
 	costUsd?: number;
 };
@@ -72,6 +78,8 @@ export type TicketRun = {
  * the Goal again after a Ticket moves.
  */
 export type GoalState = {
+	/** The first `# ` heading of `goal.md`'s body, or the Goal's name. */
+	title: string;
 	/**
 	 * The name of the Workflow the Goal's `goal.md` header names, which a
 	 * Ticket goes through unless its own header names another. It might not
@@ -85,7 +93,11 @@ export type GoalState = {
 	 */
 	tickets: {
 		ticket: Ticket;
+		/** The first `# ` heading of the body, or the slug after `NN-`. */
+		title: string;
 		status: TicketStatus;
+		/** The numbers of the Tickets this one waits on. */
+		blockedBy: number[];
 		workflow: string;
 		runs: TicketRun[];
 	}[];
@@ -156,27 +168,35 @@ export async function listGoals(root: string): Promise<string[]> {
  */
 export async function readGoal(root: string, goal: string): Promise<GoalState> {
 	const folder = goalFolder(root, goal);
-	const { workflow } = await readGoalFile(await existingGoalFile(root, goal));
+	const { workflow, body } = await readGoalFile(
+		await existingGoalFile(root, goal),
+	);
 	const ticketFolder = join(folder, "tickets");
 	const entries = (await readTicketFolder(goal, ticketFolder)).map(
-		({ name, number, header }) => ({
+		({ name, number, header, body }) => ({
 			ticket: { root, goal, name, number },
 			header,
+			body,
 		}),
 	);
 	const byNumber = new Map(
 		entries.map((entry) => [entry.ticket.number, entry]),
 	);
 
-	const tickets = entries.map(({ ticket, header }) => ({
+	const tickets = entries.map(({ ticket, header, body }) => ({
 		ticket,
+		title: headingTitle(body, ticket.name.replace(/^\d+-/, "")),
 		status: header.status,
+		blockedBy: header.blocked_by ?? [],
 		workflow: header.workflow ?? workflow,
 		runs: (header.runs ?? []).map((run) => ({
 			step: run.step,
 			started: run.started,
 			ended: run.ended,
 			outcome: run.outcome,
+			log: runLogPath(ticket, run.log),
+			model: run.model,
+			tokens: run.tokens,
 			costUsd: run.cost_usd,
 		})),
 	}));
@@ -188,6 +208,7 @@ export async function readGoal(root: string, goal: string): Promise<GoalState> {
 			),
 	);
 	return {
+		title: headingTitle(body, goal),
 		workflow,
 		tickets,
 		nextReady:
@@ -328,11 +349,7 @@ export async function recordRunStart(
 			return { position, log: entry.log };
 		},
 	);
-	return {
-		ticket,
-		position,
-		log: join(goalFolder(ticket.root, ticket.goal), log),
-	};
+	return { ticket, position, log: runLogPath(ticket, log) };
 }
 
 /**
@@ -393,13 +410,25 @@ export async function withGoalClaimed<T>(
 ): Promise<T> {
 	// Checked first: writing the lock would create a mistyped Goal's folder.
 	await existingGoalFile(root, goal);
-	const lock = join(goalFolder(root, goal), "running.lock");
+	const lock = goalLockPath(root, goal);
 	await claimLock(lock, goal);
 	try {
 		return await run();
 	} finally {
 		await releaseLock(lock);
 	}
+}
+
+/**
+ * Whether a live `vago run` other than this process has Goal `goal` of the
+ * Project at `root`. False when no lock is there, it is unreadable, or the
+ * process in it has died.
+ */
+export async function isGoalClaimed(
+	root: string,
+	goal: string,
+): Promise<boolean> {
+	return isLockHeld(goalLockPath(root, goal));
 }
 
 // The name becomes a folder or file under `.vago-goals/`, so a name that
@@ -410,6 +439,12 @@ function checkName(label: string, name: string): void {
 			`${label} "${name}" may hold only letters, digits, - and _`,
 		);
 	}
+}
+
+// The text of the first `# ` heading in a Markdown `body`, or `fallback`
+// when it has none.
+function headingTitle(body: string, fallback: string): string {
+	return /^# +(.+?)\s*$/m.exec(body)?.[1] ?? fallback;
 }
 
 // A file with no body gives the agent nothing to work from.
@@ -428,6 +463,16 @@ async function existingGoalFile(root: string, goal: string): Promise<string> {
 function goalFolder(root: string, goal: string): string {
 	checkName("Goal name", goal);
 	return join(root, goalsFolderName, goal);
+}
+
+// A Run's log path as the header spells it, relative to the Goal's folder,
+// made absolute.
+function runLogPath(ticket: Ticket, log: string): string {
+	return join(goalFolder(ticket.root, ticket.goal), log);
+}
+
+function goalLockPath(root: string, goal: string): string {
+	return join(goalFolder(root, goal), "running.lock");
 }
 
 function ticketFile(ticket: Ticket): string {

@@ -13,6 +13,8 @@ export type TicketFolderEntry = {
 	name: string;
 	number: number;
 	header: TicketHeader;
+	/** Everything after the header, as `readTicketFile` returns it. */
+	body: string;
 };
 
 // An entry with its path, which the checks' errors name.
@@ -21,6 +23,7 @@ type TicketFile = {
 	number: number;
 	file: string;
 	header: TicketHeader;
+	body: string;
 };
 
 // The name without `.md` is group 1 and the Ticket number group 2.
@@ -68,8 +71,14 @@ export async function readTicketFolder(
 		if (match?.[1] === undefined || match[2] === undefined) {
 			throw new Error(`${file} isn't named like a Ticket, NN-<slug>.md`);
 		}
-		const { header } = await readTicketFile(file);
-		entries.push({ name: match[1], number: Number(match[2]), file, header });
+		const { header, body } = await readTicketFile(file);
+		entries.push({
+			name: match[1],
+			number: Number(match[2]),
+			file,
+			header,
+			body,
+		});
 	}
 	entries.sort((a, b) => a.number - b.number);
 
@@ -99,7 +108,12 @@ export async function readTicketFolder(
 			`Goal ${goal} has a blocker cycle in ${ticketFolder}: ${names.join(" -> ")}`,
 		);
 	}
-	return entries.map(({ name, number, header }) => ({ name, number, header }));
+	return entries.map(({ name, number, header, body }) => ({
+		name,
+		number,
+		header,
+		body,
+	}));
 }
 
 // Walks `blocked_by` depth first from the lowest number. Returns the Ticket
