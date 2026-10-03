@@ -1,19 +1,19 @@
 # AFK
 
-A personal software factory, provisionally called Punt: the human defines what gets built, and coding agents build it detached while the human is away.
+A personal software factory called Vago: the human defines what gets built, and coding agents build it detached while the human is away.
 
 ## Language
 
-**Punt** (provisional name):
+**Vago**:
 The whole system the human drives, spanning every Project it serves.
 _Avoid_: factory, orchestrator, platform, AFK
 
-**Punt Alpha**:
-The first, kernel-only release of Punt: it takes a Goal's ready Tickets through the Workflow that Goal names on a Harness without the human present. Inside Punt docs it may be shortened to "alpha".
+**Vago Alpha**:
+The first, kernel-only release of Vago: it takes a Goal's ready Tickets through the Workflow that Goal names on a Harness without the human present. Inside Vago docs it may be shortened to "alpha".
 _Avoid_: v1, MVP
 
 **Project**:
-One repository Punt builds for, such as a TUI, a mini project or an iOS app.
+One repository Vago builds for, such as a TUI, a mini project or an iOS app.
 _Avoid_: repo, app
 
 **Workflow**:
@@ -45,5 +45,5 @@ A Workflow Step that pauses work until the human approves it. Not part of Alpha.
 _Avoid_: checkpoint, approval step
 
 **Harness**:
-The coding agent that does the work on a Ticket, such as Claude Code or Codex; Punt is agnostic to which.
+The coding agent that does the work on a Ticket, such as Claude Code or Codex; Vago is agnostic to which.
 _Avoid_: runtime, worker, droid

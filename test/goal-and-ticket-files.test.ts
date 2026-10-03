@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { makeFakeClaude } from "./fake-claude.ts";
-import { goalText, makeProject, readTicketFile, runPunt } from "./project.ts";
+import { goalText, makeProject, readTicketFile, runVago } from "./project.ts";
 
 const workflow = `
 [[steps]]
@@ -22,12 +22,12 @@ type   = "agent"
 prompt = "prompts/implement.md"
 `;
 
-const goalDir = ".punt-goals/hello";
+const goalDir = ".vago-goals/hello";
 
-test("goal new creates a Goal with no Tickets that punt run accepts", async () => {
-	const root = await makeProject({ ".punt/workflows/test.toml": workflow });
+test("goal new creates a Goal with no Tickets that vago run accepts", async () => {
+	const root = await makeProject({ ".vago/workflows/test.toml": workflow });
 
-	const created = await runPunt(root, [
+	const created = await runVago(root, [
 		"goal",
 		"new",
 		"hello",
@@ -43,7 +43,7 @@ test("goal new creates a Goal with no Tickets that punt run accepts", async () =
 	);
 	expect(await readdir(join(root, goalDir, "tickets"))).toEqual([]);
 
-	const run = await runPunt(root, ["run", "hello"]);
+	const run = await runVago(root, ["run", "hello"]);
 
 	expect(run.stderr).toBe("");
 	expect(run.exitCode).toBe(0);
@@ -51,13 +51,13 @@ test("goal new creates a Goal with no Tickets that punt run accepts", async () =
 });
 
 test("goal new without --workflow prints the usage and creates no Goal", async () => {
-	const root = await makeProject({ ".punt/workflows/test.toml": workflow });
+	const root = await makeProject({ ".vago/workflows/test.toml": workflow });
 
-	const result = await runPunt(root, ["goal", "new", "hello"]);
+	const result = await runVago(root, ["goal", "new", "hello"]);
 
 	expect(result.exitCode).toBe(1);
 	expect(result.stderr).toContain(
-		"punt goal new <goal> --workflow <name> [--body-file <path>]",
+		"vago goal new <goal> --workflow <name> [--body-file <path>]",
 	);
 	expect(existsSync(join(root, goalDir))).toBe(false);
 });
@@ -65,11 +65,11 @@ test("goal new without --workflow prints the usage and creates no Goal", async (
 for (const name of ["nope", "../a"]) {
 	test(`goal new refuses the Workflow "${name}", listing the ones there are`, async () => {
 		const root = await makeProject({
-			".punt/workflows/a.toml": workflow,
-			".punt/workflows/b.toml": workflow,
+			".vago/workflows/a.toml": workflow,
+			".vago/workflows/b.toml": workflow,
 		});
 
-		const result = await runPunt(root, [
+		const result = await runVago(root, [
 			"goal",
 			"new",
 			"hello",
@@ -84,15 +84,15 @@ for (const name of ["nope", "../a"]) {
 	});
 }
 
-test("goal new refuses a Workflow punt run would refuse and creates no Goal", async () => {
+test("goal new refuses a Workflow vago run would refuse and creates no Goal", async () => {
 	const root = await makeProject({
-		".punt/workflows/test.toml": agentWorkflow.replace(
+		".vago/workflows/test.toml": agentWorkflow.replace(
 			"prompts/implement.md",
 			"prompts/gone.md",
 		),
 	});
 
-	const result = await runPunt(root, [
+	const result = await runVago(root, [
 		"goal",
 		"new",
 		"hello",
@@ -107,14 +107,14 @@ test("goal new refuses a Workflow punt run would refuse and creates no Goal", as
 
 test("goal new refuses a Goal that exists and leaves it as it was", async () => {
 	const root = await makeProject({
-		".punt/workflows/test.toml": workflow,
+		".vago/workflows/test.toml": workflow,
 		[`${goalDir}/goal.md`]: goalText(
 			"test",
 			"# Hello\n\nSay hello to everyone.\n",
 		),
 	});
 
-	const result = await runPunt(root, [
+	const result = await runVago(root, [
 		"goal",
 		"new",
 		"hello",
@@ -124,7 +124,7 @@ test("goal new refuses a Goal that exists and leaves it as it was", async () => 
 
 	expect(result.exitCode).not.toBe(0);
 	expect(result.stderr).toMatch(
-		/Goal hello already exists: \S*\.punt-goals\/hello/,
+		/Goal hello already exists: \S*\.vago-goals\/hello/,
 	);
 	expect(result.stdout).toBe("");
 	expect(await Bun.file(join(root, goalDir, "goal.md")).text()).toBe(
@@ -132,14 +132,14 @@ test("goal new refuses a Goal that exists and leaves it as it was", async () => 
 	);
 });
 
-test("ticket add numbers Tickets in order with a ready header punt run takes", async () => {
+test("ticket add numbers Tickets in order with a ready header vago run takes", async () => {
 	const root = await makeProject({
-		".punt/workflows/test.toml": workflow,
+		".vago/workflows/test.toml": workflow,
 		[`${goalDir}/goal.md`]: goalText("test"),
 	});
 
-	const greet = await runPunt(root, ["ticket", "add", "hello", "greet"]);
-	const wave = await runPunt(root, ["ticket", "add", "hello", "wave"]);
+	const greet = await runVago(root, ["ticket", "add", "hello", "greet"]);
+	const wave = await runVago(root, ["ticket", "add", "hello", "wave"]);
 
 	expect(greet.stderr).toBe("");
 	expect(greet.exitCode).toBe(0);
@@ -154,7 +154,7 @@ test("ticket add numbers Tickets in order with a ready header punt run takes", a
 		body: "\n# wave\n",
 	});
 
-	const run = await runPunt(root, ["run", "hello"]);
+	const run = await runVago(root, ["run", "hello"]);
 
 	expect(run.exitCode).toBe(0);
 	expect(run.stdout).toContain("hello: 2 of 2 Tickets done\n");
@@ -162,13 +162,13 @@ test("ticket add numbers Tickets in order with a ready header punt run takes", a
 
 test("ticket add numbers past the highest Ticket and writes each blocker once", async () => {
 	const root = await makeProject({
-		".punt/workflows/test.toml": workflow,
+		".vago/workflows/test.toml": workflow,
 		[`${goalDir}/goal.md`]: goalText("test"),
 		[`${goalDir}/tickets/01-greet.md`]: `+++\nstatus = "ready"\n+++\n`,
 		[`${goalDir}/tickets/03-wave.md`]: `+++\nstatus = "ready"\n+++\n`,
 	});
 
-	const result = await runPunt(root, [
+	const result = await runVago(root, [
 		"ticket",
 		"add",
 		"hello",
@@ -189,12 +189,12 @@ test("ticket add numbers past the highest Ticket and writes each blocker once", 
 
 test("ticket add refuses an unknown blocker and writes no Ticket", async () => {
 	const root = await makeProject({
-		".punt/workflows/test.toml": workflow,
+		".vago/workflows/test.toml": workflow,
 		[`${goalDir}/goal.md`]: goalText("test"),
 		[`${goalDir}/tickets/01-greet.md`]: `+++\nstatus = "ready"\n+++\n`,
 	});
 
-	const result = await runPunt(root, [
+	const result = await runVago(root, [
 		"ticket",
 		"add",
 		"hello",
@@ -216,19 +216,19 @@ test("ticket add refuses an unknown blocker and writes no Ticket", async () => {
 for (const name of ["../escape", "a/b", ""]) {
 	test(`goal new and ticket add refuse the name "${name}"`, async () => {
 		const root = await makeProject({
-			".punt/workflows/test.toml": workflow,
+			".vago/workflows/test.toml": workflow,
 			[`${goalDir}/goal.md`]: goalText("test"),
 		});
 
-		const goal = await runPunt(root, [
+		const goal = await runVago(root, [
 			"goal",
 			"new",
 			name,
 			"--workflow",
 			"test",
 		]);
-		const ticket = await runPunt(root, ["ticket", "add", "hello", name]);
-		const ticketOfGoal = await runPunt(root, ["ticket", "add", name, "wave"]);
+		const ticket = await runVago(root, ["ticket", "add", "hello", name]);
+		const ticketOfGoal = await runVago(root, ["ticket", "add", name, "wave"]);
 
 		expect(goal.exitCode).not.toBe(0);
 		expect(goal.stderr).toMatch(/may hold only letters, digits, - and _/);
@@ -236,7 +236,7 @@ for (const name of ["../escape", "a/b", ""]) {
 		expect(ticket.stderr).toMatch(/may hold only letters, digits, - and _/);
 		expect(ticketOfGoal.exitCode).not.toBe(0);
 		expect(ticketOfGoal.stderr).toMatch(/Goal name .* may hold only/);
-		const files = await readdir(join(root, ".punt-goals"), {
+		const files = await readdir(join(root, ".vago-goals"), {
 			recursive: true,
 		});
 		expect(files.sort()).toEqual(["hello", "hello/goal.md"]);
@@ -245,11 +245,11 @@ for (const name of ["../escape", "a/b", ""]) {
 
 test("ticket add takes no status and prints the usage when given one", async () => {
 	const root = await makeProject({
-		".punt/workflows/test.toml": workflow,
+		".vago/workflows/test.toml": workflow,
 		[`${goalDir}/goal.md`]: goalText("test"),
 	});
 
-	const result = await runPunt(root, [
+	const result = await runVago(root, [
 		"ticket",
 		"add",
 		"hello",
@@ -259,7 +259,7 @@ test("ticket add takes no status and prints the usage when given one", async () 
 	]);
 
 	expect(result.exitCode).not.toBe(0);
-	expect(result.stderr).toMatch(/^usage: punt /);
+	expect(result.stderr).toMatch(/^usage: vago /);
 	expect(existsSync(join(root, goalDir, "tickets"))).toBe(false);
 });
 
@@ -271,17 +271,17 @@ async function bodyProject(
 	files: Record<string, string> = {},
 ): Promise<string> {
 	const root = await makeProject({
-		".punt/workflows/test.toml": workflow,
+		".vago/workflows/test.toml": workflow,
 		...files,
 	});
-	await runPunt(root, ["goal", "new", "hello", "--workflow", "test"]);
+	await runVago(root, ["goal", "new", "hello", "--workflow", "test"]);
 	return root;
 }
 
 test("ticket add --body-file writes the file's text after the header", async () => {
 	const root = await bodyProject({ "body.md": body });
 
-	const result = await runPunt(root, [
+	const result = await runVago(root, [
 		"ticket",
 		"add",
 		"hello",
@@ -303,7 +303,7 @@ test("ticket add --body-file - reads the body from stdin", async () => {
 	const root = await bodyProject();
 	const stdin = "# Greet\n\nFrom stdin.\n";
 
-	const result = await runPunt(
+	const result = await runVago(
 		root,
 		["ticket", "add", "hello", "greet", "--body-file", "-"],
 		{},
@@ -318,10 +318,10 @@ test("ticket add --body-file - reads the body from stdin", async () => {
 
 test("ticket add takes --body-file and --blocked-by in any order", async () => {
 	const root = await bodyProject({ "body.md": body });
-	await runPunt(root, ["ticket", "add", "hello", "greet"]);
-	await runPunt(root, ["ticket", "add", "hello", "smile"]);
+	await runVago(root, ["ticket", "add", "hello", "greet"]);
+	await runVago(root, ["ticket", "add", "hello", "smile"]);
 
-	const bow = await runPunt(root, [
+	const bow = await runVago(root, [
 		"ticket",
 		"add",
 		"hello",
@@ -333,7 +333,7 @@ test("ticket add takes --body-file and --blocked-by in any order", async () => {
 		"--blocked-by",
 		"2",
 	]);
-	const wave = await runPunt(root, [
+	const wave = await runVago(root, [
 		"ticket",
 		"add",
 		"hello",
@@ -361,7 +361,7 @@ test("ticket add takes --body-file and --blocked-by in any order", async () => {
 test("ticket add --body-file -h reads the file named -h", async () => {
 	const root = await bodyProject({ "-h": body });
 
-	const result = await runPunt(root, [
+	const result = await runVago(root, [
 		"ticket",
 		"add",
 		"hello",
@@ -382,7 +382,7 @@ test("ticket add --body-file -h reads the file named -h", async () => {
 test("ticket add refuses a --body-file that doesn't exist and writes no Ticket", async () => {
 	const root = await bodyProject();
 
-	const result = await runPunt(root, [
+	const result = await runVago(root, [
 		"ticket",
 		"add",
 		"hello",
@@ -401,7 +401,7 @@ test("ticket add refuses a --body-file that is a folder and writes no Ticket", a
 	const root = await bodyProject();
 	await mkdir(join(root, "somedir"));
 
-	const result = await runPunt(root, [
+	const result = await runVago(root, [
 		"ticket",
 		"add",
 		"hello",
@@ -418,7 +418,7 @@ test("ticket add refuses a --body-file that is a folder and writes no Ticket", a
 test("ticket add refuses an empty --body-file and writes no Ticket", async () => {
 	const root = await bodyProject({ "body.md": "" });
 
-	const result = await runPunt(root, [
+	const result = await runVago(root, [
 		"ticket",
 		"add",
 		"hello",
@@ -435,7 +435,7 @@ test("ticket add refuses an empty --body-file and writes no Ticket", async () =>
 test("ticket add refuses a body of only whitespace and writes no Ticket", async () => {
 	const root = await bodyProject();
 
-	const result = await runPunt(
+	const result = await runVago(
 		root,
 		["ticket", "add", "hello", "greet", "--body-file", "-"],
 		{},
@@ -452,7 +452,7 @@ test("ticket add refuses a body with its own +++ header and writes no Ticket", a
 		"body.md": `+++\nstatus = "done"\n+++\n# Greet\n`,
 	});
 
-	const result = await runPunt(root, [
+	const result = await runVago(root, [
 		"ticket",
 		"add",
 		"hello",
@@ -466,16 +466,16 @@ test("ticket add refuses a body with its own +++ header and writes no Ticket", a
 	expect(await readdir(join(root, goalDir, "tickets"))).toEqual([]);
 });
 
-test("punt run hands the agent a --body-file body as {{ticket}}, unchanged", async () => {
+test("vago run hands the agent a --body-file body as {{ticket}}, unchanged", async () => {
 	// The prompt is only {{ticket}} and nothing is included, so the agent's
 	// stdin is the body alone.
 	const root = await makeProject({
-		".punt/workflows/test.toml": agentWorkflow,
-		".punt/prompts/implement.md": "{{ticket}}",
+		".vago/workflows/test.toml": agentWorkflow,
+		".vago/prompts/implement.md": "{{ticket}}",
 		"body.md": body,
 	});
-	await runPunt(root, ["goal", "new", "hello", "--workflow", "test"]);
-	await runPunt(root, [
+	await runVago(root, ["goal", "new", "hello", "--workflow", "test"]);
+	await runVago(root, [
 		"ticket",
 		"add",
 		"hello",
@@ -485,7 +485,7 @@ test("punt run hands the agent a --body-file body as {{ticket}}, unchanged", asy
 	]);
 	const claude = await makeFakeClaude();
 
-	const run = await runPunt(root, ["run", "hello"], claude.env);
+	const run = await runVago(root, ["run", "hello"], claude.env);
 
 	expect(run.stderr).toBe("");
 	expect(run.exitCode).toBe(0);
@@ -502,7 +502,7 @@ for (const flags of [
 	test(`ticket add prints the usage with the flag for ${flags.join(" ")}`, async () => {
 		const root = await bodyProject();
 
-		const result = await runPunt(root, [
+		const result = await runVago(root, [
 			"ticket",
 			"add",
 			"hello",
@@ -512,7 +512,7 @@ for (const flags of [
 
 		expect(result.exitCode).toBe(1);
 		expect(result.stderr).toContain(
-			"punt ticket add <goal> <slug> [--blocked-by <NN>]... [--body-file <path>]",
+			"vago ticket add <goal> <slug> [--blocked-by <NN>]... [--body-file <path>]",
 		);
 		expect(await readdir(join(root, goalDir, "tickets"))).toEqual([]);
 	});
@@ -524,11 +524,11 @@ for (const flags of [
 ]) {
 	test(`goal new ${flags.join(" ")} writes the file's text after the header`, async () => {
 		const root = await makeProject({
-			".punt/workflows/test.toml": workflow,
+			".vago/workflows/test.toml": workflow,
 			"body.md": body,
 		});
 
-		const result = await runPunt(root, ["goal", "new", "hello", ...flags]);
+		const result = await runVago(root, ["goal", "new", "hello", ...flags]);
 
 		expect(result.stderr).toBe("");
 		expect(result.exitCode).toBe(0);
@@ -541,9 +541,9 @@ for (const flags of [
 }
 
 test("goal new --body-file - reads the body from stdin", async () => {
-	const root = await makeProject({ ".punt/workflows/test.toml": workflow });
+	const root = await makeProject({ ".vago/workflows/test.toml": workflow });
 
-	const result = await runPunt(
+	const result = await runVago(
 		root,
 		["goal", "new", "hello", "--workflow", "test", "--body-file", "-"],
 		{},
@@ -559,10 +559,10 @@ test("goal new --body-file - reads the body from stdin", async () => {
 
 test("goal report shows a goal new body without the header", async () => {
 	const root = await makeProject({
-		".punt/workflows/test.toml": workflow,
+		".vago/workflows/test.toml": workflow,
 		"body.md": body,
 	});
-	await runPunt(root, [
+	await runVago(root, [
 		"goal",
 		"new",
 		"hello",
@@ -572,7 +572,7 @@ test("goal report shows a goal new body without the header", async () => {
 		"body.md",
 	]);
 
-	const report = await runPunt(root, ["goal", "report", "hello"]);
+	const report = await runVago(root, ["goal", "report", "hello"]);
 
 	expect(report.stderr).toBe("");
 	expect(report.exitCode).toBe(0);
@@ -582,9 +582,9 @@ test("goal report shows a goal new body without the header", async () => {
 });
 
 test("goal new refuses a --body-file that doesn't exist and creates no Goal", async () => {
-	const root = await makeProject({ ".punt/workflows/test.toml": workflow });
+	const root = await makeProject({ ".vago/workflows/test.toml": workflow });
 
-	const result = await runPunt(root, [
+	const result = await runVago(root, [
 		"goal",
 		"new",
 		"hello",
@@ -601,10 +601,10 @@ test("goal new refuses a --body-file that doesn't exist and creates no Goal", as
 });
 
 test("goal new refuses a --body-file that is a folder and creates no Goal", async () => {
-	const root = await makeProject({ ".punt/workflows/test.toml": workflow });
+	const root = await makeProject({ ".vago/workflows/test.toml": workflow });
 	await mkdir(join(root, "somedir"));
 
-	const result = await runPunt(root, [
+	const result = await runVago(root, [
 		"goal",
 		"new",
 		"hello",
@@ -621,11 +621,11 @@ test("goal new refuses a --body-file that is a folder and creates no Goal", asyn
 
 test("goal new refuses an empty --body-file and creates no Goal", async () => {
 	const root = await makeProject({
-		".punt/workflows/test.toml": workflow,
+		".vago/workflows/test.toml": workflow,
 		"body.md": "",
 	});
 
-	const result = await runPunt(root, [
+	const result = await runVago(root, [
 		"goal",
 		"new",
 		"hello",
@@ -641,9 +641,9 @@ test("goal new refuses an empty --body-file and creates no Goal", async () => {
 });
 
 test("goal new refuses a body of only whitespace and creates no Goal", async () => {
-	const root = await makeProject({ ".punt/workflows/test.toml": workflow });
+	const root = await makeProject({ ".vago/workflows/test.toml": workflow });
 
-	const result = await runPunt(
+	const result = await runVago(
 		root,
 		["goal", "new", "hello", "--workflow", "test", "--body-file", "-"],
 		{},
@@ -658,19 +658,19 @@ test("goal new refuses a body of only whitespace and creates no Goal", async () 
 // Two agent Workflows told apart by their prompts: `test` hands the agent
 // only {{goal}} and `other` only the word other.
 const twoWorkflows = {
-	".punt/workflows/test.toml": agentWorkflow,
-	".punt/workflows/other.toml": agentWorkflow.replace(
+	".vago/workflows/test.toml": agentWorkflow,
+	".vago/workflows/other.toml": agentWorkflow.replace(
 		"prompts/implement.md",
 		"prompts/other.md",
 	),
-	".punt/prompts/implement.md": "{{goal}}",
-	".punt/prompts/other.md": "other",
+	".vago/prompts/implement.md": "{{goal}}",
+	".vago/prompts/other.md": "other",
 	"body.md": body,
 };
 
-test("punt run hands the agent a goal new --body-file body as {{goal}}, unchanged", async () => {
+test("vago run hands the agent a goal new --body-file body as {{goal}}, unchanged", async () => {
 	const root = await makeProject(twoWorkflows);
-	await runPunt(root, [
+	await runVago(root, [
 		"goal",
 		"new",
 		"hello",
@@ -679,10 +679,10 @@ test("punt run hands the agent a goal new --body-file body as {{goal}}, unchange
 		"--body-file",
 		"body.md",
 	]);
-	await runPunt(root, ["ticket", "add", "hello", "greet"]);
+	await runVago(root, ["ticket", "add", "hello", "greet"]);
 	const claude = await makeFakeClaude();
 
-	const run = await runPunt(root, ["run", "hello"], claude.env);
+	const run = await runVago(root, ["run", "hello"], claude.env);
 
 	expect(run.stderr).toBe("");
 	expect(run.exitCode).toBe(0);
@@ -691,13 +691,13 @@ test("punt run hands the agent a goal new --body-file body as {{goal}}, unchange
 	expect(greet.header.status).toBe("done");
 });
 
-test("punt run runs the Workflow goal new named", async () => {
+test("vago run runs the Workflow goal new named", async () => {
 	const root = await makeProject(twoWorkflows);
-	await runPunt(root, ["goal", "new", "hello", "--workflow", "other"]);
-	await runPunt(root, ["ticket", "add", "hello", "greet"]);
+	await runVago(root, ["goal", "new", "hello", "--workflow", "other"]);
+	await runVago(root, ["ticket", "add", "hello", "greet"]);
 	const claude = await makeFakeClaude();
 
-	const run = await runPunt(root, ["run", "hello"], claude.env);
+	const run = await runVago(root, ["run", "hello"], claude.env);
 
 	expect(run.stderr).toBe("");
 	expect(run.exitCode).toBe(0);
@@ -714,15 +714,15 @@ for (const flags of [
 ]) {
 	test(`goal new prints the usage with the flag for ${flags.join(" ")}`, async () => {
 		const root = await makeProject({
-			".punt/workflows/test.toml": workflow,
+			".vago/workflows/test.toml": workflow,
 			"body.md": body,
 		});
 
-		const result = await runPunt(root, ["goal", "new", "hello", ...flags]);
+		const result = await runVago(root, ["goal", "new", "hello", ...flags]);
 
 		expect(result.exitCode).toBe(1);
 		expect(result.stderr).toContain(
-			"punt goal new <goal> --workflow <name> [--body-file <path>]",
+			"vago goal new <goal> --workflow <name> [--body-file <path>]",
 		);
 		expect(existsSync(join(root, goalDir))).toBe(false);
 	});
@@ -730,7 +730,7 @@ for (const flags of [
 
 test("goal new --body-file refuses a Goal that exists and leaves it as it was", async () => {
 	const root = await makeProject({
-		".punt/workflows/test.toml": workflow,
+		".vago/workflows/test.toml": workflow,
 		[`${goalDir}/goal.md`]: goalText(
 			"test",
 			"# Hello\n\nSay hello to everyone.\n",
@@ -738,7 +738,7 @@ test("goal new --body-file refuses a Goal that exists and leaves it as it was", 
 		"body.md": body,
 	});
 
-	const result = await runPunt(root, [
+	const result = await runVago(root, [
 		"goal",
 		"new",
 		"hello",
@@ -756,15 +756,15 @@ test("goal new --body-file refuses a Goal that exists and leaves it as it was", 
 });
 
 test("goal new writes a body that starts with +++ as given", async () => {
-	// Punt's header comes first, so the body's own +++ block is body and
+	// Vago's header comes first, so the body's own +++ block is body and
 	// can't change the Workflow.
 	const plusBody = `+++\nstatus = "done"\n+++\n# Hello\n`;
 	const root = await makeProject({
-		".punt/workflows/test.toml": workflow,
+		".vago/workflows/test.toml": workflow,
 		"body.md": plusBody,
 	});
 
-	const result = await runPunt(root, [
+	const result = await runVago(root, [
 		"goal",
 		"new",
 		"hello",

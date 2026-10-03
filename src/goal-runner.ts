@@ -1,5 +1,5 @@
 // A Goal's lifecycle: creating it with the Workflow it names, the main loop
-// of `punt run`, which takes the Goal's ready Tickets one at a time through
+// of `vago run`, which takes the Goal's ready Tickets one at a time through
 // every Step of the Workflow, and resetting a stuck Ticket. Hides the order
 // of a Goal's lifecycle.
 
@@ -19,15 +19,15 @@ import {
 } from "./tickets.ts";
 import { loadWorkflow, type Workflow } from "./workflow.ts";
 
-/** How `punt run` left the Goal: every Ticket `done`, or not. */
+/** How `vago run` left the Goal: every Ticket `done`, or not. */
 export type GoalEnd = "done" | "unfinished";
 
 /**
  * Creates Goal `goal` of the Project at `root`, naming Workflow `workflow`
  * in its `goal.md` header, with `body` exactly as given after it, or a
  * `# <goal>` title without one. Returns the path of `goal.md`. Throws an
- * Error naming the problem, and creates nothing, when `punt run` would
- * refuse the Workflow (one not in `.punt/workflows/` is refused with the
+ * Error naming the problem, and creates nothing, when `vago run` would
+ * refuse the Workflow (one not in `.vago/workflows/` is refused with the
  * names that are), the body is empty or only whitespace, the Goal already
  * exists, or `goal` isn't a valid name.
  */
@@ -37,7 +37,7 @@ export async function newGoal(
 	workflow: string,
 	body?: string,
 ): Promise<string> {
-	// The check punt run makes, so goal new never writes a Goal punt run would refuse.
+	// The check vago run makes, so goal new never writes a Goal vago run would refuse.
 	await loadWorkflow(root, workflow);
 	return createGoal(root, goal, workflow, body);
 }
@@ -45,7 +45,7 @@ export async function newGoal(
 /**
  * Runs `goal` of the Project at `root` until no Ticket is ready or a Ticket
  * goes stuck, then prints the Goal summary. A Ticket found `running`, left so
- * by a `punt run` that crashed or was killed, goes stuck with its open Run
+ * by a `vago run` that crashed or was killed, goes stuck with its open Run
  * ended `lost`. While any Ticket of the Goal is stuck it runs nothing and
  * prints which ones instead. Throws an Error naming the problem, before any
  * Ticket changes, when `goal.md` names no Workflow or one that doesn't exist,
@@ -82,7 +82,7 @@ export async function runGoal(root: string, goal: string): Promise<GoalEnd> {
 
 /**
  * Sets Ticket `number` of `goal` from `stuck` back to `ready`, keeping its
- * `[[runs]]`, so the next `punt run` takes it again. Throws an Error naming
+ * `[[runs]]`, so the next `vago run` takes it again. Throws an Error naming
  * the problem when the Goal's format is bad, the Goal has no such Ticket, or
  * the Ticket isn't stuck.
  */

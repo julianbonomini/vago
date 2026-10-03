@@ -1,5 +1,5 @@
-// `punt init`: puts the starter, embedded in the binary with every Workflow,
-// into a Project's `.punt/`. Hides the starter's file list and the lines it
+// `vago init`: puts the starter, embedded in the binary with every Workflow,
+// into a Project's `.vago/`. Hides the starter's file list and the lines it
 // adds to `.git/info/exclude`.
 
 import { stat } from "node:fs/promises";
@@ -32,7 +32,7 @@ import tryHardWorkflow from "../starter/workflows/try-hard.toml" with {
 import { goalsFolderName } from "./tickets.ts";
 
 // Each starter file's text, by its path under `starter/`, which is its path
-// under `.punt/` too.
+// under `.vago/` too.
 const starterFiles: Record<string, string> = {
 	"workflows/try-hard.toml": tryHardWorkflow,
 	"workflows/small.toml": smallWorkflow,
@@ -52,27 +52,27 @@ const starterFiles: Record<string, string> = {
 // The trailing slash makes git match only a directory.
 const goalsExcludeLine = `${goalsFolderName}/`;
 
-const commitExplanation = `Committing the Workflow in .punt/ shares it with everyone who clones this repo.
-Not committing it adds all of .punt/ to .git/info/exclude, so it stays in this checkout.
+const commitExplanation = `Committing the Workflow in .vago/ shares it with everyone who clones this repo.
+Not committing it adds all of .vago/ to .git/info/exclude, so it stays in this checkout.
 Goals and Tickets in ${goalsExcludeLine} stay out of git either way.`;
 
 /**
  * Asks on stdin whether the Workflow will be committed, then copies the
- * starter, every Workflow included, into `.punt/` of the Project at `root`.
- * `.git/info/exclude` gets the Goals folder, and `.punt/` unless the
+ * starter, every Workflow included, into `.vago/` of the Project at `root`.
+ * `.git/info/exclude` gets the Goals folder, and `.vago/` unless the
  * answer is yes. An empty answer, or no stdin, counts as no. Throws an Error
  * naming the problem, before asking or changing anything, when a file it
  * would write already exists or `root` has no `.git` directory.
  */
 export async function initProject(root: string): Promise<void> {
-	const punt = join(root, ".punt");
+	const vago = join(root, ".vago");
 	// Every file, not only the Workflows: a Project laid out before
-	// `.punt/workflows/` has no Workflow there but may hold tuned prompts.
+	// `.vago/workflows/` has no Workflow there but may hold tuned prompts.
 	for (const path of Object.keys(starterFiles)) {
-		const starterPath = join(punt, path);
+		const starterPath = join(vago, path);
 		if (await Bun.file(starterPath).exists()) {
 			throw new Error(
-				`${starterPath} already exists, and punt init never replaces a file in .punt/`,
+				`${starterPath} already exists, and vago init never replaces a file in .vago/`,
 			);
 		}
 	}
@@ -84,20 +84,20 @@ export async function initProject(root: string): Promise<void> {
 	);
 	if (!isRepo) {
 		throw new Error(
-			`${root} has no .git directory, and punt init needs .git/info/exclude to keep Goals out of git`,
+			`${root} has no .git directory, and vago init needs .git/info/exclude to keep Goals out of git`,
 		);
 	}
 	console.log(commitExplanation);
 	const answer = prompt("Commit the Workflow? [y/N]") ?? "";
 	const commitWorkflow = /^y(es)?$/i.test(answer.trim());
 	for (const [path, text] of Object.entries(starterFiles)) {
-		await Bun.write(join(punt, path), text);
+		await Bun.write(join(vago, path), text);
 	}
 	const exclude = Bun.file(join(git, "info", "exclude"));
 	const excluded = (await exclude.exists()) ? await exclude.text() : "";
 	const wantedLines = commitWorkflow
 		? [goalsExcludeLine]
-		: [goalsExcludeLine, ".punt/"];
+		: [goalsExcludeLine, ".vago/"];
 	const missing = wantedLines.filter(
 		(line) => !excluded.split("\n").includes(line),
 	);

@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { makeFakeClaude } from "./fake-claude.ts";
-import { goalText, makeProject, readTicketFile, runPunt } from "./project.ts";
+import { goalText, makeProject, readTicketFile, runVago } from "./project.ts";
 
 const workflow = `
 [[steps]]
@@ -11,7 +11,7 @@ type = "shell"
 run  = "true"
 `;
 
-const goalDir = ".punt-goals/hello";
+const goalDir = ".vago-goals/hello";
 
 function ticket(header: string, title: string): string {
 	return `+++\n${header}\n+++\n\n# ${title}\n`;
@@ -19,7 +19,7 @@ function ticket(header: string, title: string): string {
 
 function goalProject(tickets: Record<string, string>): Promise<string> {
 	const files: Record<string, string> = {
-		".punt/workflows/test.toml": workflow,
+		".vago/workflows/test.toml": workflow,
 		[`${goalDir}/goal.md`]: goalText("test"),
 	};
 	for (const [name, text] of Object.entries(tickets)) {
@@ -47,7 +47,7 @@ test("a Ticket blocked by another runs after it and both end done", async () => 
 		"02-wave": ticket(`status = "ready"\nblocked_by = [1]`, "Wave"),
 	});
 
-	const result = await runPunt(root, ["run", "hello"]);
+	const result = await runVago(root, ["run", "hello"]);
 
 	expect(result.stderr).toBe("");
 	expect(result.exitCode).toBe(0);
@@ -62,7 +62,7 @@ test("a blocker runs first even when it has the higher number", async () => {
 		"02-greet": ticket(`status = "ready"`, "Greet"),
 	});
 
-	const result = await runPunt(root, ["run", "hello"]);
+	const result = await runVago(root, ["run", "hello"]);
 
 	expect(result.exitCode).toBe(0);
 	expect(startedTickets(result.stdout)).toEqual(["02-greet", "01-wave"]);
@@ -75,7 +75,7 @@ test("with no blockers the lower-numbered Ticket runs first", async () => {
 		"01-first": ticket(`status = "ready"`, "First"),
 	});
 
-	const result = await runPunt(root, ["run", "hello"]);
+	const result = await runVago(root, ["run", "hello"]);
 
 	expect(startedTickets(result.stdout)).toEqual([
 		"01-first",
@@ -90,7 +90,7 @@ test("Tickets already done are skipped and count toward the Goal", async () => {
 		"02-wave": ticket(`status = "ready"\nblocked_by = [1]`, "Wave"),
 	});
 
-	const result = await runPunt(root, ["run", "hello"]);
+	const result = await runVago(root, ["run", "hello"]);
 
 	expect(result.exitCode).toBe(0);
 	expect(startedTickets(result.stdout)).toEqual(["02-wave"]);
@@ -102,7 +102,7 @@ test("the Goal summary is printed on exit", async () => {
 		"02-wave": ticket(`status = "ready"\nblocked_by = [1]`, "Wave"),
 	});
 
-	const result = await runPunt(root, ["run", "hello"]);
+	const result = await runVago(root, ["run", "hello"]);
 
 	expect(result.stdout).toContain("hello: 2 of 2 Tickets done\n");
 	expect(result.stdout).toMatch(/^01-greet +done +1 /m);
@@ -111,7 +111,7 @@ test("the Goal summary is printed on exit", async () => {
 
 test("a Goal left unfinished exits non-zero and its summary says so", async () => {
 	const root = await makeProject({
-		".punt/workflows/test.toml": `
+		".vago/workflows/test.toml": `
 [[steps]]
 id   = "build"
 type = "shell"
@@ -122,7 +122,7 @@ run  = "false"
 		[`${goalDir}/tickets/02-wave.md`]: ticket(`status = "ready"`, "Wave"),
 	});
 
-	const result = await runPunt(root, ["run", "hello"]);
+	const result = await runVago(root, ["run", "hello"]);
 
 	expect(result.exitCode).not.toBe(0);
 	expect(startedTickets(result.stdout)).toEqual(["01-greet"]);
@@ -141,7 +141,7 @@ test("header rewrites leave every Ticket body byte for byte", async () => {
 		"02-wave": `+++\nstatus = "ready"\nblocked_by = [1]\n+++\n${bodies["02-wave"]}`,
 	});
 
-	const result = await runPunt(root, ["run", "hello"]);
+	const result = await runVago(root, ["run", "hello"]);
 
 	expect(result.exitCode).toBe(0);
 	for (const [name, body] of Object.entries(bodies)) {
@@ -220,7 +220,7 @@ for (const [problem, tickets, message] of badGoals) {
 		const root = await goalProject(tickets);
 		const before = await snapshot(root);
 
-		const result = await runPunt(root, ["run", "hello"]);
+		const result = await runVago(root, ["run", "hello"]);
 
 		expect(result.exitCode).not.toBe(0);
 		expect(result.stderr).toMatch(message);
@@ -251,15 +251,15 @@ const badGoalFiles: [string, string, RegExp][] = [
 for (const [problem, goalFile, message] of badGoalFiles) {
 	test(`a goal.md with ${problem} exits non-zero and starts no Run`, async () => {
 		const root = await makeProject({
-			".punt/workflows/test.toml": agentWorkflow,
-			".punt/prompts/implement.md": "Implement it.\n",
+			".vago/workflows/test.toml": agentWorkflow,
+			".vago/prompts/implement.md": "Implement it.\n",
 			[`${goalDir}/goal.md`]: goalFile,
 			[`${goalDir}/tickets/01-greet.md`]: ticket(`status = "ready"`, "Greet"),
 		});
 		const claude = await makeFakeClaude();
 		const before = await snapshot(root);
 
-		const result = await runPunt(root, ["run", "hello"], claude.env);
+		const result = await runVago(root, ["run", "hello"], claude.env);
 
 		expect(result.exitCode).not.toBe(0);
 		expect(result.stderr).toMatch(message);
@@ -270,13 +270,13 @@ for (const [problem, goalFile, message] of badGoalFiles) {
 }
 
 test("a missing Goal exits non-zero naming it", async () => {
-	const root = await makeProject({ ".punt/workflows/test.toml": workflow });
+	const root = await makeProject({ ".vago/workflows/test.toml": workflow });
 
-	const result = await runPunt(root, ["run", "nope"]);
+	const result = await runVago(root, ["run", "nope"]);
 
 	expect(result.exitCode).not.toBe(0);
 	expect(result.stderr).toMatch(
-		/Goal nope not found: .*\.punt-goals\/nope\/goal\.md/,
+		/Goal nope not found: .*\.vago-goals\/nope\/goal\.md/,
 	);
 	expect(result.stdout).toBe("");
 });

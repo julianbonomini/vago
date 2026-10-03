@@ -18,7 +18,7 @@ Done when every entry in Files and Callers is built and committed.
 
 ## 3. Docs
 
-Make each change the design's Docs section names: the architecture doc, the glossary, an ADR. A new ADR also gets its include line in `.punt/workflow.toml`, on every Step that already includes the other ADRs. Commit.
+Make each change the design's Docs section names: the architecture doc, the glossary, an ADR. A new ADR also gets its include line in each Workflow under `.vago/workflows/`, on every Step that already includes the other ADRs. Commit.
 
 Done when every Docs entry is in the tree and committed.
 

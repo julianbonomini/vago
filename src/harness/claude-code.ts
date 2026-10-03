@@ -5,7 +5,7 @@ import { z } from "zod";
 import type { Harness } from "./registry.ts";
 
 // Never --dangerously-skip-permissions: loosening the guard is always the
-// human's explicit choice, never Punt's.
+// human's explicit choice, never Vago's.
 const guardedMode = "auto";
 
 // Claude Code reports its permission mode at startup and again in a status

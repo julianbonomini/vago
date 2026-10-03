@@ -1,7 +1,7 @@
-// Everything `punt run` prints to stdout while it runs: one line naming each
+// Everything `vago run` prints to stdout while it runs: one line naming each
 // Ticket as it starts, and under it a line when each Step starts and one when
 // it ends, where to look when a Ticket goes stuck, and the Goal summary table
-// on exit. Also the Goal report `punt goal report` prints. Hides the line
+// on exit. Also the Goal report `vago goal report` prints. Hides the line
 // formats, columns and colours, and how durations and costs read.
 
 import { relative } from "node:path";
@@ -50,7 +50,7 @@ export function printStuck(
 	console.log(
 		paint(`${ticket.name} is stuck after ${stepId}: ${outcome}`, "red"),
 	);
-	// Relative to the repo root, which `punt run` runs in, so it's short
+	// Relative to the repo root, which `vago run` runs in, so it's short
 	// enough to read and still opens from where the human is.
 	console.log(`  log:    ${relative(ticket.root, log)}`);
 	if (resumeHint !== undefined) console.log(`  resume: ${resumeHint}`);
@@ -58,7 +58,7 @@ export function printStuck(
 }
 
 /**
- * Prints why `punt run` won't start `goal`: the Tickets in `stuck`, each with
+ * Prints why `vago run` won't start `goal`: the Tickets in `stuck`, each with
  * the command that resets it.
  */
 export function printStuckRefusal(goal: string, stuck: Ticket[]): void {
@@ -74,7 +74,7 @@ export function printStuckRefusal(goal: string, stuck: Ticket[]): void {
  * Prints how `goal` ended: how many of its Tickets are `done`, then a table
  * of each Ticket with its status and what its Runs took and cost, and a
  * total row. A Run still going counts toward neither. It opens with a blank
- * line, so it stands apart from whatever `punt run` printed before it.
+ * line, so it stands apart from whatever `vago run` printed before it.
  */
 export function printGoalSummary(goal: string, state: GoalState): void {
 	console.log();
@@ -280,7 +280,7 @@ function dollars(usd: number | undefined): string {
 
 // Numbered as the Ticket file is, so it reads like the name above it.
 function resetCommand(ticket: Ticket): string {
-	return `punt ticket reset ${ticket.goal} ${String(ticket.number).padStart(2, "0")}`;
+	return `vago ticket reset ${ticket.goal} ${String(ticket.number).padStart(2, "0")}`;
 }
 
 // UTC like the Ticket header, cut to whole seconds since a glance needs no more.

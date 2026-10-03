@@ -1,6 +1,6 @@
-# Punt is TypeScript on Bun, driving Harness CLIs
+# Vago is TypeScript on Bun, driving Harness CLIs
 
-Punt Alpha is written in TypeScript and runs on Bun, shipped as one binary via `bun build --compile`. It drives each Harness through its headless CLI (`claude -p --output-format stream-json`, `codex exec --json`), not an Agent SDK. Go was the early favourite for its single binary, but the human reads TypeScript far more reliably, and code that Punt writes about itself has to stay understandable to them. Bun closes the single-binary gap.
+Vago Alpha is written in TypeScript and runs on Bun, shipped as one binary via `bun build --compile`. It drives each Harness through its headless CLI (`claude -p --output-format stream-json`, `codex exec --json`), not an Agent SDK. Go was the early favourite for its single binary, but the human reads TypeScript far more reliably, and code that Vago writes about itself has to stay understandable to them. Bun closes the single-binary gap.
 
 ## Considered Options
 
@@ -12,5 +12,5 @@ Punt Alpha is written in TypeScript and runs on Bun, shipped as one binary via `
 ## Consequences
 
 - Workflows are declarative config (TOML/YAML, prompts, skills, shell steps), not TypeScript, so a Project's author doesn't need to know TypeScript.
-- Bun doesn't type-check, so Punt's check is strict `tsc --noEmit` plus Biome plus `bun test`.
+- Bun doesn't type-check, so Vago's check is strict `tsc --noEmit` plus Biome plus `bun test`.
 - Alpha runs a pinned installed binary. Its own changes take effect only after an explicit rebuild and reinstall.

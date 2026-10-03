@@ -1,13 +1,13 @@
 {
-	"name": "punt",
+	"name": "vago",
 	"type": "module",
 	"private": true,
 	"bin": {
-		"punt": "src/cli.ts"
+		"vago": "src/cli.ts"
 	},
 	"scripts": {
 		"check": "tsc --noEmit && biome check && bun test",
-		"reinstall": "bun build --compile src/cli.ts --outfile $HOME/.local/bin/punt"
+		"reinstall": "bun build --compile src/cli.ts --outfile $HOME/.local/bin/vago"
 	},
 	"dependencies": {
 		"smol-toml": "^1.9.0",

@@ -5,11 +5,11 @@ import {
 	goalText,
 	makeProject,
 	readTicketFile,
-	runPunt,
-	startPunt,
+	runVago,
+	startVago,
 } from "./project.ts";
 
-const goalDir = ".punt-goals/hello";
+const goalDir = ".vago-goals/hello";
 
 function ticket(header: string, title: string): string {
 	return `+++\n${header}\n+++\n\n# ${title}\n`;
@@ -38,10 +38,10 @@ prompt = "prompts/implement.md"
 
 test("a Ticket left running goes stuck with outcome lost, and nothing runs", async () => {
 	const root = await makeProject({
-		".punt/workflows/test.toml": agentWorkflow,
-		".punt/prompts/implement.md": "Implement it.\n",
+		".vago/workflows/test.toml": agentWorkflow,
+		".vago/prompts/implement.md": "Implement it.\n",
 		[`${goalDir}/goal.md`]: goalText("test"),
-		// What a `punt run` killed mid-Step leaves: the Run's entry opened
+		// What a `vago run` killed mid-Step leaves: the Run's entry opened
 		// and never closed.
 		[`${goalDir}/tickets/01-greet.md`]: ticket(
 			`status = "running"
@@ -59,7 +59,7 @@ log = "logs/01-implement-1.jsonl"`,
 	});
 	const claude = await makeFakeClaude();
 
-	const result = await runPunt(root, ["run", "hello"], claude.env);
+	const result = await runVago(root, ["run", "hello"], claude.env);
 
 	expect(result.exitCode).not.toBe(0);
 	const greet = await headerOf(root, "01-greet");
@@ -67,7 +67,7 @@ log = "logs/01-implement-1.jsonl"`,
 	const [lost] = runsOf(greet);
 	expect(lost?.outcome).toBe("lost");
 	expect(lost?.ended).toBeInstanceOf(Date);
-	expect(result.stdout).toContain("01-greet: punt ticket reset hello 01");
+	expect(result.stdout).toContain("01-greet: vago ticket reset hello 01");
 	expect(await claude.calls()).toEqual([]);
 	expect(runsOf(await headerOf(root, "02-wave"))).toEqual([]);
 });
@@ -76,9 +76,9 @@ log = "logs/01-implement-1.jsonl"`,
 // keeps the second one unrun.
 function twoTickets(workflow: string): Promise<string> {
 	return makeProject({
-		".punt/workflows/test.toml": workflow,
-		".punt/prompts/implement.md": "Implement it.\n",
-		".punt/prompts/review.md": "Review it.\n",
+		".vago/workflows/test.toml": workflow,
+		".vago/prompts/implement.md": "Implement it.\n",
+		".vago/prompts/review.md": "Review it.\n",
 		[`${goalDir}/goal.md`]: goalText("test"),
 		[`${goalDir}/tickets/01-greet.md`]: ticket(`status = "ready"`, "Greet"),
 		[`${goalDir}/tickets/02-wave.md`]: ticket(`status = "ready"`, "Wave"),
@@ -115,10 +115,10 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 		// group ends it before the test's own timeout.
 		const claude = await makeFakeClaude("echo $$ > claude.pid; sleep 60");
 
-		const punt = startPunt(root, ["run", "hello"], claude.env);
+		const vago = startVago(root, ["run", "hello"], claude.env);
 		const group = await waitForProcessGroup(root, "claude.pid");
-		punt.kill(signal);
-		const result = await punt.exited;
+		vago.kill(signal);
+		const result = await vago.exited;
 
 		expect(processGroupAlive(group)).toBe(false);
 		expect(result.exitCode).not.toBe(0);
@@ -152,10 +152,10 @@ prompt = "prompts/review.md"
 `);
 	const claude = await makeFakeClaude();
 
-	const punt = startPunt(root, ["run", "hello"], claude.env);
+	const vago = startVago(root, ["run", "hello"], claude.env);
 	const group = await waitForProcessGroup(root, "check.pid");
-	punt.kill("SIGINT");
-	const result = await punt.exited;
+	vago.kill("SIGINT");
+	const result = await vago.exited;
 
 	expect(processGroupAlive(group)).toBe(false);
 	expect(result.exitCode).not.toBe(0);
