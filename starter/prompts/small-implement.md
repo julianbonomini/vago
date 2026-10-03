@@ -16,7 +16,7 @@ Done when everything the Ticket asks for has a green test, or, where no test can
 
 ## 3. Check
 
-Before the final check, run the `vago-check-red-flags` skill on the whole diff since `goal/<goal>`, fix every finding and commit. Then run `bun run check`, fix what fails and commit.
+Before the final check, run the `vago-check-red-flags` skill on the whole diff since `vago/{{goal_name}}`, fix every finding and commit. Then run `bun run check`, fix what fails and commit.
 
 Done when `bun run check` exits zero on a clean tree.
 

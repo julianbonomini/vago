@@ -279,6 +279,17 @@ export async function readTicketBody(ticket: Ticket): Promise<string> {
 }
 
 /**
+ * Whether `ticket` is its Goal's last: every other Ticket of the Goal is
+ * `done`. Read from the files each time, so a Ticket added mid-run counts.
+ */
+export async function isLastTicket(ticket: Ticket): Promise<boolean> {
+	const { tickets } = await readGoal(ticket.root, ticket.goal);
+	return tickets.every(
+		(other) => other.ticket.name === ticket.name || other.status === "done",
+	);
+}
+
+/**
  * Returns the `goal.md` of `goal` without its header or the blank lines
  * after it, and otherwise byte for byte, which is what `{{goal}}` and the
  * Goal report show.

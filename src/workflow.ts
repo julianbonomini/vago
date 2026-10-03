@@ -29,6 +29,7 @@ export type ShellStep = {
 	 * `stop` unless the Workflow says otherwise.
 	 */
 	readonly onFail: "stop" | "continue";
+	readonly when: StepWhen;
 };
 
 /**
@@ -60,10 +61,18 @@ export type AgentStep = {
 		readonly name: string;
 		readonly text: string;
 	}[];
+	readonly when: StepWhen;
 };
 
 /** One entry of a Workflow. */
 export type Step = ShellStep | AgentStep;
+
+/**
+ * Which of a Goal's Tickets a Step runs on: `every-ticket` unless the
+ * Workflow says `last-ticket`, the Ticket that ends with every other Ticket
+ * of the Goal `done`.
+ */
+export type StepWhen = "every-ticket" | "last-ticket";
 
 /** A Project's Workflow, frozen: nothing changes it once it's loaded. */
 export type Workflow = {
@@ -89,13 +98,16 @@ const IdleTimeout = z
 
 const defaultIdleTimeoutMs = 30 * millisecondsPer.m;
 
-// `{{ticket}}` or `{{goal}}` is group 1, and the id in
+// A placeholder's name, like `ticket`, is group 1, and the id in
 // `{{steps.<id>.output}}` is group 2.
-const placeholder = /\{\{(ticket|goal)\}\}|\{\{steps\.([^{}]+?)\.output\}\}/g;
+const placeholder =
+	/\{\{(ticket|goal|goal_name)\}\}|\{\{steps\.([^{}]+?)\.output\}\}/g;
 
 // Slot name to file path, in the order the human listed them, except that
 // slot names that are integers come first, as in any JavaScript object.
 const IncludeSlots = z.record(z.string(), z.string());
+
+const When = z.literal("last-ticket");
 
 const WorkflowFile = z.strictObject({
 	harness: HarnessName.optional(),
@@ -113,6 +125,7 @@ const WorkflowFile = z.strictObject({
 						type: z.literal("shell"),
 						run: z.string(),
 						on_fail: z.enum(["stop", "continue"]).optional(),
+						when: When.optional(),
 					}),
 					z.strictObject({
 						id: z.string(),
@@ -123,6 +136,7 @@ const WorkflowFile = z.strictObject({
 						args: z.array(z.string()).optional(),
 						idle_timeout: IdleTimeout.optional(),
 						include: IncludeSlots.optional(),
+						when: When.optional(),
 					}),
 				],
 				{ error: 'type must be "agent" or "shell"' },
@@ -137,8 +151,8 @@ const WorkflowFile = z.strictObject({
  * `.vago/workflows/` when none is called `name`. Throws an Error naming the
  * file and the problem when the Workflow isn't valid TOML, has a key or
  * value its schema doesn't take (an unknown Step `type` or `harness`, a bad
- * `on_fail` or `idle_timeout`), gives two Steps one `id`, leaves an agent
- * Step without a harness or model, names a prompt or include file that
+ * `on_fail`, `when` or `idle_timeout`), gives two Steps one `id`, leaves an
+ * agent Step without a harness or model, names a prompt or include file that
  * doesn't exist, or has a prompt read `{{steps.<id>.output}}` of a Step that
  * doesn't run before it.
  */
@@ -184,6 +198,7 @@ export async function loadWorkflow(
 		if (steps.some(({ id }) => id === step.id)) {
 			throw new Error(`${path}: two steps have id "${step.id}"`);
 		}
+		const when = step.when ?? "every-ticket";
 		if (step.type === "shell") {
 			steps.push(
 				Object.freeze({
@@ -191,6 +206,7 @@ export async function loadWorkflow(
 					type: step.type,
 					run: step.run,
 					onFail: step.on_fail ?? "stop",
+					when,
 				}),
 			);
 			continue;
@@ -241,6 +257,7 @@ export async function loadWorkflow(
 					checked.data.idle_timeout ??
 					defaultIdleTimeoutMs,
 				includes: Object.freeze(includes),
+				when,
 			}),
 		);
 	}
@@ -276,6 +293,8 @@ export type PromptTexts = {
 	ticket: string;
 	/** `{{goal}}`: the Goal's `goal.md` without its header. */
 	goal: string;
+	/** `{{goal_name}}`: the Goal's name, like `hello`. */
+	goalName: string;
 	/**
 	 * `{{steps.<id>.output}}`: by Step id, the output of each Step already run
 	 * on this Ticket in this pass.
@@ -296,13 +315,15 @@ export function buildPrompt(step: AgentStep, texts: PromptTexts): string {
 		placeholder,
 		(
 			written,
-			name: "ticket" | "goal" | undefined,
+			name: "ticket" | "goal" | "goal_name" | undefined,
 			stepId: string | undefined,
 		) => {
-			if (stepId === undefined) {
-				return name === "ticket" ? texts.ticket : texts.goal;
+			if (stepId !== undefined) {
+				return texts.stepOutputs.get(stepId) ?? written;
 			}
-			return texts.stepOutputs.get(stepId) ?? written;
+			if (name === "ticket") return texts.ticket;
+			if (name === "goal") return texts.goal;
+			return texts.goalName;
 		},
 	);
 	// Includes go in after substitution, so a doc that mentions `{{ticket}}`

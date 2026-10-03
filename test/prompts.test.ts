@@ -189,9 +189,11 @@ const starterStepSkills: Record<string, string[][]> = {
 		["vago-check-red-flags", "vago-design-module"],
 		["vago-check-red-flags", "vago-write-code"],
 		["vago-check-red-flags"],
+		["vago-check-red-flags"],
 	],
 	small: [
 		["vago-check-red-flags", "vago-write-code"],
+		["vago-check-red-flags"],
 		["vago-check-red-flags"],
 	],
 };

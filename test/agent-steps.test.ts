@@ -135,6 +135,21 @@ The CLI greets its user.
 	expect(call?.stdin).not.toContain("workflow =");
 });
 
+test("the prompt has {{goal_name}} substituted", async () => {
+	const root = await makeProject({
+		".vago/workflows/test.toml": workflow,
+		".vago/prompts/implement.md": "Goal {{goal_name}}",
+		[`${goalDir}/goal.md`]: goalText("test"),
+		[ticketPath]: `+++\nstatus = "ready"\n+++\n${ticketBody}`,
+	});
+	const claude = await makeFakeClaude();
+
+	await runVago(root, ["run", "hello"], claude.env);
+
+	const [call] = await claude.calls();
+	expect(call?.stdin).toBe("Goal hello");
+});
+
 test("[[runs]] records the Harness, model, session, tokens and cost", async () => {
 	const root = await agentProject();
 	const claude = await makeFakeClaude();

@@ -29,6 +29,7 @@ Items marked _(grill)_ have design questions to settle before writing Tickets.
 - [ ] Configurable worktree creation: a Project says what Vago copies, what it runs and which ports each worktree's services get, so Goals that run services don't fight over ports. Like a work-project worktree command that copies, sets up and assigns new ports. _(grill)_
 - [ ] A cheaper way to copy big untracked folders (`node_modules`) into a Goal's worktree, if copying everything gets slow.
 - [ ] Vago owns pushing the Goal's branch and opening its PR, instead of the Workflow's `merge.sh`. _(grill)_
+  - [ ] The PR body carries the Goal's design choices ("Design it twice": the options, the pick and why) from the design and architecture Steps. Agent Steps can't reach `goal.md` or the PR body today.
 - [ ] One command that runs several Goals at once.
 - [x] Refuse to run a Goal that's already running in another terminal, if the worktree Goal didn't ship it.
 - [ ] Split tickets.ts into a folder; it's past 400 lines.
@@ -52,6 +53,7 @@ Items marked _(grill)_ have design questions to settle before writing Tickets.
 - [ ] Detaching `vago run` (daemon, `--detach`, keeping the machine awake).
 - [ ] Retrying provider errors. Needs per-Harness error classification. _(grill)_
 - [ ] Gate and merge Step primitives, and a worktree per Goal. _(grill)_
+  - [x] A Step's `when = "last-ticket"`; more conditions when a Workflow needs them.
 - [ ] Branding.
 - [ ] Harnesses other than Claude Code (a Codex adapter, user-supplied Harness plugins). _(grill)_
 - [ ] `vago status` and similar small CLI extras.
