@@ -3,8 +3,8 @@
 # A reset Ticket starts over: its old branch is replaced.
 set -eu
 
-goal="goal/$PUNT_GOAL"
-ticket="$PUNT_GOAL/$PUNT_TICKET"
+goal="goal/$VAGO_GOAL"
+ticket="$VAGO_GOAL/$VAGO_TICKET"
 
 if [ -n "$(git status --porcelain)" ]; then
 	echo "The checkout has uncommitted changes. Commit or stash them first."

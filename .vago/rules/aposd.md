@@ -1,6 +1,6 @@
 # A Philosophy of Software Design
 
-The design reference for building Punt. It summarises John Ousterhout's *A Philosophy of Software Design* (2nd ed.). `.punt/rules/code-style.md` turns it into rules. When a rule doesn't settle a case, decide from this file.
+The design reference for building Vago. It summarises John Ousterhout's *A Philosophy of Software Design* (2nd ed.). `.vago/rules/code-style.md` turns it into rules. When a rule doesn't settle a case, decide from this file.
 
 It's paraphrase unless text is in quotation marks. Quoted text is either a list-item title from the book's summaries or a phrase confirmed in a source below.
 
@@ -55,7 +55,7 @@ Complexity is incremental. It builds up from many small choices, and no single o
 | Red flag | Meaning | What it looks like in TypeScript |
 |---|---|---|
 | **Shallow Module** | The interface isn't much simpler than the implementation. | `class FileWrapper { read(p) { return fs.readFileSync(p) } }`, or a 3-line exported function with 4 options. |
-| **Information Leakage** | One design decision shows up in several modules. | Two files each parse the Ticket `+++` header, or both know the `.punt/goals/<goal>/` layout. |
+| **Information Leakage** | One design decision shows up in several modules. | Two files each parse the Ticket `+++` header, or both know the `.vago-goals/<goal>/` layout. |
 | **Temporal Decomposition** | Code is split by the order things run, not by what knowledge they hide. | `read-workflow.ts`, `validate-workflow.ts`, `freeze-workflow.ts`, all of which know the Workflow schema. |
 | **Overexposure** | To use the common feature you have to learn about rare ones. | `run(cmd, { retries, shell, env, cwd, encoding, signal })` with no defaults, so every call site fills them in. |
 | **Pass-Through Method** | A method does little except forward to another with a similar signature. | `getStatus(id) { return store.getStatus(id) }` repeated across layers. |
