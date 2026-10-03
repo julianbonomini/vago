@@ -77,7 +77,6 @@ The starter files are yours to change, and a few of them assume things about the
 - The `check` and `merge` Steps run `bun run check`, and the prompts tell agents to make it pass. In a Project without that script, change the command in `.vago/workflows/*.toml` and the prompts that name it.
 - `branch.sh` cuts the Goal's branch from `main`, and `merge.sh` pushes to `origin` and opens the PR against `main`.
 - The prompts send agents to the docs that the Project's `AGENTS.md` names.
-- The `vago-write-code` skill is written for TypeScript on Bun.
 
 ## Write a Goal and its Tickets
 
