@@ -1,4 +1,4 @@
-// Creates and owns Goal and Ticket files under `.punt-goals/<goal>/`: the
+// Creates and owns Goal and Ticket files under `.vago-goals/<goal>/`: the
 // `+++` TOML header, the `goal.md` header naming the Goal's Workflow, status,
 // the `[[runs]]` history and where each Run's log goes. Every header rewrite
 // is atomic and keeps the body byte for byte.
@@ -69,7 +69,7 @@ const headerEnd = "\n+++\n";
  * Goal. Other modules may name the folder, to keep it out of git, but never
  * build a path inside it: only this module does.
  */
-export const goalsFolderName = ".punt-goals";
+export const goalsFolderName = ".vago-goals";
 
 /** One entry of a Ticket's `[[runs]]` as `readGoal` found it. */
 export type TicketRun = {
@@ -231,7 +231,7 @@ export async function readGoal(root: string, goal: string): Promise<GoalState> {
  * Without `body`, it's a `# <slug>` title for the human to fill in. Returns
  * the path of the new Ticket file. Throws an Error naming the problem, and
  * writes nothing, when `body` is empty or only whitespace, `body` starts with
- * a `+++` header (only Punt writes a Ticket's header, ADR 0003), the Goal
+ * a `+++` header (only Vago writes a Ticket's header, ADR 0003), the Goal
  * doesn't exist or its format is bad, a blocker isn't a Ticket of the Goal,
  * or `goal` or `slug` isn't a valid name.
  */
@@ -245,12 +245,12 @@ export async function addTicket(
 	checkName("Ticket slug", slug);
 	if (body !== undefined) {
 		checkBody(`Ticket ${slug}`, body);
-		// A header of the human's own could set status, which only Punt
-		// writes (ADR 0003). A +++ later in the body is fine: the header Punt
+		// A header of the human's own could set status, which only Vago
+		// writes (ADR 0003). A +++ later in the body is fine: the header Vago
 		// writes closes before it.
 		if (/^\s*\+\+\+[ \t]*(\r?\n|$)/.test(body)) {
 			throw new Error(
-				`The body for Ticket ${slug} starts with a +++ header; only Punt writes a Ticket's header`,
+				`The body for Ticket ${slug} starts with a +++ header; only Vago writes a Ticket's header`,
 			);
 		}
 	}
@@ -417,7 +417,7 @@ function findBlockerCycle(
 	return undefined;
 }
 
-// The name becomes a folder or file under `.punt-goals/`, so a name that
+// The name becomes a folder or file under `.vago-goals/`, so a name that
 // could point anywhere else, like `../x` or `a/b`, is refused.
 function checkName(label: string, name: string): void {
 	if (!/^[\w-]+$/.test(name)) {

@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// The `punt` command: parses arguments, runs the command, prints help and
+// The `vago` command: parses arguments, runs the command, prints help and
 // errors, and picks the exit code. Exit 0 means the command succeeded, help
 // was printed, or the Goal is done. Each command's help, usage line and
 // argument parsing all come from its one entry in `commands`, and its `run`
@@ -67,7 +67,7 @@ type GivenArguments = {
 type Command = {
 	/** The words that select it, such as `goal new`. */
 	name: string;
-	/** One line for `punt --help`. */
+	/** One line for `vago --help`. */
 	summary: string;
 	/** What it does, for its own `--help`. */
 	description: string;
@@ -114,7 +114,7 @@ const workflowFlag: RequiredFlag = {
 	value: "<name>",
 	times: "once",
 	meaning:
-		"The Workflow the Goal's Tickets go through, from .punt/workflows/<name>.toml.",
+		"The Workflow the Goal's Tickets go through, from .vago/workflows/<name>.toml.",
 };
 
 const blockedByFlag: RepeatedFlag = {
@@ -137,15 +137,15 @@ const bodyFileFlag: OptionalFlag = {
 const commands: Command[] = [
 	{
 		name: "init",
-		summary: "Copy the starter Workflows into .punt/ of this repo",
-		description: `Copies the starter Workflows, prompts, rules and scripts into .punt/. It first asks
-whether you will commit the Workflow: yes leaves .punt/ to git, anything else
-adds .punt/ to .git/info/exclude. Goals stay out of git either way. It refuses,
+		summary: "Copy the starter Workflows into .vago/ of this repo",
+		description: `Copies the starter Workflows, prompts, rules and scripts into .vago/. It first asks
+whether you will commit the Workflow: yes leaves .vago/ to git, anything else
+adds .vago/ to .git/info/exclude. Goals stay out of git either way. It refuses,
 changing nothing, when a file it would write already exists or this is not the
 root of a git repo.`,
 		operands: [],
 		flags: [],
-		example: "punt init",
+		example: "vago init",
 		run: async (root) => {
 			await initProject(root);
 			return 0;
@@ -161,7 +161,7 @@ is stuck it runs nothing and says which. Exits 0 only when every Ticket is
 done.`,
 		operands: [goalToRun],
 		flags: [],
-		example: "punt run search",
+		example: "vago run search",
 		run: async (root, given) =>
 			(await runGoal(root, given.operand(goalToRun))) === "done" ? 0 : 1,
 	},
@@ -169,10 +169,10 @@ done.`,
 		name: "goal new",
 		summary: "Create a Goal with no Tickets",
 		description: `Creates the Goal with no Tickets and prints the path of its goal.md. It refuses,
-creating nothing, when the Goal exists or punt run would refuse the Workflow.`,
+creating nothing, when the Goal exists or vago run would refuse the Workflow.`,
 		operands: [newGoalName],
 		flags: [workflowFlag, bodyFileFlag],
-		example: "punt goal new search --workflow small --body-file goal.md",
+		example: "vago goal new search --workflow small --body-file goal.md",
 		run: async (root, given) => {
 			const body = await readBodyFile(given.optionalFlag(bodyFileFlag));
 			console.log(
@@ -193,7 +193,7 @@ creating nothing, when the Goal exists or punt run would refuse the Workflow.`,
 how long they took and what they cost, ready to paste into a PR description.`,
 		operands: [goalToReport],
 		flags: [],
-		example: "punt goal report search",
+		example: "vago goal report search",
 		run: async (root, given) => {
 			const goal = given.operand(goalToReport);
 			// readGoal first, since it names a missing Goal as such.
@@ -210,7 +210,7 @@ ready, and prints the path of the Ticket file.`,
 		operands: [ticketGoal, ticketSlug],
 		flags: [blockedByFlag, bodyFileFlag],
 		example:
-			"punt ticket add search ranking --blocked-by 1 --body-file ticket.md",
+			"vago ticket add search ranking --blocked-by 1 --body-file ticket.md",
 		run: async (root, given) => {
 			const body = await readBodyFile(given.optionalFlag(bodyFileFlag));
 			const blockedBy = given.repeatedFlag(blockedByFlag).map(Number);
@@ -229,11 +229,11 @@ ready, and prints the path of the Ticket file.`,
 	{
 		name: "ticket reset",
 		summary: "Make a stuck Ticket ready to run again",
-		description: `Sets a stuck Ticket back to ready, so the next punt run takes it again. Its Runs
+		description: `Sets a stuck Ticket back to ready, so the next vago run takes it again. Its Runs
 stay in the Ticket file. It refuses a Ticket that isn't stuck.`,
 		operands: [ticketGoal, ticketNumber],
 		flags: [],
-		example: "punt ticket reset search 2",
+		example: "vago ticket reset search 2",
 		run: async (root, given) => {
 			await resetTicket(
 				root,
@@ -245,7 +245,7 @@ stay in the Ticket file. It refuses a Ticket that isn't stuck.`,
 	},
 ];
 
-const helpPointer = "Run `punt --help` for what each command does.";
+const helpPointer = "Run `vago --help` for what each command does.";
 
 async function main(args: string[]): Promise<number> {
 	const { words, helpAsked, command, rest } = commandWords(args);
@@ -269,7 +269,7 @@ async function main(args: string[]): Promise<number> {
 	}
 	if (given === undefined) {
 		console.error(
-			`${usage(command)}\nRun \`punt ${command.name} --help\` for what it does and what each argument means.`,
+			`${usage(command)}\nRun \`vago ${command.name} --help\` for what it does and what each argument means.`,
 		);
 		return 1;
 	}
@@ -374,7 +374,7 @@ function parseArguments(
 	const declared = (value: string | undefined, name: string): string => {
 		if (value === undefined) {
 			throw new Error(
-				`cli.ts reads ${name}, which \`punt ${command.name}\` doesn't take`,
+				`cli.ts reads ${name}, which \`vago ${command.name}\` doesn't take`,
 			);
 		}
 		return value;
@@ -392,9 +392,9 @@ function usage(command: Command): string {
 }
 
 // The command as typed, such as
-// `punt goal new <goal> --workflow <name> [--body-file <path>]`.
+// `vago goal new <goal> --workflow <name> [--body-file <path>]`.
 function commandLine(command: Command): string {
-	const parts = [`punt ${command.name}`];
+	const parts = [`vago ${command.name}`];
 	for (const operand of command.operands) parts.push(operand.name);
 	for (const flag of command.flags) {
 		const spelled = `${flag.name} ${flag.value}`;
@@ -415,27 +415,27 @@ function usages(listed: Command[]): string {
 		.join("\n");
 }
 
-// What `punt --help` prints, or for `punt goal --help` the same for the
+// What `vago --help` prints, or for `vago goal --help` the same for the
 // commands whose name starts with `goal`, headed by their usage lines instead
 // of the generic one. Undefined when no command's name starts with `words`.
 function listing(words: string[]): string | undefined {
 	const listed = commandsStartingWith(words);
 	if (listed.length === 0) return undefined;
 	const header =
-		words.length === 0 ? "usage: punt <command> [arguments]" : usages(listed);
+		words.length === 0 ? "usage: vago <command> [arguments]" : usages(listed);
 	const width = Math.max(...listed.map(({ name }) => name.length)) + 2;
 	const rows = listed.map(
 		({ name, summary }) => `  ${name.padEnd(width)}${summary}`,
 	);
 	return `${header}
 
-punt takes a Goal's Tickets through the Workflow the Goal names, with a coding
+vago takes a Goal's Tickets through the Workflow the Goal names, with a coding
 agent doing each agent Step.
 
 commands:
 ${rows.join("\n")}
 
-Run \`punt <command> --help\` for a command's arguments, flags and an example.`;
+Run \`vago <command> --help\` for a command's arguments, flags and an example.`;
 }
 
 function commandHelp(command: Command): string {
@@ -479,6 +479,6 @@ async function readBodyFile(
 try {
 	process.exit(await main(process.argv.slice(2)));
 } catch (error) {
-	console.error(`punt: ${error instanceof Error ? error.message : error}`);
+	console.error(`vago: ${error instanceof Error ? error.message : error}`);
 	process.exit(1);
 }

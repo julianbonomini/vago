@@ -1,5 +1,5 @@
 // Test helper: a fake `claude` that replays a stream-json fixture recorded
-// from a real Claude Code session and records what Punt handed it.
+// from a real Claude Code session and records what Vago handed it.
 
 import { chmod, mkdir, mkdtemp, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -28,7 +28,7 @@ export const permissionDeniedFixture = fixture(
 );
 
 /**
- * A Sonnet session started as Punt starts one whose Workflow has
+ * A Sonnet session started as Vago starts one whose Workflow has
  * `args = ["--permission-mode", "acceptEdits"]`.
  */
 export const acceptEditsFixture = fixture("claude-code-accept-edits.jsonl");
@@ -40,9 +40,9 @@ function fixture(name: string): string {
 /** What one call of the fake received: its argv without the program name, and its stdin. */
 export type FakeClaudeCall = { argv: string[]; stdin: string };
 
-/** A fake `claude`, ready to put on the `PATH` of a `punt` child. */
+/** A fake `claude`, ready to put on the `PATH` of a `vago` child. */
 export type FakeClaude = {
-	/** Environment for `runPunt` that puts the fake first on `PATH`. */
+	/** Environment for `runVago` that puts the fake first on `PATH`. */
 	env: Record<string, string>;
 	/** Every call so far, first call first. */
 	calls(): Promise<FakeClaudeCall[]>;
@@ -57,12 +57,12 @@ export async function makeFakeClaude(
 	afterFixture = "exit 0",
 	fixturePath = sessionFixture,
 ): Promise<FakeClaude> {
-	const dir = await mkdtemp(join(tmpdir(), "punt-fake-claude-"));
+	const dir = await mkdtemp(join(tmpdir(), "vago-fake-claude-"));
 	const program = join(dir, "claude");
 	// Plain sh so the fake starts as fast as the real CLI would, and one
-	// argument per line is enough since no flag Punt passes holds a newline.
+	// argument per line is enough since no flag Vago passes holds a newline.
 	// Each call gets the next numbered folder, so calls never overwrite each
-	// other. The count is safe because Punt runs one Step at a time.
+	// other. The count is safe because Vago runs one Step at a time.
 	const script = `#!/bin/sh
 call="$FAKE_CLAUDE_DIR/calls/$(ls "$FAKE_CLAUDE_DIR/calls" | wc -l | tr -d ' ')"
 mkdir "$call"

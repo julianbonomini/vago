@@ -5,15 +5,15 @@ import {
 	goalText,
 	makeProject,
 	readTicketFile,
-	runPunt,
-	startPunt,
+	runVago,
+	startVago,
 } from "./project.ts";
 
-const goalDir = ".punt-goals/hello";
+const goalDir = ".vago-goals/hello";
 
 function project(idleTimeout: string): Promise<string> {
 	return makeProject({
-		".punt/workflows/test.toml": `idle_timeout = "${idleTimeout}"
+		".vago/workflows/test.toml": `idle_timeout = "${idleTimeout}"
 harness = "claude-code"
 model   = "opus"
 
@@ -22,7 +22,7 @@ id     = "implement"
 type   = "agent"
 prompt = "prompts/implement.md"
 `,
-		".punt/prompts/implement.md": "Implement it.\n",
+		".vago/prompts/implement.md": "Implement it.\n",
 		[`${goalDir}/goal.md`]: goalText("test"),
 		[`${goalDir}/tickets/01-greet.md`]: `+++\nstatus = "ready"\n+++\n\n# Greet\n`,
 	});
@@ -72,7 +72,7 @@ test("after an idle timeout, no command the agent started is alive", async () =>
 	const root = await project("1s");
 	const claude = await makeFakeClaude(startsToolCommand);
 
-	const result = await runPunt(root, ["run", "hello"], claude.env);
+	const result = await runVago(root, ["run", "hello"], claude.env);
 
 	expect(result.exitCode).not.toBe(0);
 	expect(alive(await waitForPid(root, "tool.pid"))).toBe(false);
@@ -80,14 +80,14 @@ test("after an idle timeout, no command the agent started is alive", async () =>
 });
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
-	test(`after ${signal} to punt run, no command the agent started is alive`, async () => {
+	test(`after ${signal} to vago run, no command the agent started is alive`, async () => {
 		const root = await project("1h");
 		const claude = await makeFakeClaude(startsToolCommand);
 
-		const punt = startPunt(root, ["run", "hello"], claude.env);
+		const vago = startVago(root, ["run", "hello"], claude.env);
 		const tool = await waitForPid(root, "tool.pid");
-		punt.kill(signal);
-		const result = await punt.exited;
+		vago.kill(signal);
+		const result = await vago.exited;
 
 		expect(result.exitCode).not.toBe(0);
 		expect(alive(tool)).toBe(false);
@@ -103,9 +103,9 @@ test("an agent that ignores SIGTERM still ends within the grace period", async (
 		"trap '' TERM; echo $$ > claude.pid; sleep 60",
 	);
 
-	// The 1s idle timeout, Punt's 5s grace period, and slack for startup.
+	// The 1s idle timeout, Vago's 5s grace period, and slack for startup.
 	const started = Date.now();
-	const result = await runPunt(root, ["run", "hello"], claude.env);
+	const result = await runVago(root, ["run", "hello"], claude.env);
 
 	expect(Date.now() - started).toBeLessThan(9_000);
 	expect(result.exitCode).not.toBe(0);

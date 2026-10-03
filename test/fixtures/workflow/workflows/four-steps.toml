@@ -1,6 +1,6 @@
-# The Steps every Ticket goes through, in order. `punt init` copied this
-# file from Punt's starter, and it's yours to change. Prompt paths resolve
-# from .punt/, include paths from the repo root.
+# The Steps every Ticket goes through, in order. `vago init` copied this
+# file from Vago's starter, and it's yours to change. Prompt paths resolve
+# from .vago/, include paths from the repo root.
 
 harness = "claude-code"
 model   = "opus"
@@ -8,7 +8,7 @@ model   = "opus"
 # idle_timeout = "30m"  # how long claude may print nothing before the Run fails
 
 [include]
-style = ".punt/code-style.md"
+style = ".vago/code-style.md"
 
 [[steps]]
 id     = "implement"

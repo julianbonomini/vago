@@ -54,11 +54,11 @@ export type FinishedRun = {
  * line on stdout at each, and a log of everything it wrote. An agent Step's
  * prompt reads `stepOutputs`, the outputs of the Steps already run on this
  * Ticket by Step id. A shell Step's command gets the Goal's and Ticket's
- * names in `PUNT_GOAL` and `PUNT_TICKET`, like `hello` and `01-say-hello`,
- * and `PUNT_LAST_TICKET`, `true` when every other Ticket of the Goal is
+ * names in `VAGO_GOAL` and `VAGO_TICKET`, like `hello` and `01-say-hello`,
+ * and `VAGO_LAST_TICKET`, `true` when every other Ticket of the Goal is
  * `done` and `false` otherwise.
  * SIGINT or SIGTERM while the Step runs kills every process it started
- * and ends the Run `interrupted`, instead of ending `punt`.
+ * and ends the Run `interrupted`, instead of ending `vago`.
  */
 export async function runStep(
 	step: Step,
@@ -73,7 +73,7 @@ export async function runStep(
 	// Step wrote them, which two separate pipes can't promise.
 	const fd = openSync(entry.log, "w");
 	// The Step runs in its own process group, out of reach of the terminal's
-	// Ctrl-C, so `punt` takes the signal and kills the group itself.
+	// Ctrl-C, so `vago` takes the signal and kills the group itself.
 	const interrupt = new AbortController();
 	const interruptRun = () => interrupt.abort();
 	process.on("SIGINT", interruptRun);
@@ -104,9 +104,9 @@ export async function runStep(
 				cwd: ticket.root,
 				env: {
 					...process.env,
-					PUNT_GOAL: ticket.goal,
-					PUNT_TICKET: ticket.name,
-					PUNT_LAST_TICKET: String(lastTicket),
+					VAGO_GOAL: ticket.goal,
+					VAGO_TICKET: ticket.name,
+					VAGO_LAST_TICKET: String(lastTicket),
 				},
 				stdin: "ignore",
 				stdout: fd,

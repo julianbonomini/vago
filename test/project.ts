@@ -1,4 +1,4 @@
-// Test helper: a throwaway Project in a temp git repo, and `punt` run against
+// Test helper: a throwaway Project in a temp git repo, and `vago` run against
 // it as a child process, the one seam the CLI tests go through.
 
 import { mkdir, mkdtemp } from "node:fs/promises";
@@ -15,7 +15,7 @@ const cli = join(import.meta.dir, "..", "src", "cli.ts");
 export async function makeProject(
 	files: Record<string, string>,
 ): Promise<string> {
-	const root = await mkdtemp(join(tmpdir(), "punt-test-"));
+	const root = await mkdtemp(join(tmpdir(), "vago-test-"));
 	Bun.spawnSync(["git", "init", "--quiet"], { cwd: root });
 	for (const [path, text] of Object.entries(files)) {
 		await mkdir(dirname(join(root, path)), { recursive: true });
@@ -29,32 +29,32 @@ export function goalText(workflow: string, body = "# Hello\n"): string {
 	return `+++\nworkflow = "${workflow}"\n+++\n${body}`;
 }
 
-/** What a finished `punt` child left behind. */
-export type PuntExit = {
+/** What a finished `vago` child left behind. */
+export type VagoExit = {
 	exitCode: number;
 	stdout: string;
 	stderr: string;
 };
 
-/** A `punt` child started by `startPunt` and not yet waited for. */
-export type RunningPunt = {
-	/** Sends `signal` to the `punt` process alone, as `kill` would. */
+/** A `vago` child started by `startVago` and not yet waited for. */
+export type RunningVago = {
+	/** Sends `signal` to the `vago` process alone, as `kill` would. */
 	kill(signal: NodeJS.Signals): void;
-	/** Resolves once `punt` has exited. */
-	exited: Promise<PuntExit>;
+	/** Resolves once `vago` has exited. */
+	exited: Promise<VagoExit>;
 };
 
 /**
- * Starts `punt <args>` with `root` as the working directory without waiting
+ * Starts `vago <args>` with `root` as the working directory without waiting
  * for it. `env` is added to this process's environment, overriding what it
- * names. `punt` reads `stdin` as what the human typed, then end of input.
+ * names. `vago` reads `stdin` as what the human typed, then end of input.
  */
-export function startPunt(
+export function startVago(
 	root: string,
 	args: string[],
 	env: Record<string, string> = {},
 	stdin = "",
-): RunningPunt {
+): RunningVago {
 	const child = Bun.spawn([process.execPath, cli, ...args], {
 		cwd: root,
 		env: { ...process.env, ...env },
@@ -72,14 +72,14 @@ export function startPunt(
 	};
 }
 
-/** Starts `punt <args>` as `startPunt` does and waits for it to exit. */
-export function runPunt(
+/** Starts `vago <args>` as `startVago` does and waits for it to exit. */
+export function runVago(
 	root: string,
 	args: string[],
 	env: Record<string, string> = {},
 	stdin = "",
-): Promise<PuntExit> {
-	return startPunt(root, args, env, stdin).exited;
+): Promise<VagoExit> {
+	return startVago(root, args, env, stdin).exited;
 }
 
 /** A Ticket file as the tests read it: its `+++` header parsed, and its body. */
@@ -99,11 +99,11 @@ export async function readTicketFile(
 }
 
 /**
- * Runs `punt <args>` as `runPunt` does, but with a terminal for stdout, and
+ * Runs `vago <args>` as `runVago` does, but with a terminal for stdout, and
  * resolves to everything it printed there once the terminal closes. The
  * terminal writes each newline as `\r\n`.
  */
-export function runPuntInTerminal(
+export function runVagoInTerminal(
 	root: string,
 	args: string[],
 	env: Record<string, string> = {},

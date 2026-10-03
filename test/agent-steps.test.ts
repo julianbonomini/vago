@@ -5,7 +5,7 @@ import {
 	makeFakeClaude,
 	sessionFixture,
 } from "./fake-claude.ts";
-import { goalText, makeProject, readTicketFile, runPunt } from "./project.ts";
+import { goalText, makeProject, readTicketFile, runVago } from "./project.ts";
 
 const workflow = `
 harness = "claude-code"
@@ -32,13 +32,13 @@ const ticketBody = `
 Print hello when the CLI starts.
 `;
 
-const goalDir = ".punt-goals/hello";
+const goalDir = ".vago-goals/hello";
 const ticketPath = `${goalDir}/tickets/01-say-hello.md`;
 
 async function agentProject(): Promise<string> {
 	return makeProject({
-		".punt/workflows/test.toml": workflow,
-		".punt/prompts/implement.md": prompt,
+		".vago/workflows/test.toml": workflow,
+		".vago/prompts/implement.md": prompt,
 		[`${goalDir}/goal.md`]: goalText(
 			"test",
 			"# Hello\n\nThe CLI greets its user.\n",
@@ -51,7 +51,7 @@ test("a session in auto mode with no denied calls ends ok and the Ticket done", 
 	const root = await agentProject();
 	const claude = await makeFakeClaude();
 
-	const result = await runPunt(root, ["run", "hello"], claude.env);
+	const result = await runVago(root, ["run", "hello"], claude.env);
 
 	expect(result.stderr).toBe("");
 	expect(result.exitCode).toBe(0);
@@ -60,14 +60,14 @@ test("a session in auto mode with no denied calls ends ok and the Ticket done", 
 
 test("a session in the permission mode args asked for ends ok", async () => {
 	const root = await makeProject({
-		".punt/workflows/test.toml": `args = ["--permission-mode", "acceptEdits"]\n${workflow}`,
-		".punt/prompts/implement.md": prompt,
+		".vago/workflows/test.toml": `args = ["--permission-mode", "acceptEdits"]\n${workflow}`,
+		".vago/prompts/implement.md": prompt,
 		[`${goalDir}/goal.md`]: goalText("test"),
 		[ticketPath]: `+++\nstatus = "ready"\n+++\n${ticketBody}`,
 	});
 	const claude = await makeFakeClaude("exit 0", acceptEditsFixture);
 
-	const result = await runPunt(root, ["run", "hello"], claude.env);
+	const result = await runVago(root, ["run", "hello"], claude.env);
 
 	expect(result.exitCode).toBe(0);
 	expect((await readTicketFile(root, ticketPath)).header.status).toBe("done");
@@ -77,7 +77,7 @@ test("claude runs headless in guarded mode on the Workflow's model", async () =>
 	const root = await agentProject();
 	const claude = await makeFakeClaude();
 
-	await runPunt(root, ["run", "hello"], claude.env);
+	await runVago(root, ["run", "hello"], claude.env);
 
 	const [call] = await claude.calls();
 	expect(call?.argv).toEqual([
@@ -97,7 +97,7 @@ test("the prompt has {{ticket}} and {{goal}} substituted and no Ticket or Goal h
 	const root = await agentProject();
 	const claude = await makeFakeClaude();
 
-	await runPunt(root, ["run", "hello"], claude.env);
+	await runVago(root, ["run", "hello"], claude.env);
 
 	const [call] = await claude.calls();
 	expect(call?.stdin).toBe(`Do this Ticket:
@@ -120,7 +120,7 @@ test("[[runs]] records the Harness, model, session, tokens and cost", async () =
 	const root = await agentProject();
 	const claude = await makeFakeClaude();
 
-	await runPunt(root, ["run", "hello"], claude.env);
+	await runVago(root, ["run", "hello"], claude.env);
 
 	const runs = (await readTicketFile(root, ticketPath)).header.runs as Record<
 		string,
@@ -144,7 +144,7 @@ test("the .jsonl log holds the whole stream", async () => {
 	const root = await agentProject();
 	const claude = await makeFakeClaude();
 
-	await runPunt(root, ["run", "hello"], claude.env);
+	await runVago(root, ["run", "hello"], claude.env);
 
 	const log = join(root, goalDir, "logs", "01-implement-1.jsonl");
 	expect(await Bun.file(log).text()).toBe(
@@ -156,7 +156,7 @@ test("the end line shows the Run's cost", async () => {
 	const root = await agentProject();
 	const claude = await makeFakeClaude();
 
-	const result = await runPunt(root, ["run", "hello"], claude.env);
+	const result = await runVago(root, ["run", "hello"], claude.env);
 
 	const lines = result.stdout.trimEnd().split("\n");
 	expect(lines[2]).toMatch(/^ {2}\S+ +\d+\.\ds +\$0\.01 {2}implement ok$/);

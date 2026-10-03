@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
-import { goalText, makeProject, runPunt } from "./project.ts";
+import { goalText, makeProject, runVago } from "./project.ts";
 
-const goalDir = ".punt-goals/hello";
+const goalDir = ".vago-goals/hello";
 
 const greet = `+++
 status = "done"
@@ -59,7 +59,7 @@ test("goal report prints goal.md and what every Run took and cost", async () => 
 		[`${goalDir}/tickets/02-wave.md`]: wave,
 	});
 
-	const result = await runPunt(root, ["goal", "report", "hello"]);
+	const result = await runVago(root, ["goal", "report", "hello"]);
 
 	expect(result.stderr).toBe("");
 	expect(result.exitCode).toBe(0);
@@ -116,7 +116,7 @@ log = "logs/01-check-2.log"
 `,
 	});
 
-	const result = await runPunt(root, ["goal", "report", "hello"]);
+	const result = await runVago(root, ["goal", "report", "hello"]);
 
 	expect(result.exitCode).toBe(0);
 	expect(result.stdout).toContain(`| Ticket | Runs | Took | Cost |
@@ -133,7 +133,7 @@ test("goal report counts a Ticket with no Runs as nothing", async () => {
 		[`${goalDir}/tickets/02-x.md`]: '+++\nstatus = "ready"\n+++\n\n# X\n',
 	});
 
-	const result = await runPunt(root, ["goal", "report", "hello"]);
+	const result = await runVago(root, ["goal", "report", "hello"]);
 
 	expect(result.exitCode).toBe(0);
 	expect(result.stdout).toContain(`| Ticket | Runs | Took | Cost |
@@ -149,7 +149,7 @@ test("goal report leaves out blank lines under a hand-edited header", async () =
 		[`${goalDir}/goal.md`]: '+++\nworkflow = "small"\n+++\n\n# Hello\n',
 	});
 
-	const result = await runPunt(root, ["goal", "report", "hello"]);
+	const result = await runVago(root, ["goal", "report", "hello"]);
 
 	expect(result.stderr).toBe("");
 	expect(result.exitCode).toBe(0);
@@ -159,7 +159,7 @@ test("goal report leaves out blank lines under a hand-edited header", async () =
 test("goal report refuses a Goal that doesn't exist", async () => {
 	const root = await makeProject({});
 
-	const result = await runPunt(root, ["goal", "report", "hello"]);
+	const result = await runVago(root, ["goal", "report", "hello"]);
 
 	expect(result.exitCode).toBe(1);
 	expect(result.stderr).toMatch(/Goal hello not found/);

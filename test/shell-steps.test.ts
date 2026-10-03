@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
-import { goalText, makeProject, readTicketFile, runPunt } from "./project.ts";
+import { goalText, makeProject, readTicketFile, runVago } from "./project.ts";
 
 const workflow = `
 [[steps]]
@@ -25,17 +25,17 @@ status = "ready"
 +++
 ${ticketBody}`;
 
-const goalDir = ".punt-goals/hello";
+const goalDir = ".vago-goals/hello";
 const ticketPath = `${goalDir}/tickets/01-say-hello.md`;
 
 test("a Ticket goes through every shell Step and ends done", async () => {
 	const root = await makeProject({
-		".punt/workflows/test.toml": workflow,
+		".vago/workflows/test.toml": workflow,
 		[`${goalDir}/goal.md`]: goalText("test"),
 		[ticketPath]: ticket,
 	});
 
-	const result = await runPunt(root, ["run", "hello"]);
+	const result = await runVago(root, ["run", "hello"]);
 
 	expect(result.stderr).toBe("");
 	expect(result.exitCode).toBe(0);
@@ -44,39 +44,39 @@ test("a Ticket goes through every shell Step and ends done", async () => {
 	expect(body).toBe(ticketBody);
 });
 
-test("a shell Step gets the Goal and Ticket names in PUNT_GOAL and PUNT_TICKET", async () => {
+test("a shell Step gets the Goal and Ticket names in VAGO_GOAL and VAGO_TICKET", async () => {
 	const root = await makeProject({
-		".punt/workflows/test.toml": `
+		".vago/workflows/test.toml": `
 [[steps]]
 id   = "names"
 type = "shell"
-run  = 'echo "$PUNT_GOAL $PUNT_TICKET"'
+run  = 'echo "$VAGO_GOAL $VAGO_TICKET"'
 `,
 		[`${goalDir}/goal.md`]: goalText("test"),
 		[ticketPath]: ticket,
 	});
 
-	await runPunt(root, ["run", "hello"]);
+	await runVago(root, ["run", "hello"]);
 
 	expect(
 		await Bun.file(join(root, goalDir, "logs", "01-names-1.log")).text(),
 	).toBe("hello 01-say-hello\n");
 });
 
-test("a shell Step learns in PUNT_LAST_TICKET whether every other Ticket of the Goal is done", async () => {
+test("a shell Step learns in VAGO_LAST_TICKET whether every other Ticket of the Goal is done", async () => {
 	const root = await makeProject({
-		".punt/workflows/test.toml": `
+		".vago/workflows/test.toml": `
 [[steps]]
 id   = "last"
 type = "shell"
-run  = 'echo "$PUNT_LAST_TICKET"'
+run  = 'echo "$VAGO_LAST_TICKET"'
 `,
 		[`${goalDir}/goal.md`]: goalText("test"),
 		[ticketPath]: ticket,
 		[`${goalDir}/tickets/02-wave.md`]: ticket,
 	});
 
-	await runPunt(root, ["run", "hello"]);
+	await runVago(root, ["run", "hello"]);
 
 	const log = (name: string) =>
 		Bun.file(join(root, goalDir, "logs", name)).text();
@@ -86,12 +86,12 @@ run  = 'echo "$PUNT_LAST_TICKET"'
 
 test("each Step gets a [[runs]] entry and a log of its stdout and stderr", async () => {
 	const root = await makeProject({
-		".punt/workflows/test.toml": workflow,
+		".vago/workflows/test.toml": workflow,
 		[`${goalDir}/goal.md`]: goalText("test"),
 		[ticketPath]: ticket,
 	});
 
-	await runPunt(root, ["run", "hello"]);
+	await runVago(root, ["run", "hello"]);
 
 	const { header } = await readTicketFile(root, ticketPath);
 	const runs = header.runs as Record<string, unknown>[];
@@ -114,12 +114,12 @@ test("each Step gets a [[runs]] entry and a log of its stdout and stderr", async
 
 test("stdout shows a start and an end line for each Step", async () => {
 	const root = await makeProject({
-		".punt/workflows/test.toml": workflow,
+		".vago/workflows/test.toml": workflow,
 		[`${goalDir}/goal.md`]: goalText("test"),
 		[ticketPath]: ticket,
 	});
 
-	const result = await runPunt(root, ["run", "hello"]);
+	const result = await runVago(root, ["run", "hello"]);
 
 	const time = String.raw`\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ`;
 	const lines = result.stdout.trimEnd().split("\n");
@@ -134,12 +134,12 @@ test("stdout shows a start and an end line for each Step", async () => {
 
 test("header fields Alpha doesn't know survive its rewrites", async () => {
 	const root = await makeProject({
-		".punt/workflows/test.toml": workflow,
+		".vago/workflows/test.toml": workflow,
 		[`${goalDir}/goal.md`]: goalText("test"),
 		[ticketPath]: `+++\nstatus = "ready"\nnote = "kept"\n+++\n${ticketBody}`,
 	});
 
-	await runPunt(root, ["run", "hello"]);
+	await runVago(root, ["run", "hello"]);
 
 	const { header } = await readTicketFile(root, ticketPath);
 	expect(header.note).toBe("kept");

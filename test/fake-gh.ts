@@ -23,9 +23,9 @@ export type FakeGitHub = {
 	labels: string[];
 };
 
-/** A fake `gh`, ready to put on the `PATH` of a `punt` child. */
+/** A fake `gh`, ready to put on the `PATH` of a `vago` child. */
 export type FakeGh = {
-	/** Environment for `runPunt` that puts the fake first on `PATH`. */
+	/** Environment for `runVago` that puts the fake first on `PATH`. */
 	env: Record<string, string>;
 	/** The repo as the calls so far left it. */
 	state(): Promise<FakeGitHub>;
@@ -38,7 +38,7 @@ export type FakeGh = {
  * call for a branch with no PR and on adding a label the repo doesn't have.
  */
 export async function makeFakeGh(login: string): Promise<FakeGh> {
-	const dir = await mkdtemp(join(tmpdir(), "punt-fake-gh-"));
+	const dir = await mkdtemp(join(tmpdir(), "vago-fake-gh-"));
 	const stateFile = join(dir, "state.json");
 	const empty: FakeGitHub = { pullRequests: {}, labels: [] };
 	await Bun.write(stateFile, JSON.stringify(empty));

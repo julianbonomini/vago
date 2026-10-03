@@ -6,11 +6,11 @@ import {
 import {
 	goalText,
 	makeProject,
-	runPunt,
-	runPuntInTerminal,
+	runVago,
+	runVagoInTerminal,
 } from "./project.ts";
 
-const goalDir = ".punt-goals/hello";
+const goalDir = ".vago-goals/hello";
 
 const workflow = `
 [[steps]]
@@ -21,7 +21,7 @@ run  = "true"
 [[steps]]
 id   = "check-everything"
 type = "shell"
-run  = 'test "$PUNT_TICKET" != 03-fail'
+run  = 'test "$VAGO_TICKET" != 03-fail'
 `;
 
 function ticket(blockedBy = ""): string {
@@ -38,7 +38,7 @@ function steady(stdout: string): string {
 
 test("piped, each Ticket's name heads its indented Step lines, and the summary is a table after a blank line", async () => {
 	const root = await makeProject({
-		".punt/workflows/test.toml": workflow,
+		".vago/workflows/test.toml": workflow,
 		[`${goalDir}/goal.md`]: goalText("test"),
 		[`${goalDir}/tickets/01-greet.md`]: ticket(),
 		[`${goalDir}/tickets/02-wave-goodbye.md`]: ticket(),
@@ -46,7 +46,7 @@ test("piped, each Ticket's name heads its indented Step lines, and the summary i
 		[`${goalDir}/tickets/04-later.md`]: ticket("blocked_by = [3]\n"),
 	});
 
-	const result = await runPunt(root, ["run", "hello"]);
+	const result = await runVago(root, ["run", "hello"]);
 
 	expect(steady(result.stdout)).toBe(`\
 01-greet
@@ -65,8 +65,8 @@ test("piped, each Ticket's name heads its indented Step lines, and the summary i
   2026-10-02T10:00:00Z                  check-everything started
   2026-10-02T10:00:00Z    1.0s          check-everything exit 1
 03-fail is stuck after check-everything: exit 1
-  log:    .punt-goals/hello/logs/03-check-everything-2.log
-  reset:  punt ticket reset hello 03
+  log:    .vago-goals/hello/logs/03-check-everything-2.log
+  reset:  vago ticket reset hello 03
 
 hello: 2 of 4 Tickets done
 Ticket           Status  Runs  Took  Cost
@@ -82,7 +82,7 @@ test("the summary adds up each Ticket's cost into the total and leaves a cost-le
 	const done = (step: string, started: string, ended: string, cost: string) =>
 		`+++\nstatus = "done"\n\n[[runs]]\nstep = "${step}"\nstarted = ${started}\nended = ${ended}\noutcome = "ok"\nlog = "logs/${step}.jsonl"\ncost_usd = ${cost}\n+++\n# A Ticket\n`;
 	const root = await makeProject({
-		".punt/workflows/test.toml": `
+		".vago/workflows/test.toml": `
 [[steps]]
 id   = "greet"
 type = "shell"
@@ -104,7 +104,7 @@ run  = "true"
 		[`${goalDir}/tickets/03-later.md`]: ticket(),
 	});
 
-	const result = await runPunt(root, ["run", "hello"]);
+	const result = await runVago(root, ["run", "hello"]);
 
 	expect(steady(result.stdout)).toEndWith(`
 hello: 3 of 3 Tickets done
@@ -118,7 +118,7 @@ Total                3  7m30s  $1.75
 
 test("a long outcome pushes no column of the Step lines", async () => {
 	const root = await makeProject({
-		".punt/workflows/test.toml": `
+		".vago/workflows/test.toml": `
 harness = "claude-code"
 model   = "opus"
 
@@ -132,13 +132,13 @@ id     = "implement"
 type   = "agent"
 prompt = "prompts/implement.md"
 `,
-		".punt/prompts/implement.md": "Implement it.\n",
+		".vago/prompts/implement.md": "Implement it.\n",
 		[`${goalDir}/goal.md`]: goalText("test"),
 		[`${goalDir}/tickets/01-greet.md`]: ticket(),
 	});
 	const claude = await makeFakeClaude("exit 0", permissionModeFallbackFixture);
 
-	const result = await runPunt(root, ["run", "hello"], claude.env);
+	const result = await runVago(root, ["run", "hello"], claude.env);
 
 	const lines = steady(result.stdout).split("\n");
 	const greet = lines.find((line) => /greet +ok/.test(line)) ?? "";
@@ -153,12 +153,12 @@ prompt = "prompts/implement.md"
 
 test("in a terminal, start lines are dimmed, ok is green, and a failed Step and the stuck message are red", async () => {
 	const root = await makeProject({
-		".punt/workflows/test.toml": workflow,
+		".vago/workflows/test.toml": workflow,
 		[`${goalDir}/goal.md`]: goalText("test"),
 		[`${goalDir}/tickets/03-fail.md`]: ticket(),
 	});
 
-	const printed = await runPuntInTerminal(root, ["run", "hello"], {
+	const printed = await runVagoInTerminal(root, ["run", "hello"], {
 		NO_COLOR: "",
 	});
 
@@ -176,14 +176,14 @@ test("in a terminal, start lines are dimmed, ok is green, and a failed Step and 
 
 test("in a terminal, the summary shows done green, stuck red and ready plain", async () => {
 	const root = await makeProject({
-		".punt/workflows/test.toml": workflow,
+		".vago/workflows/test.toml": workflow,
 		[`${goalDir}/goal.md`]: goalText("test"),
 		[`${goalDir}/tickets/01-greet.md`]: ticket(),
 		[`${goalDir}/tickets/03-fail.md`]: ticket(),
 		[`${goalDir}/tickets/04-later.md`]: ticket("blocked_by = [3]\n"),
 	});
 
-	const printed = await runPuntInTerminal(root, ["run", "hello"], {
+	const printed = await runVagoInTerminal(root, ["run", "hello"], {
 		NO_COLOR: "",
 	});
 
@@ -198,12 +198,12 @@ test("in a terminal, the summary shows done green, stuck red and ready plain", a
 
 test("in a terminal with NO_COLOR set, the output is plain text", async () => {
 	const root = await makeProject({
-		".punt/workflows/test.toml": workflow,
+		".vago/workflows/test.toml": workflow,
 		[`${goalDir}/goal.md`]: goalText("test"),
 		[`${goalDir}/tickets/03-fail.md`]: ticket(),
 	});
 
-	const printed = await runPuntInTerminal(root, ["run", "hello"], {
+	const printed = await runVagoInTerminal(root, ["run", "hello"], {
 		NO_COLOR: "1",
 	});
 

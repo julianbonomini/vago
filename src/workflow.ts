@@ -1,4 +1,4 @@
-// Owns `.punt/workflows/<name>.toml` and the prompt and include files each
+// Owns `.vago/workflows/<name>.toml` and the prompt and include files each
 // names: which Workflows exist, reading one once, checking it, returning the
 // Workflow a Goal runs with, and building agent prompts. Hides the TOML
 // schema, its defaults, how paths resolve, how include slots merge and the
@@ -123,9 +123,9 @@ const WorkflowFile = z.strictObject({
 });
 
 /**
- * Reads `.punt/workflows/<name>.toml` of the Project at `root`, with every
+ * Reads `.vago/workflows/<name>.toml` of the Project at `root`, with every
  * prompt's text inside. Throws an Error listing the Workflows in
- * `.punt/workflows/` when none is called `name`. Throws an Error naming the
+ * `.vago/workflows/` when none is called `name`. Throws an Error naming the
  * file and the problem when the Workflow isn't valid TOML, has a key or
  * value its schema doesn't take (an unknown Step `type` or `harness`, a bad
  * `on_fail` or `idle_timeout`), gives two Steps one `id`, leaves an agent
@@ -137,8 +137,8 @@ export async function loadWorkflow(
 	root: string,
 	name: string,
 ): Promise<Workflow> {
-	const punt = join(root, ".punt");
-	const folder = join(punt, "workflows");
+	const vago = join(root, ".vago");
+	const folder = join(vago, "workflows");
 	// node:fs because Bun.file can't tell whether a directory exists.
 	const names = existsSync(folder)
 		? (await readdir(folder))
@@ -193,7 +193,7 @@ export async function loadWorkflow(
 				`${path}: agent step "${step.id}" needs a harness and a model`,
 			);
 		}
-		const promptPath = join(punt, step.prompt);
+		const promptPath = join(vago, step.prompt);
 		const prompt = Bun.file(promptPath);
 		if (!(await prompt.exists())) {
 			throw new Error(
@@ -236,7 +236,7 @@ export async function loadWorkflow(
 		);
 	}
 	// Frozen, with the prompts' text inside, so a Goal runs every Ticket with
-	// the Workflow it started with even if an agent edits `.punt/`.
+	// the Workflow it started with even if an agent edits `.vago/`.
 	return Object.freeze({ steps: Object.freeze(steps) });
 }
 

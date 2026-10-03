@@ -1,12 +1,12 @@
-# The Steps every Ticket goes through, in order. `punt init` copied this
-# file from Punt's starter, and it's yours to change. Prompt paths resolve
-# from .punt/, include and shell paths from the repo root.
+# The Steps every Ticket goes through, in order. `vago init` copied this
+# file from Vago's starter, and it's yours to change. Prompt paths resolve
+# from .vago/, include and shell paths from the repo root.
 #
 # Git: each Goal has a branch, goal/<goal>, cut from main by its first Ticket.
 # Each Ticket is built on <goal>/<ticket>, cut from the Goal's branch, and
 # squash-merged back as one commit. The human merges the Goal's PR to main.
-# Shell Steps get the names in $PUNT_GOAL and $PUNT_TICKET, and
-# $PUNT_LAST_TICKET is true when every other Ticket of the Goal is done.
+# Shell Steps get the names in $VAGO_GOAL and $VAGO_TICKET, and
+# $VAGO_LAST_TICKET is true when every other Ticket of the Goal is done.
 
 harness = "claude-code"
 model   = "claude-opus-5-5"
@@ -16,14 +16,14 @@ idle_timeout = "10m"  # how long claude may print nothing before the Run fails
 [[steps]]
 id   = "branch"
 type = "shell"
-run  = "sh .punt/scripts/branch.sh"
+run  = "sh .vago/scripts/branch.sh"
 
 [[steps]]
 id     = "design"
 type   = "agent"
 prompt = "prompts/design.md"
-include.aposd = ".punt/rules/aposd.md"
-include.style = ".punt/rules/code-style.md"
+include.aposd = ".vago/rules/aposd.md"
+include.style = ".vago/rules/code-style.md"
 
 [[steps]]
 id     = "product"
@@ -34,15 +34,15 @@ prompt = "prompts/product.md"
 id     = "architecture"
 type   = "agent"
 prompt = "prompts/architecture.md"
-include.aposd = ".punt/rules/aposd.md"
-include.style = ".punt/rules/code-style.md"
+include.aposd = ".vago/rules/aposd.md"
+include.style = ".vago/rules/code-style.md"
 
 [[steps]]
 id     = "implement"
 type   = "agent"
 prompt = "prompts/implement.md"
-include.aposd = ".punt/rules/aposd.md"
-include.style = ".punt/rules/code-style.md"
+include.aposd = ".vago/rules/aposd.md"
+include.style = ".vago/rules/code-style.md"
 
 [[steps]]
 id      = "check"
@@ -54,10 +54,10 @@ on_fail = "continue"   # review reads a failed check and fixes it
 id     = "review"
 type   = "agent"
 prompt = "prompts/review.md"
-include.aposd = ".punt/rules/aposd.md"
-include.style = ".punt/rules/code-style.md"
+include.aposd = ".vago/rules/aposd.md"
+include.style = ".vago/rules/code-style.md"
 
 [[steps]]
 id   = "merge"
 type = "shell"
-run  = "bun run check && sh .punt/scripts/merge.sh"
+run  = "bun run check && sh .vago/scripts/merge.sh"
