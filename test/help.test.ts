@@ -51,16 +51,17 @@ test("goal new --help explains its arguments, flags and gives an example", async
 	expect(result.stdout).toMatch(/^example:\n {2}vago goal new /m);
 });
 
-test("ticket add --help names --blocked-by and --body-file", async () => {
+test("ticket add --help names --blocked-by, --workflow and --body-file", async () => {
 	const root = await makeProject({});
 
 	const result = await runVago(root, ["ticket", "add", "--help"]);
 
 	expect(result.exitCode).toBe(0);
 	expect(result.stdout).toStartWith(
-		"usage: vago ticket add <goal> <slug> [--blocked-by <NN>]... [--body-file <path>]\n",
+		"usage: vago ticket add <goal> <slug> [--blocked-by <NN>]... [--workflow <name>] [--body-file <path>]\n",
 	);
 	expect(result.stdout).toMatch(/^ {2}--blocked-by <NN> +\S/m);
+	expect(result.stdout).toMatch(/^ {2}--workflow <name> +\S/m);
 	expect(result.stdout).toMatch(/^ {2}--body-file <path> +\S/m);
 });
 
@@ -226,7 +227,7 @@ test("--blocked-by --help is a value that isn't digits, not a call for help", as
 
 	expect(result.exitCode).toBe(1);
 	expect(result.stderr).toBe(
-		"usage: vago ticket add <goal> <slug> [--blocked-by <NN>]... [--body-file <path>]\nRun `vago ticket add --help` for what it does and what each argument means.\n",
+		"usage: vago ticket add <goal> <slug> [--blocked-by <NN>]... [--workflow <name>] [--body-file <path>]\nRun `vago ticket add --help` for what it does and what each argument means.\n",
 	);
 	expect(existsSync(join(root, ".vago-goals/hello/tickets/01-greet.md"))).toBe(
 		false,
@@ -268,7 +269,7 @@ for (const [group, members, other] of [
 		const usages = {
 			goal: "usage: vago goal new <goal> --workflow <name> [--body-file <path>]\n       vago goal report <goal>\n",
 			ticket:
-				"usage: vago ticket add <goal> <slug> [--blocked-by <NN>]... [--body-file <path>]\n       vago ticket reset <goal> <NN>\n",
+				"usage: vago ticket add <goal> <slug> [--blocked-by <NN>]... [--workflow <name>] [--body-file <path>]\n       vago ticket reset <goal> <NN>\n",
 		};
 
 		const result = await runVago(root, [
@@ -310,7 +311,7 @@ test("vago nope prints every command's usage, lined up, then points at --help", 
        vago run <goal>
        vago goal new <goal> --workflow <name> [--body-file <path>]
        vago goal report <goal>
-       vago ticket add <goal> <slug> [--blocked-by <NN>]... [--body-file <path>]
+       vago ticket add <goal> <slug> [--blocked-by <NN>]... [--workflow <name>] [--body-file <path>]
        vago ticket reset <goal> <NN>
 Run \`vago --help\` for what each command does.
 `);

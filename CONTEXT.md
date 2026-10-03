@@ -17,7 +17,7 @@ One repository Vago builds for, such as a TUI, a mini project or an iOS app.
 _Avoid_: repo, app
 
 **Workflow**:
-One of a Project's named lists of ordered Steps, defined inside that Project. Each Goal names the Workflow its Tickets pass through.
+One of a Project's named lists of ordered Steps, defined inside that Project. Each Goal names the Workflow its Tickets pass through, and a Ticket may name another for itself.
 _Avoid_: pipeline, process
 
 **Step**:
@@ -37,7 +37,7 @@ One Harness session performing one agent Step on one Ticket, such as implement, 
 _Avoid_: session, job, attempt
 
 **Ticket**:
-One unit of work that belongs to a Goal; done when it reaches the end of its Goal's Workflow.
+One unit of work that belongs to a Goal; done when it reaches the end of its Workflow.
 _Avoid_: issue, task, story
 
 **Gate**:

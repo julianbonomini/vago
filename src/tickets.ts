@@ -1,5 +1,6 @@
 // Creates and owns Goal and Ticket files under `.vago-goals/<goal>/`: the
-// `+++` TOML header, the `goal.md` header naming the Goal's Workflow, status,
+// `+++` TOML header, the `goal.md` header naming the Goal's Workflow, the
+// Workflow a Ticket names in place of it, status,
 // the `[[runs]]` history and where each Run's log goes, and the lock that
 // marks a Goal as taken by a `vago run`. Every header rewrite is atomic and
 // keeps the body byte for byte.
@@ -53,6 +54,7 @@ const RunEntry = z.looseObject({
 const Header = z.looseObject({
 	status: z.enum(["ready", "running", "done", "stuck"]),
 	blocked_by: z.array(z.number().int()).optional(),
+	workflow: z.string().optional(),
 	runs: z.array(RunEntry).optional(),
 });
 
@@ -90,20 +92,28 @@ export type TicketRun = {
  */
 export type GoalState = {
 	/**
-	 * The name of the Workflow the Goal's `goal.md` header names. It might
-	 * not exist.
+	 * The name of the Workflow the Goal's `goal.md` header names, which a
+	 * Ticket goes through unless its own header names another. It might not
+	 * exist.
 	 */
 	workflow: string;
 	/**
-	 * Every Ticket of the Goal with its status and its `[[runs]]` in the
-	 * order they ran, lowest number first.
+	 * Every Ticket of the Goal with its status, the name of the Workflow it
+	 * goes through (which might not exist) and its `[[runs]]` in the order
+	 * they ran, lowest number first.
 	 */
-	tickets: { ticket: Ticket; status: TicketStatus; runs: TicketRun[] }[];
+	tickets: {
+		ticket: Ticket;
+		status: TicketStatus;
+		workflow: string;
+		runs: TicketRun[];
+	}[];
 	/**
 	 * The lowest-numbered Ticket that is `ready` and whose blockers are all
-	 * `done`, or undefined when there is none.
+	 * `done`, with the name of the Workflow it goes through, or undefined
+	 * when there is none.
 	 */
-	nextReady: Ticket | undefined;
+	nextReady: { ticket: Ticket; workflow: string } | undefined;
 	/** Whether every Ticket is `done`, which a Goal with no Tickets is. */
 	done: boolean;
 };
@@ -195,27 +205,32 @@ export async function readGoal(root: string, goal: string): Promise<GoalState> {
 		);
 	}
 
-	const nextReady = entries.find(
-		({ header }) =>
-			header.status === "ready" &&
-			(header.blocked_by ?? []).every(
+	const tickets = entries.map(({ ticket, header }) => ({
+		ticket,
+		status: header.status,
+		workflow: header.workflow ?? workflow,
+		runs: (header.runs ?? []).map((run) => ({
+			step: run.step,
+			started: run.started,
+			ended: run.ended,
+			outcome: run.outcome,
+			costUsd: run.cost_usd,
+		})),
+	}));
+	const nextReady = tickets.find(
+		({ ticket, status }) =>
+			status === "ready" &&
+			(byNumber.get(ticket.number)?.header.blocked_by ?? []).every(
 				(blocker) => byNumber.get(blocker)?.header.status === "done",
 			),
 	);
 	return {
 		workflow,
-		tickets: entries.map(({ ticket, header }) => ({
-			ticket,
-			status: header.status,
-			runs: (header.runs ?? []).map((run) => ({
-				step: run.step,
-				started: run.started,
-				ended: run.ended,
-				outcome: run.outcome,
-				costUsd: run.cost_usd,
-			})),
-		})),
-		nextReady: nextReady?.ticket,
+		tickets,
+		nextReady:
+			nextReady === undefined
+				? undefined
+				: { ticket: nextReady.ticket, workflow: nextReady.workflow },
 		done: entries.every(({ header }) => header.status === "done"),
 	};
 }
@@ -223,7 +238,9 @@ export async function readGoal(root: string, goal: string): Promise<GoalState> {
 /**
  * Adds a Ticket named `slug` to `goal`, numbered one past its highest
  * Ticket, with status `ready` and blocked by the Tickets numbered in
- * `blockedBy` (each once, however often it's given). The Ticket's body is
+ * `blockedBy` (each once, however often it's given), going through Workflow
+ * `workflow`, or the Goal's when it's undefined. Doesn't check that the
+ * Workflow exists. The Ticket's body is
  * `body` exactly as given, which is what `readTicketBody` will return.
  * Without `body`, it's a `# <slug>` title for the human to fill in. Returns
  * the path of the new Ticket file. Throws an Error naming the problem, and
@@ -237,6 +254,7 @@ export async function addTicket(
 	goal: string,
 	slug: string,
 	blockedBy: number[],
+	workflow: string | undefined,
 	body?: string,
 ): Promise<string> {
 	checkName("Ticket slug", slug);
@@ -261,10 +279,9 @@ export async function addTicket(
 	}
 	const number = Math.max(0, ...tickets.map(({ ticket }) => ticket.number)) + 1;
 	const ticket = { root, goal, name: `${twoDigits(number)}-${slug}`, number };
-	const header: Header =
-		blockedBy.length > 0
-			? { status: "ready", blocked_by: [...new Set(blockedBy)] }
-			: { status: "ready" };
+	const header: Header = { status: "ready" };
+	if (blockedBy.length > 0) header.blocked_by = [...new Set(blockedBy)];
+	if (workflow !== undefined) header.workflow = workflow;
 	const file = ticketFile(ticket);
 	await Bun.write(file, headedText(header, body ?? `\n# ${slug}\n`));
 	return file;
