@@ -14,7 +14,7 @@ import {
 	recordRunEnd,
 	recordRunStart,
 	type Ticket,
-} from "./tickets.ts";
+} from "./tickets/tickets.ts";
 import { type AgentStep, buildPrompt, type Step } from "./workflow.ts";
 
 /**

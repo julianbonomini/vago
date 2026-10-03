@@ -32,7 +32,7 @@ Items marked _(grill)_ have design questions to settle before writing Tickets.
   - [ ] The PR body carries the Goal's design choices ("Design it twice": the options, the pick and why) from the design and architecture Steps. Agent Steps can't reach `goal.md` or the PR body today.
 - [ ] One command that runs several Goals at once.
 - [x] Refuse to run a Goal that's already running in another terminal, if the worktree Goal didn't ship it.
-- [ ] Split tickets.ts into a folder; it's past 400 lines.
+- [x] Split tickets.ts into a folder; it's past 400 lines.
 - [ ] create github app maybe?
 - [ ] goal on start and on end configuration steps, so workflows don't have to manually do those thigns
 - [ ] TUI Run stream extras, from the prototype's round 6: Bash edits shown as edits with the diff a key away, a live clock on long commands, background tasks as one line, Skill loads, live tokens and cost for an open Run.

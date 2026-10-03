@@ -1,6 +1,7 @@
 // Test helper: a throwaway Project in a temp git repo, and `vago` run against
 // it as a child process, the one seam the CLI tests go through.
 
+import { afterEach } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -62,6 +63,86 @@ export async function makeProject(
 /** A `goal.md` whose `+++` header names `workflow`, followed by `body`. */
 export function goalText(workflow: string, body = "# Hello\n"): string {
 	return `+++\nworkflow = "${workflow}"\n+++\n${body}`;
+}
+
+/**
+ * Makes a Project as `makeProject` does whose Goals are `names`, each with a
+ * `goal.md` naming Workflow `w`, and returns its root.
+ */
+export function projectWithGoals(names: string[]): Promise<string> {
+	return makeProject(
+		Object.fromEntries(
+			names.map((name) => [`.vago-goals/${name}/goal.md`, goalText("w")]),
+		),
+	);
+}
+
+/** One `[[runs]]` entry for `ticketText`, open while `ended` is absent. */
+export type FixtureRun = {
+	step: string;
+	started: Date;
+	ended?: Date;
+	outcome?: string;
+	costUsd?: number;
+};
+
+/**
+ * A Ticket file with status `status` in a `+++` header, then a short body.
+ * Each run gets a log path Vago never reads in these tests.
+ */
+export function ticketText(
+	status: "ready" | "running" | "done" | "stuck",
+	options: { runs?: FixtureRun[]; blockedBy?: number[] } = {},
+): string {
+	const lines = [`status = "${status}"`];
+	if (options.blockedBy !== undefined) {
+		lines.push(`blocked_by = [${options.blockedBy.join(", ")}]`);
+	}
+	for (const [index, run] of (options.runs ?? []).entries()) {
+		lines.push("", "[[runs]]", `step = "${run.step}"`);
+		lines.push(`started = ${run.started.toISOString()}`);
+		if (run.ended !== undefined)
+			lines.push(`ended = ${run.ended.toISOString()}`);
+		if (run.outcome !== undefined) lines.push(`outcome = "${run.outcome}"`);
+		if (run.costUsd !== undefined) lines.push(`cost_usd = ${run.costUsd}`);
+		lines.push(`log = "logs/${run.step}-${index + 1}.log"`);
+	}
+	return `+++\n${lines.join("\n")}\n+++\n\n# A Ticket\n`;
+}
+
+/** A `running.lock` held by a live process, until `release` is called. */
+export type HeldLock = {
+	/** Kills the process holding the lock and waits for it to exit. */
+	release(): Promise<void>;
+};
+
+const heldLocks = new Set<HeldLock>();
+
+// A lock left held would leave a `sleep` running after the suite.
+afterEach(async () => {
+	for (const lock of heldLocks) await lock.release();
+});
+
+/**
+ * Writes Goal `goal`'s `running.lock` in the Project at `root` with the pid
+ * of a process this spawns, so the Goal looks taken by a live `vago run`. The
+ * test's own pid won't do: Vago treats its own pid in a lock as stale.
+ */
+export async function heldLock(root: string, goal: string): Promise<HeldLock> {
+	const holder = Bun.spawn(["sleep", "60"]);
+	await Bun.write(
+		join(root, ".vago-goals", goal, "running.lock"),
+		`${holder.pid}\n`,
+	);
+	const lock = {
+		release: async () => {
+			heldLocks.delete(lock);
+			holder.kill();
+			await holder.exited;
+		},
+	};
+	heldLocks.add(lock);
+	return lock;
 }
 
 /** What a finished `vago` child left behind. */

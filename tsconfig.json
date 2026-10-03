@@ -13,7 +13,9 @@
 		"noUncheckedIndexedAccess": true,
 		"noFallthroughCasesInSwitch": true,
 		"noImplicitOverride": true,
-		"skipLibCheck": true
+		"skipLibCheck": true,
+		"jsx": "preserve",
+		"jsxImportSource": "@opentui/solid"
 	},
-	"include": ["src", "test"]
+	"include": ["src", "test", "build.ts"]
 }

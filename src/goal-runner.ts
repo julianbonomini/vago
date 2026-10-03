@@ -23,7 +23,7 @@ import {
 	setStatus,
 	type Ticket,
 	withGoalClaimed,
-} from "./tickets.ts";
+} from "./tickets/tickets.ts";
 import { loadWorkflow, type Workflow } from "./workflow.ts";
 import { closeWorktree, openWorktree } from "./worktree.ts";
 
