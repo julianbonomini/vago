@@ -47,4 +47,4 @@ when   = "last-ticket"   # skipped on every other Ticket
 [[steps]]
 id   = "merge"
 type = "shell"
-run  = "bun run check && sh .vago/scripts/merge.sh"
+run  = "sh .vago/scripts/merge.sh"

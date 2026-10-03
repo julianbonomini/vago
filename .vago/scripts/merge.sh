@@ -29,7 +29,9 @@ git push -u origin "$goal"
 goal_file="$VAGO_PROJECT_ROOT/.vago-goals/$VAGO_GOAL/goal.md"
 kept="$(sed '/^## Runs$/,$d' "$goal_file")"
 printf '%s\n' "$kept" >"$goal_file"
-body="$(vago goal report "$VAGO_GOAL")"
+# Run from the main checkout: in the worktree, the Ticket's files could
+# change how `vago` starts, as a `bunfig.toml` did.
+body="$(cd "$VAGO_PROJECT_ROOT" && vago goal report "$VAGO_GOAL")"
 printf '%s\n\n%s\n' "$kept" "$(printf '%s\n' "$body" | sed -n '/^## Runs$/,$p')" >"$goal_file"
 if gh pr view "$goal" >/dev/null 2>&1; then
 	gh pr edit "$goal" --body "$body"
