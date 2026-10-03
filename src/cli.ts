@@ -282,6 +282,13 @@ const helpPointer = "Run `vago --help` for what each command does.";
 async function main(args: string[]): Promise<number> {
 	const { words, helpAsked, command, rest } = commandWords(args);
 	if (command === undefined) {
+		// Only a bare `vago` on a terminal opens the TUI. It's loaded here and
+		// nowhere else, so no command loads OpenTUI or needs Solid's transform.
+		if (args.length === 0 && process.stdin.isTTY && process.stdout.isTTY) {
+			const { openTui } = await import("./tui.tsx");
+			await openTui(await projectRoot(process.cwd()));
+			return 0;
+		}
 		const shown = helpAsked ? listing(words) : undefined;
 		if (shown !== undefined) {
 			console.log(shown);

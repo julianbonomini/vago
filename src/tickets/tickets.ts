@@ -1,10 +1,11 @@
 // The entry to the module that creates and owns Goal and Ticket files under
-// `.vago-goals/<goal>/`: the `goal.md` header naming the Goal's Workflow, the
-// Workflow a Ticket names in place of it, status, the `[[runs]]` history and
-// where each Run's log goes, and the lock that marks a Goal as taken by a
-// `vago run`. Only this file is imported from outside `tickets/`.
+// `.vago-goals/<goal>/`: which Goals a Project has, the `goal.md` header
+// naming the Goal's Workflow, the Workflow a Ticket names in place of it,
+// status, the `[[runs]]` history and where each Run's log goes, and the lock
+// that marks a Goal as taken by a `vago run`. Only this file is imported from
+// outside `tickets/`.
 
-import { mkdir } from "node:fs/promises";
+import { mkdir, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { HarnessSessionReport } from "../harness/registry.ts";
 import type { Step } from "../workflow.ts";
@@ -121,6 +122,27 @@ export async function createGoal(
 	await mkdir(join(folder, "tickets"), { recursive: true });
 	await Bun.write(goalFile, headedText({ workflow }, body ?? `# ${goal}\n`));
 	return goalFile;
+}
+
+/**
+ * The name of every Goal of the Project at `root`, in name order, without
+ * reading or checking any of them. None when the Project has no Goals yet.
+ * Throws an Error naming the path when `.vago-goals` isn't a folder.
+ */
+export async function listGoals(root: string): Promise<string[]> {
+	const path = join(root, goalsFolderName);
+	try {
+		const entries = await readdir(path, { withFileTypes: true });
+		return entries
+			.filter((entry) => entry.isDirectory())
+			.map((entry) => entry.name)
+			.sort();
+	} catch (error) {
+		const code = (error as NodeJS.ErrnoException).code;
+		if (code === "ENOENT") return [];
+		if (code === "ENOTDIR") throw new Error(`${path} isn't a folder`);
+		throw error;
+	}
 }
 
 /**

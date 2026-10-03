@@ -64,6 +64,18 @@ export function goalText(workflow: string, body = "# Hello\n"): string {
 	return `+++\nworkflow = "${workflow}"\n+++\n${body}`;
 }
 
+/**
+ * Makes a Project as `makeProject` does whose Goals are `names`, each with a
+ * `goal.md` naming Workflow `w`, and returns its root.
+ */
+export function projectWithGoals(names: string[]): Promise<string> {
+	return makeProject(
+		Object.fromEntries(
+			names.map((name) => [`.vago-goals/${name}/goal.md`, goalText("w")]),
+		),
+	);
+}
+
 /** What a finished `vago` child left behind. */
 export type VagoExit = {
 	exitCode: number;
