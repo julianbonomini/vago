@@ -32,6 +32,12 @@ import designModuleAposd from "../starter/skills/vago-design-module/aposd.md" wi
 import designModuleSkill from "../starter/skills/vago-design-module/SKILL.md" with {
 	type: "text",
 };
+import toGoalSkill from "../starter/skills/vago-to-goal/SKILL.md" with {
+	type: "text",
+};
+import toTicketsSkill from "../starter/skills/vago-to-tickets/SKILL.md" with {
+	type: "text",
+};
 import writeCodeSkill from "../starter/skills/vago-write-code/SKILL.md" with {
 	type: "text",
 };
@@ -61,6 +67,8 @@ const starterFiles: Record<string, string> = {
 	".claude/skills/vago-check-red-flags/SKILL.md": checkRedFlagsSkill,
 	".claude/skills/vago-design-module/SKILL.md": designModuleSkill,
 	".claude/skills/vago-design-module/aposd.md": designModuleAposd,
+	".claude/skills/vago-to-goal/SKILL.md": toGoalSkill,
+	".claude/skills/vago-to-tickets/SKILL.md": toTicketsSkill,
 	".claude/skills/vago-write-code/SKILL.md": writeCodeSkill,
 };
 

@@ -44,15 +44,18 @@ vago init
 - `prompts/`, the prompt of each agent Step.
 - `scripts/branch.sh` and `scripts/merge.sh`, the git work of the `branch` and `merge` Steps.
 
-It also puts three skills into `.claude/skills/`, where Claude Code finds them: `vago-write-code`, `vago-check-red-flags` and `vago-design-module`. They hold the design and code rules, from John Ousterhout's *A Philosophy of Software Design*, and each starter prompt names the ones its Step runs. You can use them in your own sessions too.
+It also puts five skills into `.claude/skills/`, where Claude Code finds them:
 
-Before it writes anything, it asks `Commit the Workflow? [y/N]`. Answer `y` to leave `.vago/` and the three skills for git, so everyone who clones the repo gets your Workflows. Any other answer adds `.vago/` and each skill's folder to `.git/info/exclude`, so they stay in your checkout. Anything else in `.claude/` stays as git saw it. Either way it adds `.vago-goals/`, where Goals and Tickets live, to `.git/info/exclude`.
+- `vago-write-code`, `vago-check-red-flags` and `vago-design-module` hold the design and code rules, from John Ousterhout's *A Philosophy of Software Design*. Each starter prompt names the ones its Step runs, and you can use them in your own sessions too.
+- `vago-to-goal` and `vago-to-tickets` are for you, after a planning conversation: `/vago-to-goal` writes the conversation up as a Goal, and `/vago-to-tickets` slices that Goal into Tickets. They run only when you type their name.
+
+Before it writes anything, it asks `Commit the Workflow? [y/N]`. Answer `y` to leave `.vago/` and the skills for git, so everyone who clones the repo gets your Workflows. Any other answer adds `.vago/` and each skill's folder to `.git/info/exclude`, so they stay in your checkout. Anything else in `.claude/` stays as git saw it. Either way it adds `.vago-goals/`, where Goals and Tickets live, to `.git/info/exclude`.
 
 `vago init` refuses, and changes nothing, when the directory has no `.git` or a file it would write already exists in `.vago/` or `.claude/skills/`.
 
 ### Update a Project
 
-After installing a newer `vago`, run `vago update` to bring `.vago/` and the three skills to the starter it ships:
+After installing a newer `vago`, run `vago update` to bring `.vago/` and the skills to the starter it ships:
 
 ```sh
 vago update

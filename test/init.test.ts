@@ -86,6 +86,8 @@ const privateExcludeLines = [
 	".vago/",
 	".claude/skills/vago-check-red-flags/",
 	".claude/skills/vago-design-module/",
+	".claude/skills/vago-to-goal/",
+	".claude/skills/vago-to-tickets/",
 	".claude/skills/vago-write-code/",
 	"",
 ];
