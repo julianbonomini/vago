@@ -1,7 +1,6 @@
 ## Rules and knowledge
 
-- `.vago/rules/aposd.md`: the design reference the rules come from. Read before designing a module or changing an exported interface.
-- `.vago/rules/code-style.md`: the rules for every line of code. Read before writing code.
+- The `vago-write-code`, `vago-check-red-flags` and `vago-design-module` skills in `.claude/skills/`: the code style, the red flags and module design, from *A Philosophy of Software Design*.
 - `docs/architecture.md`: modules, owners, and the rules between them. Read before writing code.
 - `CONTEXT.md`: the domain language. `docs/adr/`: the decisions behind it; read the ones your change touches.
 

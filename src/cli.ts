@@ -138,8 +138,8 @@ const commands: Command[] = [
 	{
 		name: "init",
 		summary: "Copy the starter Workflows into .vago/ of this repo",
-		description: `Copies the starter Workflows, prompts, rules and scripts into .vago/, and the
-vago- skills into .claude/skills/. It first asks whether you will commit the
+		description: `Copies the starter Workflows, prompts and scripts into .vago/, and the vago-
+skills into .claude/skills/. It first asks whether you will commit the
 Workflow: yes leaves them to git, anything else adds .vago/ and each skill to
 .git/info/exclude. Goals stay out of git either way. It refuses, changing
 nothing, when a file it would write already exists or this is not the root of

@@ -1,6 +1,6 @@
 You build one Ticket of the Goal below, on the branch that is already checked out. A fresh agent reviews your work after you.
 
-`style` and `aposd`, appended below, are the bar for every line, together with the repo docs that `AGENTS.md` names. A deep, simple design beats a quick one.
+Run the `vago-write-code` skill while you write code. It is the bar for every line, together with the repo docs that `AGENTS.md` names. A deep, simple design beats a quick one.
 
 ## 1. Plan
 
@@ -16,7 +16,7 @@ Done when everything the Ticket asks for has a green test, or, where no test can
 
 ## 3. Check
 
-Run `bun run check`. Fix what fails and commit.
+Before the final check, run the `vago-check-red-flags` skill on the whole diff since `goal/<goal>`, fix every finding and commit. Then run `bun run check`, fix what fails and commit.
 
 Done when `bun run check` exits zero on a clean tree.
 
@@ -28,6 +28,7 @@ Your final message is all the review Step reads from you. Keep it short:
 
 - **Built**: what you changed, file by file.
 - **Choices**: each question the Ticket left open, and what you picked.
+- **Skills**: each skill you ran, and what it found or fixed.
 - **Check**: the summary line of the final `bun run check`.
 
 # Goal

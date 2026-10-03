@@ -23,8 +23,6 @@ run  = "sh .vago/scripts/branch.sh"
 id     = "implement"
 type   = "agent"
 prompt = "prompts/small-implement.md"
-include.aposd = ".vago/rules/aposd.md"
-include.style = ".vago/rules/code-style.md"
 
 [[steps]]
 id      = "check"
@@ -36,8 +34,6 @@ on_fail = "continue"   # review reads a failed check and fixes it
 id     = "review"
 type   = "agent"
 prompt = "prompts/small-review.md"
-include.aposd = ".vago/rules/aposd.md"
-include.style = ".vago/rules/code-style.md"
 
 [[steps]]
 id   = "merge"

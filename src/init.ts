@@ -20,8 +20,6 @@ import smallImplementPrompt from "../starter/prompts/small-implement.md" with {
 import smallReviewPrompt from "../starter/prompts/small-review.md" with {
 	type: "text",
 };
-import aposd from "../starter/rules/aposd.md" with { type: "text" };
-import codeStyle from "../starter/rules/code-style.md" with { type: "text" };
 import branchScript from "../starter/scripts/branch.sh" with { type: "text" };
 import mergeScript from "../starter/scripts/merge.sh" with { type: "text" };
 import checkRedFlagsSkill from "../starter/skills/vago-check-red-flags/SKILL.md" with {
@@ -50,8 +48,6 @@ import { goalsFolderName } from "./tickets.ts";
 const starterFiles: Record<string, string> = {
 	".vago/workflows/try-hard.toml": tryHardWorkflow,
 	".vago/workflows/small.toml": smallWorkflow,
-	".vago/rules/aposd.md": aposd,
-	".vago/rules/code-style.md": codeStyle,
 	".vago/prompts/design.md": designPrompt,
 	".vago/prompts/product.md": productPrompt,
 	".vago/prompts/architecture.md": architecturePrompt,

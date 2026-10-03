@@ -42,10 +42,9 @@ vago init
 
 - `workflows/small.toml` and `workflows/try-hard.toml`, the two starter Workflows.
 - `prompts/`, the prompt of each agent Step.
-- `rules/aposd.md` and `rules/code-style.md`, the design and code rules the agent Steps work to.
 - `scripts/branch.sh` and `scripts/merge.sh`, the git work of the `branch` and `merge` Steps.
 
-It also puts three skills into `.claude/skills/`, where Claude Code finds them: `vago-write-code`, `vago-check-red-flags` and `vago-design-module`. You can use them in your own sessions too.
+It also puts three skills into `.claude/skills/`, where Claude Code finds them: `vago-write-code`, `vago-check-red-flags` and `vago-design-module`. They hold the design and code rules, from John Ousterhout's *A Philosophy of Software Design*, and each starter prompt names the ones its Step runs. You can use them in your own sessions too.
 
 Before it writes anything, it asks `Commit the Workflow? [y/N]`. Answer `y` to leave `.vago/` and the three skills for git, so everyone who clones the repo gets your Workflows. Any other answer adds `.vago/` and each skill's folder to `.git/info/exclude`, so they stay in your checkout. Anything else in `.claude/` stays as git saw it. Either way it adds `.vago-goals/`, where Goals and Tickets live, to `.git/info/exclude`. Since Goals sit outside `.vago/`, you can delete `.vago/` and the three skill folders and run `vago init` again for a fresh starter without losing a Goal.
 
@@ -58,14 +57,14 @@ Both starter Workflows run each Ticket through these Steps, in order, with Claud
 | Workflow | Steps | Pick it when |
 |---|---|---|
 | `small` | branch, implement, check, review, merge | The Tickets are small and already clear. One agent builds each Ticket and a fresh one reviews it. |
-| `try-hard` | branch, design, product, architecture, implement, check, review, merge | A Ticket leaves design questions open. One agent proposes two or three designs, a second checks them against the Ticket, a third picks one and fixes it to the rules, then implement builds it and review checks it. It takes three more agent Runs per Ticket than `small`. |
+| `try-hard` | branch, design, product, architecture, implement, check, review, merge | A Ticket leaves design questions open. One agent proposes two or three designs, a second checks them against the Ticket, a third picks one and fixes it until it passes the skills, then implement builds it and review checks it. It takes three more agent Runs per Ticket than `small`. |
 
 The starter files are yours to change, and a few of them assume things about the Project that you may need to change first:
 
 - The `check` and `merge` Steps run `bun run check`, and the prompts tell agents to make it pass. In a Project without that script, change the command in `.vago/workflows/*.toml` and the prompts that name it.
 - `branch.sh` cuts the Goal's branch from `main`, and `merge.sh` pushes to `origin` and opens the PR against `main`.
 - The prompts send agents to the docs that the Project's `AGENTS.md` names.
-- `rules/code-style.md` is written for TypeScript on Bun.
+- The `vago-write-code` skill is written for TypeScript on Bun.
 
 ## Write a Goal and its Tickets
 
