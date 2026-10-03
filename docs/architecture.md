@@ -10,7 +10,7 @@ src/workflow.ts             src/step-runner.ts      src/init.ts
 src/tickets.ts
 src/harness/registry.ts     src/harness/claude-code.ts
 src/starter-imports.d.ts    types for init.ts's text imports of the starter
-starter/                    the starter Workflows embedded in the binary
+starter/                    the starter Workflows and skills embedded in the binary
 .vago/                      Vago's own Workflow: the starter plus Vago's docs as includes
 .vago-goals/                Goals and Tickets, untracked and kept apart from the .vago/ config
 test/                       CLI tests, the fake `claude`, recorded fixtures, a fixed Workflow
@@ -28,7 +28,7 @@ One file per module. A module becomes a folder only when it outgrows about 400 l
 | `goal-runner.ts` | Creating a Goal with the Workflow it names, refused when `vago run` would refuse it; the main loop: lost and stuck handling, picking Tickets, running Steps in order, marking `done` | The order of a Goal's lifecycle |
 | `step-runner.ts` | Running one Step on a Ticket as one Run: its `[[runs]]` entry, its Step lines, its prompt, its child process and its log | Spawning, process groups, signals, the idle timer, writing the log, reading the Harness stream |
 | `progress.ts` | Everything printed during a run: a line naming each Ticket as it starts with its Step lines under it, the `stuck` message, the Goal summary table. Also the Markdown Goal report `vago goal report` prints | Line formats, column widths, colour and when stdout gets it, durations, cost formatting |
-| `init.ts` | `vago init`: copying the starter, every Workflow included, refusing when a file it would write is already in `.vago/`, asking whether the Workflow will be committed, `.git/info/exclude` | The starter's file list and how it's embedded, exclude lines |
+| `init.ts` | `vago init`: copying the starter, every Workflow included, into `.vago/` and its `vago-` skills into `.claude/skills/`, refusing when a file it would write already exists, asking whether the Workflow will be committed, `.git/info/exclude` | The starter's file list and how it's embedded, where each file goes in the Project, exclude lines |
 | `harness/registry.ts` | The `Harness` type and the map from `harness` name to module | Which Harnesses exist |
 | `harness/claude-code.ts` | Claude Code's command, stream reading and resume hint | Claude Code's flags and `stream-json` event shapes |
 

@@ -17,11 +17,17 @@ async function filesIn(dir: string): Promise<string[]> {
 	return paths.sort();
 }
 
-// The starter files init copies into `.vago/`.
-// TODO 02: init installs `skills/` into `.claude/skills/`; check them there.
-async function starterVagoFiles(): Promise<string[]> {
-	const paths = await filesIn(starter);
-	return paths.filter((path) => !path.startsWith("skills/"));
+// Each starter file's path in a Project after init: the skills go where
+// Claude Code finds them, everything else into `.vago/`.
+async function starterProjectFiles(): Promise<Map<string, string>> {
+	const files = new Map<string, string>();
+	for (const path of await filesIn(starter)) {
+		const installed = path.startsWith("skills/")
+			? `.claude/${path}`
+			: `.vago/${path}`;
+		files.set(path, installed);
+	}
+	return files;
 }
 
 // The fixture Workflow's files, keyed by their path in a Project.
@@ -56,17 +62,33 @@ function untrackedFiles(root: string): string[] {
 		.map((line) => line.replace(/^\?\? /, ""));
 }
 
-// Fails unless `.vago/` under `root` holds exactly the starter's files, byte
-// for byte.
+// Fails unless `.vago/` and `.claude/skills/` under `root` hold exactly the
+// starter's files, byte for byte.
 async function expectStarterIn(root: string): Promise<void> {
-	const starterFiles = await starterVagoFiles();
-	expect(await filesIn(join(root, ".vago"))).toEqual(starterFiles);
-	for (const path of starterFiles) {
-		expect(await Bun.file(join(root, ".vago", path)).text()).toBe(
+	const starterFiles = await starterProjectFiles();
+	const installed = [
+		...(await filesIn(join(root, ".vago"))).map((path) => `.vago/${path}`),
+		...(await filesIn(join(root, ".claude/skills"))).map(
+			(path) => `.claude/skills/${path}`,
+		),
+	];
+	expect(installed.sort()).toEqual([...starterFiles.values()].sort());
+	for (const [path, installedPath] of starterFiles) {
+		expect(await Bun.file(join(root, installedPath)).text()).toBe(
 			await Bun.file(join(starter, path)).text(),
 		);
 	}
 }
+
+// `.git/info/exclude` after init in a fresh repo, answering don't commit.
+const privateExcludeLines = [
+	".vago-goals/",
+	".vago/",
+	".claude/skills/vago-check-red-flags/",
+	".claude/skills/vago-design-module/",
+	".claude/skills/vago-write-code/",
+	"",
+];
 
 async function excludeLines(root: string): Promise<string[]> {
 	const exclude = await Bun.file(join(root, ".git/info/exclude")).text();
@@ -117,8 +139,11 @@ test("the reinstalled binary's init copies the same starter as the source", asyn
 	await expectStarterIn(root);
 });
 
-test("answering commit lets git see the Workflow but never the Goals", async () => {
-	const root = await makeProject({ ".gitignore": "node_modules/\n" });
+test("answering commit lets git see the Workflow and skills but never the Goals", async () => {
+	const root = await makeProject({
+		".gitignore": "node_modules/\n",
+		".claude/settings.json": "{}\n",
+	});
 
 	const init = await runVago(root, ["init"], {}, "y\n");
 
@@ -129,26 +154,28 @@ test("answering commit lets git see the Workflow but never the Goals", async () 
 		"Goals and Tickets in .vago-goals/ stay out of git",
 	);
 	await runVago(root, ["goal", "new", "hello", "--workflow", "small"]);
-	const starterFiles = await starterVagoFiles();
-	expect(untrackedFiles(root)).toEqual([
-		".gitignore",
-		...starterFiles.map((path) => `.vago/${path}`),
-	]);
+	const starterFiles = await starterProjectFiles();
+	expect(untrackedFiles(root)).toEqual(
+		[".claude/settings.json", ".gitignore", ...starterFiles.values()].sort(),
+	);
 	expect(await excludeLines(root)).toEqual([".vago-goals/", ""]);
 	expect(await Bun.file(join(root, ".gitignore")).text()).toBe(
 		"node_modules/\n",
 	);
 });
 
-test("answering don't commit hides all of .vago/ from git", async () => {
-	const root = await makeProject({ ".gitignore": "node_modules/\n" });
+test("answering don't commit hides all of .vago/ and the skills from git", async () => {
+	const root = await makeProject({
+		".gitignore": "node_modules/\n",
+		".claude/settings.json": "{}\n",
+	});
 
 	const init = await runVago(root, ["init"], {}, "n\n");
 
 	expect(init.exitCode).toBe(0);
 	await runVago(root, ["goal", "new", "hello", "--workflow", "small"]);
-	expect(untrackedFiles(root)).toEqual([".gitignore"]);
-	expect(await excludeLines(root)).toEqual([".vago-goals/", ".vago/", ""]);
+	expect(untrackedFiles(root)).toEqual([".claude/settings.json", ".gitignore"]);
+	expect(await excludeLines(root)).toEqual(privateExcludeLines);
 	expect(await Bun.file(join(root, ".gitignore")).text()).toBe(
 		"node_modules/\n",
 	);
@@ -184,6 +211,28 @@ test("init refuses a Project it already set up and changes nothing", async () =>
 	expect(await Bun.file(join(root, ".vago/prompts/review.md")).text()).toBe(
 		"Review it.\n",
 	);
+	expect(await Bun.file(join(root, ".git/info/exclude")).text()).toBe(exclude);
+});
+
+test("init refuses a Project that already has a vago- skill and changes nothing", async () => {
+	const root = await makeProject({
+		".claude/skills/vago-write-code/SKILL.md": "# My own\n",
+	});
+	const exclude = await Bun.file(join(root, ".git/info/exclude")).text();
+
+	const init = await runVago(root, ["init"], {}, "n\n");
+
+	expect(init.exitCode).not.toBe(0);
+	expect(init.stderr).toMatch(
+		/\S*\.claude\/skills\/vago-write-code\/SKILL\.md already exists/,
+	);
+	expect(init.stdout).toBe("");
+	expect(
+		await Bun.file(
+			join(root, ".claude/skills/vago-write-code/SKILL.md"),
+		).text(),
+	).toBe("# My own\n");
+	expect(existsSync(join(root, ".vago"))).toBe(false);
 	expect(await Bun.file(join(root, ".git/info/exclude")).text()).toBe(exclude);
 });
 
@@ -231,7 +280,7 @@ test("a Goal goes through a four-Step Workflow on the fake claude to done", asyn
 	expect(calls[1]?.stdin).toMatch(/exit code [1-9]\d*\n/);
 });
 
-test("deleting .vago/ and running init again keeps every Goal, and vago run runs it", async () => {
+test("deleting .vago/ and the skills and running init again keeps every Goal, and vago run runs it", async () => {
 	const root = await makeProject({});
 	const claude = await makeFakeClaude();
 	await runVago(root, ["init"], {}, "n\n");
@@ -244,6 +293,7 @@ test("deleting .vago/ and running init again keeps every Goal, and vago run runs
 	).text();
 
 	await rm(join(root, ".vago"), { recursive: true });
+	await rm(join(root, ".claude/skills"), { recursive: true });
 	const init = await runVago(root, ["init"], {}, "n\n");
 
 	expect(init.exitCode).toBe(0);
@@ -251,7 +301,7 @@ test("deleting .vago/ and running init again keeps every Goal, and vago run runs
 	expect(
 		await Bun.file(join(root, ".vago-goals/hello/tickets/01-greet.md")).text(),
 	).toBe(ticketText);
-	expect(await excludeLines(root)).toEqual([".vago-goals/", ".vago/", ""]);
+	expect(await excludeLines(root)).toEqual(privateExcludeLines);
 
 	await writeFiles(root, await workflowFixture());
 	const run = await runVago(root, ["run", "hello"], claude.env);

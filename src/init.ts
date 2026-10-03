@@ -1,6 +1,7 @@
 // `vago init`: puts the starter, embedded in the binary with every Workflow,
-// into a Project's `.vago/`. Hides the starter's file list and the lines it
-// adds to `.git/info/exclude`.
+// into a Project's `.vago/` and its `vago-` skills into `.claude/skills/`.
+// Hides the starter's file list, where each file goes, and the lines it adds
+// to `.git/info/exclude`.
 
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
@@ -23,6 +24,18 @@ import aposd from "../starter/rules/aposd.md" with { type: "text" };
 import codeStyle from "../starter/rules/code-style.md" with { type: "text" };
 import branchScript from "../starter/scripts/branch.sh" with { type: "text" };
 import mergeScript from "../starter/scripts/merge.sh" with { type: "text" };
+import checkRedFlagsSkill from "../starter/skills/vago-check-red-flags/SKILL.md" with {
+	type: "text",
+};
+import designModuleAposd from "../starter/skills/vago-design-module/aposd.md" with {
+	type: "text",
+};
+import designModuleSkill from "../starter/skills/vago-design-module/SKILL.md" with {
+	type: "text",
+};
+import writeCodeSkill from "../starter/skills/vago-write-code/SKILL.md" with {
+	type: "text",
+};
 import smallWorkflow from "../starter/workflows/small.toml" with {
 	type: "text",
 };
@@ -31,48 +44,64 @@ import tryHardWorkflow from "../starter/workflows/try-hard.toml" with {
 };
 import { goalsFolderName } from "./tickets.ts";
 
-// Each starter file's text, by its path under `starter/`, which is its path
-// under `.vago/` too.
+// Each starter file's text, by its path in the Project. A file under
+// `starter/skills/` goes under `.claude/skills/`, where Claude Code finds it;
+// every other one keeps its `starter/` path under `.vago/`.
 const starterFiles: Record<string, string> = {
-	"workflows/try-hard.toml": tryHardWorkflow,
-	"workflows/small.toml": smallWorkflow,
-	"rules/aposd.md": aposd,
-	"rules/code-style.md": codeStyle,
-	"prompts/design.md": designPrompt,
-	"prompts/product.md": productPrompt,
-	"prompts/architecture.md": architecturePrompt,
-	"prompts/implement.md": implementPrompt,
-	"prompts/review.md": reviewPrompt,
-	"prompts/small-implement.md": smallImplementPrompt,
-	"prompts/small-review.md": smallReviewPrompt,
-	"scripts/branch.sh": branchScript,
-	"scripts/merge.sh": mergeScript,
+	".vago/workflows/try-hard.toml": tryHardWorkflow,
+	".vago/workflows/small.toml": smallWorkflow,
+	".vago/rules/aposd.md": aposd,
+	".vago/rules/code-style.md": codeStyle,
+	".vago/prompts/design.md": designPrompt,
+	".vago/prompts/product.md": productPrompt,
+	".vago/prompts/architecture.md": architecturePrompt,
+	".vago/prompts/implement.md": implementPrompt,
+	".vago/prompts/review.md": reviewPrompt,
+	".vago/prompts/small-implement.md": smallImplementPrompt,
+	".vago/prompts/small-review.md": smallReviewPrompt,
+	".vago/scripts/branch.sh": branchScript,
+	".vago/scripts/merge.sh": mergeScript,
+	".claude/skills/vago-check-red-flags/SKILL.md": checkRedFlagsSkill,
+	".claude/skills/vago-design-module/SKILL.md": designModuleSkill,
+	".claude/skills/vago-design-module/aposd.md": designModuleAposd,
+	".claude/skills/vago-write-code/SKILL.md": writeCodeSkill,
 };
 
+// The folders holding `starterFiles`, which `.git/info/exclude` lists when the
+// Workflow isn't committed. Each skill gets its own line, found by the
+// `SKILL.md` every skill has, so the rest of `.claude/` stays as git saw it.
 // The trailing slash makes git match only a directory.
+const workflowExcludeLines = [
+	".vago/",
+	...Object.keys(starterFiles)
+		.filter((path) => path.endsWith("/SKILL.md"))
+		.map((path) => path.slice(0, -"SKILL.md".length)),
+];
+
 const goalsExcludeLine = `${goalsFolderName}/`;
 
-const commitExplanation = `Committing the Workflow in .vago/ shares it with everyone who clones this repo.
-Not committing it adds all of .vago/ to .git/info/exclude, so it stays in this checkout.
+const commitExplanation = `Committing the Workflow in .vago/ and the vago- skills in .claude/skills/
+shares them with everyone who clones this repo. Not committing them adds .vago/
+and each vago- skill to .git/info/exclude, so they stay in this checkout.
 Goals and Tickets in ${goalsExcludeLine} stay out of git either way.`;
 
 /**
  * Asks on stdin whether the Workflow will be committed, then copies the
- * starter, every Workflow included, into `.vago/` of the Project at `root`.
- * `.git/info/exclude` gets the Goals folder, and `.vago/` unless the
- * answer is yes. An empty answer, or no stdin, counts as no. Throws an Error
- * naming the problem, before asking or changing anything, when a file it
- * would write already exists or `root` has no `.git` directory.
+ * starter, every Workflow included, into `.vago/` of the Project at `root`,
+ * and its `vago-` skills into `.claude/skills/`. `.git/info/exclude` gets the
+ * Goals folder, and `.vago/` and each skill's folder unless the answer is
+ * yes. An empty answer, or no stdin, counts as no. Throws an Error naming the
+ * problem, before asking or changing anything, when a file it would write
+ * already exists or `root` has no `.git` directory.
  */
 export async function initProject(root: string): Promise<void> {
-	const vago = join(root, ".vago");
 	// Every file, not only the Workflows: a Project laid out before
 	// `.vago/workflows/` has no Workflow there but may hold tuned prompts.
 	for (const path of Object.keys(starterFiles)) {
-		const starterPath = join(vago, path);
-		if (await Bun.file(starterPath).exists()) {
+		const projectPath = join(root, path);
+		if (await Bun.file(projectPath).exists()) {
 			throw new Error(
-				`${starterPath} already exists, and vago init never replaces a file in .vago/`,
+				`${projectPath} already exists, and vago init never replaces a file`,
 			);
 		}
 	}
@@ -91,13 +120,13 @@ export async function initProject(root: string): Promise<void> {
 	const answer = prompt("Commit the Workflow? [y/N]") ?? "";
 	const commitWorkflow = /^y(es)?$/i.test(answer.trim());
 	for (const [path, text] of Object.entries(starterFiles)) {
-		await Bun.write(join(vago, path), text);
+		await Bun.write(join(root, path), text);
 	}
 	const exclude = Bun.file(join(git, "info", "exclude"));
 	const excluded = (await exclude.exists()) ? await exclude.text() : "";
 	const wantedLines = commitWorkflow
 		? [goalsExcludeLine]
-		: [goalsExcludeLine, ".vago/"];
+		: [goalsExcludeLine, ...workflowExcludeLines];
 	const missing = wantedLines.filter(
 		(line) => !excluded.split("\n").includes(line),
 	);

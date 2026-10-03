@@ -45,9 +45,11 @@ vago init
 - `rules/aposd.md` and `rules/code-style.md`, the design and code rules the agent Steps work to.
 - `scripts/branch.sh` and `scripts/merge.sh`, the git work of the `branch` and `merge` Steps.
 
-Before it writes anything, it asks `Commit the Workflow? [y/N]`. Answer `y` to leave `.vago/` for git, so everyone who clones the repo gets your Workflows. Any other answer adds `.vago/` to `.git/info/exclude`, so it stays in your checkout. Either way it adds `.vago-goals/`, where Goals and Tickets live, to `.git/info/exclude`. Since Goals sit outside `.vago/`, you can delete `.vago/` and run `vago init` again for a fresh starter without losing a Goal.
+It also puts three skills into `.claude/skills/`, where Claude Code finds them: `vago-write-code`, `vago-check-red-flags` and `vago-design-module`. You can use them in your own sessions too.
 
-`vago init` refuses, and changes nothing, when the directory has no `.git` or a file it would write already exists in `.vago/`.
+Before it writes anything, it asks `Commit the Workflow? [y/N]`. Answer `y` to leave `.vago/` and the three skills for git, so everyone who clones the repo gets your Workflows. Any other answer adds `.vago/` and each skill's folder to `.git/info/exclude`, so they stay in your checkout. Anything else in `.claude/` stays as git saw it. Either way it adds `.vago-goals/`, where Goals and Tickets live, to `.git/info/exclude`. Since Goals sit outside `.vago/`, you can delete `.vago/` and the three skill folders and run `vago init` again for a fresh starter without losing a Goal.
+
+`vago init` refuses, and changes nothing, when the directory has no `.git` or a file it would write already exists in `.vago/` or `.claude/skills/`.
 
 ### Pick a Workflow
 
