@@ -21,7 +21,7 @@ Items marked _(grill)_ have design questions to settle before writing Tickets.
 - [-] workflows to use skills instead of docs. for example implementer and design to use custom made skills for red flags and code style. maybe even hooks
 - [x] @ me in PRs when they are ready for review + a label that they are ready for me to review them
 - [ ] resiliance is bad, when something fails everything halts for now
-- [-] figure a way to run goals in paralel, probably worktrees
+- [x] figure a way to run goals in paralel, probably worktrees
 - [ ] planner skill, ships with punt. basically mimics grilling or grill-with-docs and ends up in to-tickets, (similar to mattpocock) but the result is in punt goals and tickets
 - [-] vago to re init without destroying config (vago re-init or vago update)
 - [ ] TUI - needs grilling + prototyping
@@ -30,7 +30,8 @@ Items marked _(grill)_ have design questions to settle before writing Tickets.
 - [ ] A cheaper way to copy big untracked folders (`node_modules`) into a Goal's worktree, if copying everything gets slow.
 - [ ] Vago owns pushing the Goal's branch and opening its PR, instead of the Workflow's `merge.sh`. _(grill)_
 - [ ] One command that runs several Goals at once.
-- [-] Refuse to run a Goal that's already running in another terminal, if the worktree Goal didn't ship it.
+- [x] Refuse to run a Goal that's already running in another terminal, if the worktree Goal didn't ship it.
+- [ ] Split tickets.ts into a folder; it's past 400 lines.
 
 
 

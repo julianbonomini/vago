@@ -1,13 +1,16 @@
 # The small Workflow, for a Goal whose Tickets are small and already clear:
 # one agent builds each Ticket and a fresh one reviews it. Pick it with
 # `vago goal new <goal> --workflow small`. Prompt paths resolve from .vago/,
-# include and shell paths from the repo root.
+# include paths from the repo root, and shell commands run in the Goal's
+# worktree.
 #
-# Git: each Goal has a branch, goal/<goal>, cut from main by its first Ticket.
-# Each Ticket is built on <goal>/<ticket>, cut from the Goal's branch, and
-# squash-merged back as one commit. The human merges the Goal's PR to main.
+# Git: Vago runs each Goal in its own worktree on the Goal's branch,
+# vago/<goal>, which Vago cuts from the repo's default branch and owns.
+# This Workflow builds each Ticket on <goal>/<ticket>, cut from vago/<goal>,
+# and squash-merges it back as one commit. The human merges the Goal's PR.
 # Shell Steps get the names in $VAGO_GOAL and $VAGO_TICKET, and
-# $VAGO_LAST_TICKET is true when every other Ticket of the Goal is done.
+# $VAGO_LAST_TICKET is true when every other Ticket of the Goal is done, and
+# $VAGO_PROJECT_ROOT is the main checkout's path.
 
 harness = "claude-code"
 model   = "claude-opus-5-5"

@@ -75,7 +75,7 @@ Both starter Workflows run each Ticket through these Steps, in order, with Claud
 The starter files are yours to change, and a few of them assume things about the Project that you may need to change first:
 
 - The `check` and `merge` Steps run `bun run check`, and the prompts tell agents to make it pass. In a Project without that script, change the command in `.vago/workflows/*.toml` and the prompts that name it.
-- `branch.sh` cuts the Goal's branch from `main`, and `merge.sh` pushes to `origin` and opens the PR against `main`.
+- `merge.sh` pushes the Goal's branch to `origin` and opens its PR with `gh`, against the repo's default branch.
 - The prompts send agents to the docs that the Project's `AGENTS.md` names.
 
 ## Write a Goal and its Tickets
@@ -119,9 +119,9 @@ vago run search
 
 `vago run` takes the lowest-numbered Ticket that is `ready` and has every blocker `done`, runs it through each Step of the Goal's Workflow, and moves on to the next one, until no Ticket is ready or one goes stuck. With the starter Workflows, each Ticket goes like this:
 
-1. `branch` cuts `goal/search` from `main` if it doesn't exist yet, then switches to a fresh `search/01-index` branch cut from it. It fails if the checkout has uncommitted changes.
+1. `branch` switches the Goal's worktree to a fresh `search/01-index` branch cut from `vago/search`, the Goal's branch, which Vago cut from the repo's default branch. It fails if the worktree has uncommitted changes.
 2. The agent Steps build and review the Ticket on that branch and commit there. `check` runs between them; when it fails, the Ticket goes on, and review reads the failure and fixes it.
-3. `merge` runs `bun run check`, squash-merges the Ticket's branch into `goal/search` as one commit, deletes the Ticket's branch, pushes `goal/search`, and creates or updates its PR to `main`. The PR description is the output of `vago goal report search`, rewritten after every Ticket. After the Goal's last Ticket, `merge` also labels the PR `ready-for-review` and comments on it mentioning you, the account `gh` is logged in as, so GitHub notifies you. A Goal that ends with a stuck Ticket gets neither.
+3. `merge` runs `bun run check`, squash-merges the Ticket's branch into `vago/search` as one commit, deletes the Ticket's branch, pushes `vago/search`, and creates or updates its PR to the repo's default branch. The PR description is the output of `vago goal report search`, rewritten after every Ticket. After the Goal's last Ticket, `merge` also labels the PR `ready-for-review` and comments on it mentioning you, the account `gh` is logged in as, so GitHub notifies you. A Goal that ends with a stuck Ticket gets neither.
 
 A shell Step gets the Goal's and Ticket's names in `$VAGO_GOAL` and `$VAGO_TICKET`, and `$VAGO_LAST_TICKET` is `true` when every other Ticket of the Goal is `done`, `false` otherwise.
 
@@ -167,6 +167,6 @@ To recover:
 3. Reset the Ticket with `vago ticket reset search 02`. Its status goes back to `ready`; its Runs stay in the header.
 4. Run `vago run search` again.
 
-A reset Ticket starts over: `branch` cuts its branch again from `goal/search`, so commits left on the old `search/02-ranking` branch are dropped. Tickets already merged into `goal/search` keep their work.
+A reset Ticket starts over: `branch` cuts its branch again from `vago/search`, so commits left on the old `search/02-ranking` branch are dropped. Tickets already merged into `vago/search` keep their work.
 
 While any Ticket of the Goal is stuck, `vago run` runs nothing and lists the reset command for each stuck one. A Ticket left `running` by a `vago run` that crashed or was killed goes stuck on the next run, with its open Run ended `lost`, because the checkout may hold that Run's partial work.

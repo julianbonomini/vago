@@ -1,6 +1,6 @@
-// Runs one Step on a Ticket as one Run: the only module that spawns. Hides
-// how the Run is recorded and announced, how a Step's command is spawned, how
-// a Harness's stream is read and how output reaches the log.
+// Runs one Step on a Ticket as one Run: the only module that spawns a Step's
+// process. Hides how the Run is recorded and announced, how a Step's command
+// is spawned, how a Harness's stream is read and how output reaches the log.
 
 import { closeSync, openSync, writeSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
@@ -49,20 +49,24 @@ export type FinishedRun = {
 };
 
 /**
- * Runs `step` on `ticket` in the repo root and waits for it to end. The Run
- * gets a `[[runs]]` entry before it starts and its end filled in after, a
+ * Runs `step` on `ticket` with `worktree`, the Goal's worktree as an
+ * absolute path, as the working directory of its command or Harness session,
+ * and waits for it to end. The
+ * Run gets a `[[runs]]` entry before it starts and its end filled in after, a
  * line on stdout at each, and a log of everything it wrote. An agent Step's
  * prompt reads `stepOutputs`, the outputs of the Steps already run on this
  * Ticket by Step id. A shell Step's command gets the Goal's and Ticket's
  * names in `VAGO_GOAL` and `VAGO_TICKET`, like `hello` and `01-say-hello`,
  * and `VAGO_LAST_TICKET`, `true` when every other Ticket of the Goal is
- * `done` and `false` otherwise.
+ * `done` and `false` otherwise. A shell Step's command also gets
+ * `VAGO_PROJECT_ROOT`, the main checkout's path.
  * SIGINT or SIGTERM while the Step runs kills every process it started
  * and ends the Run `interrupted`, instead of ending `vago`.
  */
 export async function runStep(
 	step: Step,
 	ticket: Ticket,
+	worktree: string,
 	stepOutputs: ReadonlyMap<string, string>,
 ): Promise<FinishedRun> {
 	const started = new Date();
@@ -87,6 +91,7 @@ export async function runStep(
 			({ outcome, session, resumeHint } = await runAgent(
 				step,
 				ticket,
+				worktree,
 				stepOutputs,
 				fd,
 				interrupt.signal,
@@ -101,12 +106,15 @@ export async function runStep(
 				(other) => other.ticket.name === ticket.name || other.status === "done",
 			);
 			const child = Bun.spawn(["sh", "-c", step.run], {
-				cwd: ticket.root,
+				cwd: worktree,
 				env: {
 					...process.env,
 					VAGO_GOAL: ticket.goal,
 					VAGO_TICKET: ticket.name,
 					VAGO_LAST_TICKET: String(lastTicket),
+					// The main checkout, for example to reach `.vago-goals/`, which
+					// the Goal's worktree doesn't hold.
+					VAGO_PROJECT_ROOT: ticket.root,
 				},
 				stdin: "ignore",
 				stdout: fd,
@@ -137,6 +145,7 @@ export async function runStep(
 async function runAgent(
 	step: AgentStep,
 	ticket: Ticket,
+	worktree: string,
 	stepOutputs: ReadonlyMap<string, string>,
 	fd: number,
 	interrupt: AbortSignal,
@@ -153,7 +162,7 @@ async function runAgent(
 	const harness = findHarness(step.harness);
 	const command = harness.command(step.model, step.args);
 	const child = Bun.spawn(command, {
-		cwd: ticket.root,
+		cwd: worktree,
 		stdin: new Blob([prompt]),
 		stdout: "pipe",
 		stderr: fd,

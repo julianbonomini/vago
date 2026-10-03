@@ -211,23 +211,6 @@ test("starter prompts name their skills and carry none of the rules", async () =
 	for (const [workflow, stepSkills] of Object.entries(starterStepSkills)) {
 		const root = await makeProject({});
 		await runVago(root, ["init"], {}, "n\n");
-		// The branch Step cuts the Goal's branch from a committed main.
-		Bun.spawnSync(
-			[
-				"git",
-				"-c",
-				"user.name=t",
-				"-c",
-				"user.email=t@t",
-				"commit",
-				"--quiet",
-				"--allow-empty",
-				"-m",
-				"start",
-			],
-			{ cwd: root },
-		);
-		Bun.spawnSync(["git", "branch", "-M", "main"], { cwd: root });
 		await runVago(root, ["goal", "new", "hello", "--workflow", workflow]);
 		await runVago(root, ["ticket", "add", "hello", "greet"]);
 		const claude = await makeFakeClaude();

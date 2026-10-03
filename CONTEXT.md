@@ -47,3 +47,7 @@ _Avoid_: checkpoint, approval step
 **Harness**:
 The coding agent that does the work on a Ticket, such as Claude Code or Codex; Vago is agnostic to which.
 _Avoid_: runtime, worker, droid
+
+**Worktree**:
+A Goal's own checkout of the Project, outside it, on branch `vago/<goal>`, where the Goal's Steps run. Vago removes it once the Goal is done and nothing in it would be lost; the branch stays.
+_Avoid_: workspace, sandbox

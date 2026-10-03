@@ -5,6 +5,7 @@ import {
 } from "./fake-claude.ts";
 import {
 	goalText,
+	goalWorktree,
 	makeProject,
 	runVago,
 	runVagoInTerminal,
@@ -49,6 +50,7 @@ test("piped, each Ticket's name heads its indented Step lines, and the summary i
 	const result = await runVago(root, ["run", "hello"]);
 
 	expect(steady(result.stdout)).toBe(`\
+Worktree ${await goalWorktree(root, "hello")}
 01-greet
   2026-10-02T10:00:00Z                  greet started
   2026-10-02T10:00:00Z    1.0s          greet ok
@@ -106,14 +108,16 @@ run  = "true"
 
 	const result = await runVago(root, ["run", "hello"]);
 
-	expect(steady(result.stdout)).toEndWith(`
+	// Only the line about the Goal's worktree follows the summary.
+	expect(steady(result.stdout)).toContain(`
 hello: 3 of 3 Tickets done
 Ticket    Status  Runs   Took   Cost
 01-greet  done       1  5m30s  $1.25
 02-wave   done       1  2m00s  $0.50
 03-later  done       1   1.0s
 Total                3  7m30s  $1.75
-`);
+Kept worktree `);
+	expect(result.stdout).toEndWith(": vago/hello has commits not pushed\n");
 });
 
 test("a long outcome pushes no column of the Step lines", async () => {
@@ -164,11 +168,12 @@ test("in a terminal, start lines are dimmed, ok is green, and a failed Step and 
 
 	// Each line as the terminal shows it, with the escape codes spelled out.
 	const lines = printed.replaceAll("\x1b", "ESC").split("\r\n");
-	expect(lines[0]).toBe("03-fail");
-	expect(lines[1]).toMatch(/^ESC\[2m {2}\S+ .*greet startedESC\[22m$/);
-	expect(lines[2]).toEndWith("greet ESC[32mokESC[39m");
-	expect(lines[4]).toEndWith("check-everything ESC[31mexit 1ESC[39m");
-	expect(lines[5]).toBe(
+	expect(lines[0]).toBe(`Worktree ${await goalWorktree(root, "hello")}`);
+	expect(lines[1]).toBe("03-fail");
+	expect(lines[2]).toMatch(/^ESC\[2m {2}\S+ .*greet startedESC\[22m$/);
+	expect(lines[3]).toEndWith("greet ESC[32mokESC[39m");
+	expect(lines[5]).toEndWith("check-everything ESC[31mexit 1ESC[39m");
+	expect(lines[6]).toBe(
 		"ESC[31m03-fail is stuck after check-everything: exit 1ESC[39m",
 	);
 	expect(lines).toContainEqual(expect.stringContaining("ESC[31mstuck "));

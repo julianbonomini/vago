@@ -3,8 +3,10 @@ import { join } from "node:path";
 import { makeFakeClaude } from "./fake-claude.ts";
 import {
 	goalText,
+	goalWorktree,
 	makeProject,
 	readTicketFile,
+	runsOf,
 	runVago,
 	startVago,
 } from "./project.ts";
@@ -20,10 +22,6 @@ async function headerOf(
 	name: string,
 ): Promise<Record<string, unknown>> {
 	return (await readTicketFile(root, `${goalDir}/tickets/${name}.md`)).header;
-}
-
-function runsOf(header: Record<string, unknown>): Record<string, unknown>[] {
-	return (header.runs ?? []) as Record<string, unknown>[];
 }
 
 const agentWorkflow = `
@@ -85,14 +83,15 @@ function twoTickets(workflow: string): Promise<string> {
 	});
 }
 
-// The Step under test writes `echo $$` to `file` in the checkout once it
-// runs. A Step leads its own process group, so its pid is the group's id.
+// The Step under test writes `echo $$` to `file` in the Goal's worktree once
+// it runs. A Step leads its own process group, so its pid is the group's id.
 async function waitForProcessGroup(
 	root: string,
 	file: string,
 ): Promise<number> {
+	const worktree = await goalWorktree(root, "hello");
 	for (;;) {
-		const pidFile = Bun.file(join(root, file));
+		const pidFile = Bun.file(join(worktree, file));
 		const text = (await pidFile.exists()) ? await pidFile.text() : "";
 		if (/^\d+\n$/.test(text)) return Number(text);
 		await Bun.sleep(20);

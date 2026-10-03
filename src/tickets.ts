@@ -1,10 +1,11 @@
 // Creates and owns Goal and Ticket files under `.vago-goals/<goal>/`: the
 // `+++` TOML header, the `goal.md` header naming the Goal's Workflow, status,
-// the `[[runs]]` history and where each Run's log goes. Every header rewrite
-// is atomic and keeps the body byte for byte.
+// the `[[runs]]` history and where each Run's log goes, and the lock that
+// marks a Goal as taken by a `vago run`. Every header rewrite is atomic and
+// keeps the body byte for byte.
 
 import { existsSync } from "node:fs";
-import { mkdir, readdir, rename } from "node:fs/promises";
+import { link, mkdir, readdir, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { parse, stringify } from "smol-toml";
 import { z } from "zod";
@@ -66,8 +67,8 @@ const headerEnd = "\n+++\n";
 
 /**
  * The name of the folder, directly at a Project's root, that holds every
- * Goal. Other modules may name the folder, to keep it out of git, but never
- * build a path inside it: only this module does.
+ * Goal. Other modules may name the folder, to keep it out of git or out of a
+ * Goal's worktree, but never build a path inside it: only this module does.
  */
 export const goalsFolderName = ".vago-goals";
 
@@ -145,11 +146,7 @@ export async function createGoal(
  */
 export async function readGoal(root: string, goal: string): Promise<GoalState> {
 	const folder = goalFolder(root, goal);
-	const goalFile = join(folder, "goal.md");
-	if (!(await Bun.file(goalFile).exists())) {
-		throw new Error(`Goal ${goal} not found: ${goalFile} doesn't exist`);
-	}
-	const { workflow } = await readGoalFile(goalFile);
+	const { workflow } = await readGoalFile(await existingGoalFile(root, goal));
 	const ticketFolder = join(folder, "tickets");
 	// node:fs because Bun.file can't tell whether a directory exists. Sorted
 	// by name so a shared number is reported the same way on every machine.
@@ -390,6 +387,101 @@ export async function closeOpenRun(
 	});
 }
 
+/**
+ * Runs `run` while Goal `goal` of the Project at `root` is marked as taken by
+ * this `vago run`, and returns what `run` returns. The mark is cleared when
+ * `run` ends, however it ends, and a mark left by a `vago run` that has since
+ * died is taken over. Throws an Error naming the Goal, without calling `run`
+ * and changing nothing, when another live `vago run` has the Goal, or when
+ * the Goal doesn't exist.
+ */
+export async function withGoalClaimed<T>(
+	root: string,
+	goal: string,
+	run: () => Promise<T>,
+): Promise<T> {
+	await claimGoal(root, goal);
+	try {
+		return await run();
+	} finally {
+		await releaseGoal(root, goal);
+	}
+}
+
+async function claimGoal(root: string, goal: string): Promise<void> {
+	// Checked first: writing the lock would create a mistyped Goal's folder.
+	await existingGoalFile(root, goal);
+	const lock = lockFile(root, goal);
+	if (await createLock(lock)) return;
+	let holder = await lockHolder(lock);
+	if (holder === undefined || !isRunning(holder)) {
+		// Two runs taking over the same dead lock at once can both win, when
+		// one removes the lock the other has just created. That takes a
+		// crashed run and then two starts within milliseconds, and closing it
+		// would take a second lock.
+		await rm(lock, { force: true });
+		if (await createLock(lock)) return;
+		holder = await lockHolder(lock);
+	}
+	throw new Error(
+		`Goal ${goal} is already being run by vago (pid ${holder ?? "unknown"}). If no vago run is running it, delete ${lock}`,
+	);
+}
+
+async function releaseGoal(root: string, goal: string): Promise<void> {
+	const lock = lockFile(root, goal);
+	// A lock holding another pid was taken over from this run, so it's not
+	// this run's to remove.
+	if ((await lockHolder(lock)) === process.pid) await rm(lock, { force: true });
+}
+
+function lockFile(root: string, goal: string): string {
+	return join(goalFolder(root, goal), "running.lock");
+}
+
+// Creates the lock holding this process's pid, and returns false when it
+// already exists. The pid is written to a file of its own and then linked:
+// a link fails when its target exists, and a reader never sees the lock half
+// written.
+async function createLock(lock: string): Promise<boolean> {
+	const temp = `${lock}.${process.pid}`;
+	await Bun.write(temp, `${process.pid}\n`);
+	try {
+		await link(temp, lock);
+		return true;
+	} catch (error) {
+		if (errorCode(error) === "EEXIST") return false;
+		throw error;
+	} finally {
+		await rm(temp, { force: true });
+	}
+}
+
+// The pid in the lock, or undefined when there's no lock or it holds no pid.
+async function lockHolder(lock: string): Promise<number | undefined> {
+	const text = await Bun.file(lock)
+		.text()
+		.catch(() => "");
+	return /^\d+\n$/.test(text) ? Number(text) : undefined;
+}
+
+// This process's own pid in the lock can only be stale: a crashed run's pid
+// that the system has since given to this one.
+function isRunning(pid: number): boolean {
+	if (pid === process.pid) return false;
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch (error) {
+		// EPERM is a live process owned by someone else.
+		return errorCode(error) !== "ESRCH";
+	}
+}
+
+function errorCode(error: unknown): unknown {
+	return error instanceof Error && "code" in error ? error.code : undefined;
+}
+
 // Walks `blocked_by` depth first from the lowest number. Returns the Ticket
 // numbers of the first cycle found, starting and ending on the same Ticket.
 function findBlockerCycle(
@@ -436,6 +528,14 @@ function checkBody(label: string, body: string): void {
 // listing shows up to 99 Tickets in number order.
 function twoDigits(number: number): string {
 	return String(number).padStart(2, "0");
+}
+
+async function existingGoalFile(root: string, goal: string): Promise<string> {
+	const goalFile = join(goalFolder(root, goal), "goal.md");
+	if (!(await Bun.file(goalFile).exists())) {
+		throw new Error(`Goal ${goal} not found: ${goalFile} doesn't exist`);
+	}
+	return goalFile;
 }
 
 function goalFolder(root: string, goal: string): string {
