@@ -1,6 +1,7 @@
-// The Harness interface every coding agent CLI is driven through, and the
-// map from a Workflow's `harness` name to the module that implements it.
-// Hides which Harnesses exist.
+// The Harness interface every coding agent CLI is driven through, the Run
+// activity every Harness's stream condenses into, and the map from a
+// Workflow's `harness` name to the module that implements it. Hides which
+// Harnesses exist.
 
 import { claudeCode } from "./claude-code.ts";
 
@@ -22,6 +23,52 @@ export type HarnessSessionReport = {
 };
 
 /**
+ * What a Run's session did, condensed from its stream for the human to read,
+ * in the order it happened. Carries nothing of the Harness that ran it.
+ */
+export type RunActivity = {
+	items: RunActivityItem[];
+	/**
+	 * The agent has the turn: the session hasn't ended and no tool call is
+	 * waiting for its result. It means the agent is thinking only while the
+	 * Run is open, which the stream alone can't tell.
+	 */
+	working: boolean;
+};
+
+export type RunActivityItem =
+	| { kind: "session-start"; model: string }
+	| { kind: "prose"; lines: RunProseLine[] }
+	/** Consecutive calls of one verb, folded into one item. */
+	| { kind: "tool-calls"; verb: string; calls: RunToolCall[] }
+	/** A tool call's result that failed; results that didn't are left out. */
+	| { kind: "failed-result"; firstLine: string }
+	| { kind: "denied"; tool: string; reason: string }
+	| {
+			kind: "session-end";
+			/** The Harness's word for how the session failed; absent when it finished. */
+			failure?: string;
+			durationMs?: number;
+			turns?: number;
+			/** Input, cached input included, and output. */
+			tokens?: number;
+			costUsd?: number;
+	  };
+
+/**
+ * One line of the agent's prose, its Markdown emphasis and code marks
+ * removed. Blank lines between paragraphs are kept, one at most.
+ */
+export type RunProseLine = { text: string; heading: boolean };
+
+/**
+ * What a tool call worked on, such as a path relative to the session's
+ * folder or a command's description, and its size when the call has one,
+ * such as "120 lines" or "+3 −1".
+ */
+export type RunToolCall = { subject: string; size?: string };
+
+/**
  * One Harness's CLI. Its functions do no I/O: the kernel spawns the command,
  * writes the prompt to its stdin, and feeds each line it streams to `readLine`.
  */
@@ -38,6 +85,12 @@ export type Harness = {
 	 * event it knows gives `{}`.
 	 */
 	readLine(line: string, command: readonly string[]): HarnessSessionReport;
+	/**
+	 * The activity of the session that streamed `lines`, the stream so far.
+	 * Works on a session still running: a line that isn't a whole event it
+	 * knows, such as one half written, gives nothing.
+	 */
+	runActivity(lines: readonly string[]): RunActivity;
 	/** The shell command the human runs to resume session `sessionId`. */
 	resumeHint(sessionId: string): string;
 };
