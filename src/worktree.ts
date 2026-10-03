@@ -1,13 +1,16 @@
 // A Goal's worktree, where its Steps run: creating it, recreating it from its
 // branch, reusing it, and the way back from it to the main checkout. Hides the
 // `VAGO_HOME` layout, the branch name, the default-branch rule, the git
-// commands, and what gets copied.
+// commands, what gets copied, and how `.vago/` is kept out of git.
 
 import { existsSync } from "node:fs";
 import { cp, mkdir, realpath, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, relative, sep } from "node:path";
 import { goalsFolderName } from "./tickets.ts";
+
+// The Project's Workflows, with the prompts and scripts they run.
+const vagoFolderName = ".vago";
 
 /**
  * Gives Goal `goal` of the Project at `root` its worktree and returns the
@@ -16,17 +19,17 @@ import { goalsFolderName } from "./tickets.ts";
  * (`~/.vago` by default), checking out `vago/<goal>` with the Goal's work
  * when that branch exists, or else a new `vago/<goal>` cut from the
  * Project's default branch, and it gets every untracked and ignored file of
- * `root` except `.vago-goals/`. Either way, when `.vago/` is untracked the
- * worktree's `.vago/` is `root`'s as it is now. Throws an Error naming the
- * problem when a new branch is needed and `root`'s default branch can't be
- * told, or when git fails.
+ * `root` except `.vago-goals/`. Either way the worktree's `.vago/` is
+ * `root`'s as it is now, tracked or not, uncommitted edits included, and git
+ * in the worktree never shows it as a change, so no commit made there holds
+ * it. Throws an Error naming the problem when a new branch is needed and
+ * `root`'s default branch can't be told, or when git fails.
  */
 export async function openWorktree(
 	root: string,
 	goal: string,
 ): Promise<string> {
 	const path = await worktreePath(root, goal);
-	const untracked = await untrackedEntries(root);
 	if (!existsSync(path)) {
 		await mkdir(dirname(path), { recursive: true });
 		const branch = `vago/${goal}`;
@@ -47,15 +50,29 @@ export async function openWorktree(
 				await defaultBranch(root),
 			]);
 		}
-		await copyUntracked(root, path, untracked);
+		await copyUntracked(root, path, await untrackedEntries(root));
 	}
 	// The Workflow is read from `root` on every run, so the scripts and
 	// prompts beside it must come from there too, not from an earlier copy.
-	if (untracked.includes(".vago/")) {
-		await rm(join(path, ".vago"), { recursive: true, force: true });
-		await copyUntracked(root, path, [".vago/"]);
-	}
+	await refreshVagoFolder(root, path);
 	return realpath(path);
+}
+
+// Skip-worktree hides the tracked files from `git status` and makes
+// `git add` refuse them, and unlike assume-unchanged a refresh of the index
+// doesn't drop it. The `.gitignore` exists only in the worktree, ignores
+// itself, and hides the files the branch doesn't track. The cost: merging,
+// rebasing or switching onto a branch with a different `.vago/` fails here.
+// A sparse checkout would allow that, but it writes `extensions.worktreeConfig`
+// into the repo's shared config.
+async function refreshVagoFolder(root: string, path: string): Promise<void> {
+	await rm(join(path, vagoFolderName), { recursive: true, force: true });
+	await copyUntracked(root, path, [vagoFolderName]);
+	await Bun.write(join(path, vagoFolderName, ".gitignore"), "*\n");
+	const tracked = (await git(path, ["ls-files", "-z", "--", vagoFolderName]))
+		.split("\0")
+		.filter((entry) => entry !== "");
+	await git(path, ["update-index", "--skip-worktree", "--", ...tracked]);
 }
 
 /**
@@ -117,13 +134,17 @@ async function defaultBranch(root: string): Promise<string> {
 
 // What git doesn't carry to a new worktree: untracked and ignored entries,
 // with a folder that holds nothing tracked listed once, like `node_modules/`.
-// The Goals stay behind, since their state lives in the main checkout alone.
+// The Goals stay behind, since their state lives in the main checkout alone,
+// and `.vago/` is copied on every run by `refreshVagoFolder`.
 async function untrackedEntries(root: string): Promise<string[]> {
 	const listed = await git(root, ["ls-files", "-z", "--others", "--directory"]);
 	return listed
 		.split("\0")
 		.filter(
-			(entry) => entry !== "" && !entry.startsWith(`${goalsFolderName}/`),
+			(entry) =>
+				entry !== "" &&
+				!entry.startsWith(`${goalsFolderName}/`) &&
+				!entry.startsWith(`${vagoFolderName}/`),
 		);
 }
 

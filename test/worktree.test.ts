@@ -213,26 +213,54 @@ test("vago run prints the worktree's path", async () => {
 	);
 });
 
-test("re-running a Goal reuses its worktree, with its work and the main checkout's .vago/ as it is now", async () => {
-	const check = 'test -e one.txt && test -n "$PASS"\n';
-	const root = await makeProject({
+// Goal hello's Project: Ticket 01 commits one.txt on vago/hello, and Ticket
+// 02 runs `check`.
+function makeTwoTicketProject(
+	files: Record<string, string>,
+	check: string,
+): Promise<string> {
+	return makeProject({
+		...files,
 		".vago/workflows/test.toml": oneStep(
-			`if [ "$VAGO_TICKET" = 01-one ]; then echo one > one.txt && git add one.txt && git ${gitIdentity.join(" ")} commit -qm one; else sh .vago/scripts/check.sh; fi`,
+			`if [ "$VAGO_TICKET" = 01-one ]; then echo one > one.txt && git add one.txt && git ${gitIdentity.join(" ")} commit -qm one; else ${check}; fi`,
 		),
-		".vago/scripts/check.sh": check,
 		[`${goalDir}/goal.md`]: goalText("test"),
 		[`${goalDir}/tickets/01-one.md`]: ticket,
 		[`${goalDir}/tickets/02-two.md`]: ticket,
 	});
+}
+
+const checkScript = 'test -e one.txt && test -n "$PASS"\n';
+
+// Goal hello's Project whose Ticket 02 runs `.vago/scripts/check.sh`, which
+// fails until PASS is set.
+function makeCheckScriptProject(): Promise<string> {
+	return makeTwoTicketProject(
+		{ ".vago/scripts/check.sh": checkScript },
+		"sh .vago/scripts/check.sh",
+	);
+}
+
+// Runs Goal hello until Ticket 02 fails, resets 02, edits `check.sh` in
+// `root` to also write version.txt holding v2, and runs again with PASS=1.
+async function rerunWithEditedCheckScript(
+	root: string,
+): Promise<{ first: VagoExit; again: VagoExit }> {
 	const first = await runVago(root, ["run", "hello"]);
 	expect(first.exitCode).not.toBe(0);
 	await runVago(root, ["ticket", "reset", "hello", "2"]);
 	await Bun.write(
 		join(root, ".vago/scripts/check.sh"),
-		`echo v2 > version.txt\n${check}`,
+		`echo v2 > version.txt\n${checkScript}`,
 	);
-
 	const again = await runVago(root, ["run", "hello"], { PASS: "1" });
+	return { first, again };
+}
+
+test("re-running a Goal reuses its worktree, with its work and the main checkout's .vago/ as it is now", async () => {
+	const root = await makeCheckScriptProject();
+
+	const { first, again } = await rerunWithEditedCheckScript(root);
 
 	const worktreeLine = (stdout: string) => stdout.split("\n")[0];
 	expect(worktreeLine(again.stdout)).toBe(worktreeLine(first.stdout));
@@ -252,15 +280,7 @@ async function rerunWithDeletedWorktree(
 	check: string,
 	remove: "rm -rf" | "git worktree remove",
 ): Promise<{ root: string; first: VagoExit; again: VagoExit }> {
-	const root = await makeProject({
-		...files,
-		".vago/workflows/test.toml": oneStep(
-			`if [ "$VAGO_TICKET" = 01-one ]; then echo one > one.txt && git add one.txt && git ${gitIdentity.join(" ")} commit -qm one; else ${check}; fi`,
-		),
-		[`${goalDir}/goal.md`]: goalText("test"),
-		[`${goalDir}/tickets/01-one.md`]: ticket,
-		[`${goalDir}/tickets/02-two.md`]: ticket,
-	});
+	const root = await makeTwoTicketProject(files, check);
 	const first = await runVago(root, ["run", "hello"]);
 	expect(first.exitCode).not.toBe(0);
 	const worktree = await goalWorktree(root, "hello");
@@ -330,4 +350,98 @@ test("a worktree removed with git worktree remove is recreated too", async () =>
 	const worktree = await goalWorktree(root, "hello");
 	const log = Bun.spawnSync(["git", "log", "--format=%s"], { cwd: worktree });
 	expect(log.stdout.toString().split("\n")).toContain("one");
+});
+
+// Commits `root`'s `.vago/` on main, even where `.git/info/exclude` lists it.
+function commitVago(root: string): void {
+	for (const args of [
+		["add", "-f", ".vago"],
+		[...gitIdentity, "commit", "-qm", "vago"],
+	]) {
+		Bun.spawnSync(["git", ...args], { cwd: root });
+	}
+}
+
+// A Project whose `.vago/` is committed on main and then edited without
+// committing: `say.sh` changed and `new.sh` added.
+async function makeProjectWithEditedVago(run: string): Promise<string> {
+	const root = await makeProject({
+		".vago/workflows/test.toml": oneStep(run),
+		".vago/scripts/say.sh": "echo committed > said.txt\n",
+		[`${goalDir}/goal.md`]: goalText("test"),
+		[ticketPath]: ticket,
+	});
+	commitVago(root);
+	await Bun.write(
+		join(root, ".vago/scripts/say.sh"),
+		"echo edited > said.txt\n",
+	);
+	await Bun.write(join(root, ".vago/scripts/new.sh"), "true\n");
+	return root;
+}
+
+// The files Goal hello's branch changed against main.
+function goalBranchChanges(root: string): string {
+	return Bun.spawnSync(["git", "diff", "--name-only", "main", "vago/hello"], {
+		cwd: root,
+	}).stdout.toString();
+}
+
+function gitStatus(cwd: string): string {
+	return Bun.spawnSync(["git", "status", "--porcelain"], {
+		cwd,
+	}).stdout.toString();
+}
+
+test("with .vago/ tracked, a Step runs the main checkout's uncommitted edit to its script", async () => {
+	const root = await makeProjectWithEditedVago("sh .vago/scripts/say.sh");
+
+	const result = await runVago(root, ["run", "hello"]);
+
+	expect(result.exitCode).toBe(0);
+	const worktree = await goalWorktree(root, "hello");
+	expect(await Bun.file(join(worktree, "said.txt")).text()).toBe("edited\n");
+});
+
+test("with .vago/ tracked and edited, the worktree is clean and the main checkout keeps the edit", async () => {
+	const root = await makeProjectWithEditedVago("true");
+
+	const result = await runVago(root, ["run", "hello"]);
+
+	expect(result.exitCode).toBe(0);
+	const worktree = await goalWorktree(root, "hello");
+	expect(gitStatus(worktree)).toBe("");
+	expect(await Bun.file(join(worktree, ".vago/scripts/new.sh")).exists()).toBe(
+		true,
+	);
+	const rootStatus = gitStatus(root);
+	expect(rootStatus).toContain(" M .vago/scripts/say.sh");
+	expect(rootStatus).toContain("?? .vago/scripts/new.sh");
+});
+
+test("with .vago/ tracked and edited, a Step that commits everything commits no .vago/ change", async () => {
+	const root = await makeProjectWithEditedVago(
+		`echo work > work.txt && git add . && git ${gitIdentity.join(" ")} commit -qm work`,
+	);
+
+	const result = await runVago(root, ["run", "hello"]);
+
+	expect(result.exitCode).toBe(0);
+	expect(goalBranchChanges(root)).toBe("work.txt\n");
+});
+
+test("with .vago/ tracked, re-running a Goal picks up a later edit and keeps the worktree clean", async () => {
+	const root = await makeCheckScriptProject();
+	commitVago(root);
+
+	const { first, again } = await rerunWithEditedCheckScript(root);
+
+	expect(again.exitCode).toBe(0);
+	const worktreeLine = (stdout: string) => stdout.split("\n")[0];
+	expect(worktreeLine(again.stdout)).toBe(worktreeLine(first.stdout));
+	const worktree = await goalWorktree(root, "hello");
+	expect(await Bun.file(join(worktree, "version.txt")).text()).toBe("v2\n");
+	// version.txt is the Step's own output, left uncommitted.
+	expect(gitStatus(worktree)).toBe("?? version.txt\n");
+	expect(goalBranchChanges(root)).toBe("one.txt\n");
 });
