@@ -1,10 +1,11 @@
-// A Goal's progress bar: cells of `━` split between its Ticket statuses.
+// A Goal's progress bar: cells of the bar symbol split between its Ticket
+// statuses.
 // Hides how the cells are shared out and coloured.
 
 import type { JSX } from "@opentui/solid";
 import { For } from "solid-js";
 import type { GoalStanding, GoalTicketCounts } from "./goal-rows.ts";
-import { color, symbol, ticketColor } from "./theme.ts";
+import { theme, ticketColor } from "./theme.ts";
 
 /** How many Tickets `tickets` counts in all. */
 export function ticketTotal(tickets: GoalTicketCounts): number {
@@ -18,7 +19,8 @@ const barStatuses = ["done", "running", "stuck", "ready"] as const;
  * `width` cells of the bar, split between the Ticket statuses by their share
  * of the Tickets, done first. Every status present gets at least one cell,
  * so one stuck Ticket among many never rounds away. All faint with no
- * Tickets, all bg on a `selected` row. Spans, so it sits inside a `<text>`.
+ * Tickets, all in the selection's colour on a `selected` row. Spans, so it
+ * sits inside a `<text>`.
  */
 export function TicketBar(props: {
 	tickets: GoalTicketCounts;
@@ -26,6 +28,7 @@ export function TicketBar(props: {
 	width: number;
 	selected: boolean;
 }): JSX.Element {
+	const { color, symbol, selection } = theme();
 	// Each status takes the whole cells of its share, the cells left go to
 	// the largest fractions, and the largest segment gives up what the
 	// one-cell floor adds.
@@ -55,7 +58,7 @@ export function TicketBar(props: {
 	return (
 		<For each={segments()}>
 			{(segment) => (
-				<span style={{ fg: props.selected ? color.bg : segment.fg }}>
+				<span style={{ fg: props.selected ? selection.fg : segment.fg }}>
 					{symbol.bar.repeat(segment.cells)}
 				</span>
 			)}

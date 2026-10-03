@@ -2,12 +2,15 @@
 // or wrapped to many, so CJK and emoji, which take two cells, keep columns
 // aligned. Hides the grapheme splitting and the width measure.
 
+import { theme } from "./theme.ts";
+
 const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
 /**
  * `text` in exactly `width` terminal cells as `Bun.stringWidth` counts them:
  * padded with spaces when shorter, cut at a whole character (grapheme) and
- * ended with `…` when longer. "" for a width of 0 or less.
+ * ended with the theme's `cut` symbol when longer. "" for a width of 0 or
+ * less.
  */
 export function fitText(text: string, width: number): string {
 	if (width <= 0) return "";
@@ -21,8 +24,8 @@ export function fitText(text: string, width: number): string {
 		cut += segment;
 		cutWidth += segmentWidth;
 	}
-	// A wide character that didn't fit before `…` leaves one cell over.
-	return `${cut}…${" ".repeat(width - 1 - cutWidth)}`;
+	// A wide character that didn't fit before the mark leaves one cell over.
+	return `${cut}${theme().symbol.cut}${" ".repeat(width - 1 - cutWidth)}`;
 }
 
 /**

@@ -5,10 +5,15 @@
 
 import { format } from "node:util";
 import { createCliRenderer } from "@opentui/core";
-import { type JSX, render, useKeyboard } from "@opentui/solid";
+import {
+	type JSX,
+	render,
+	useKeyboard,
+	useTerminalDimensions,
+} from "@opentui/solid";
 import { ErrorBoundary } from "solid-js";
 import { ProjectView } from "./project-view.tsx";
-import { color } from "./theme.ts";
+import { theme } from "./theme.ts";
 
 /**
  * Shows the Project at `root` full-screen until the human quits with `q` or
@@ -34,7 +39,7 @@ async function holdTerminal(view: () => JSX.Element): Promise<void> {
 		exitSignals: [],
 		screenMode: "alternate-screen",
 		consoleMode: "disabled",
-		backgroundColor: color.bg,
+		backgroundColor: theme().color.bg,
 	});
 	// Past ten listeners Node prints a leak warning to stderr, which would
 	// scroll the alternate screen and shift every later frame.
@@ -91,7 +96,12 @@ async function holdTerminal(view: () => JSX.Element): Promise<void> {
 						return null;
 					}}
 				>
-					<QuitKeys onQuit={quit}>{view()}</QuitKeys>
+					<QuitKeys onQuit={quit}>
+						<box flexGrow={1}>
+							<Backdrop />
+							{view()}
+						</box>
+					</QuitKeys>
 				</ErrorBoundary>
 			),
 			renderer,
@@ -108,4 +118,22 @@ function QuitKeys(props: {
 		if (key.name === "q" || (key.ctrl && key.name === "c")) props.onQuit();
 	});
 	return props.children;
+}
+
+// Spaces in the fg token under the whole screen. OpenTUI gives a cell no text
+// covers a white RGB foreground, which `NO_COLOR` forbids.
+function Backdrop(): JSX.Element {
+	const terminal = useTerminalDimensions();
+	return (
+		<text
+			position="absolute"
+			top={0}
+			left={0}
+			zIndex={-1}
+			fg={theme().color.fg}
+			wrapMode="none"
+		>
+			{`${" ".repeat(terminal().width)}\n`.repeat(terminal().height)}
+		</text>
+	);
 }

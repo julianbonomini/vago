@@ -5,7 +5,7 @@
 // Goals are read again.
 
 import { basename } from "node:path";
-import type { ScrollBoxRenderable } from "@opentui/core";
+import type { ColorInput, ScrollBoxRenderable } from "@opentui/core";
 import { type JSX, useKeyboard, useTerminalDimensions } from "@opentui/solid";
 import {
 	createEffect,
@@ -25,7 +25,7 @@ import {
 	KeyHelp,
 } from "./screen-keys.tsx";
 import { fitText } from "./text-fit.ts";
-import { color, goalColor, symbol } from "./theme.ts";
+import { goalColor, theme } from "./theme.ts";
 import { TicketBar, ticketTotal } from "./ticket-bar.tsx";
 import { duration, money } from "./time-and-money.ts";
 
@@ -36,8 +36,8 @@ const refreshMs = 1000;
 // first read ends, then read again every `refreshMs` for as long as the
 // calling component lives. A row that didn't change keeps its object, so
 // its line in the table isn't drawn again. The accessor throws the first
-// read's error. A later read that fails keeps the last rows, until Ticket 07
-// shows broken Goals as rows of their own.
+// read's error. A later read that fails keeps the last rows: a broken Goal
+// is a row of its own, so only the Project's `.vago-goals` going bad fails.
 function liveGoalRows(root: string): () => GoalRow[] | undefined {
 	const [store, setStore] = createStore<{ rows: GoalRow[] | undefined }>({
 		rows: undefined,
@@ -76,15 +76,17 @@ function liveGoalRows(root: string): () => GoalRow[] | undefined {
  * Project's counts and spend, and a Goals box with one row per Goal showing
  * its standing, Tickets, time, cost, what it is doing and its title, the
  * selected one in the accent colour, moved by ↑↓ and j k, g and G, or a
- * click, with `n/N` on the box's bottom border. The box scrolls, by wheel
- * or to follow the selection, once the Goals outgrow its share of the
- * screen. Below it, the selected Goal's preview fills the rest of the
- * screen, then a footer names the keys, and `?` shows them all until `?` or
- * Esc. Reads the Goals itself, and again every second, so changes on disk
- * show without a key; the selection stays on its Goal when the rows
- * reorder. Throws what the first read throws.
+ * click, with `n/N` on the box's bottom border, or a line naming
+ * `vago goal new` while there are none. The box scrolls, by wheel or to
+ * follow the selection, once the Goals outgrow its share of the screen.
+ * Below it, the selected Goal's preview fills the rest of the screen, then
+ * a footer names the keys, and `?` shows them all until `?` or Esc. Reads
+ * the Goals itself, and again every second, so changes on disk show without
+ * a key; the selection stays on its Goal when the rows reorder. Throws what
+ * the first read throws.
  */
 export function ProjectView(props: { root: string }): JSX.Element {
+	const { color, symbol, border, scrollbars, dimText } = theme();
 	const rows = liveGoalRows(props.root);
 	const [chosen, setChosen] = createSignal<string>();
 	// Pinned on the first read, so the selection follows its Goal from the
@@ -129,16 +131,18 @@ export function ProjectView(props: { root: string }): JSX.Element {
 	const terminal = useTerminalDimensions();
 	const wide = () => terminal().width >= wideFrom;
 	// The Goals box takes what its rows need, up to its share of the screen,
-	// and scrolls the rest.
+	// and scrolls the rest. With no Goals it keeps one row, for the line
+	// saying so.
 	const shownRows = () =>
 		Math.min(
-			(rows() ?? []).length,
+			Math.max(1, (rows() ?? []).length),
 			Math.max(
 				minShownRows,
 				Math.floor(terminal().height * goalsShare) - goalsBoxChrome,
 			),
 		);
-	const scrolls = () => (rows() ?? []).length > shownRows();
+	const scrollbarShown = () =>
+		scrollbars && (rows() ?? []).length > shownRows();
 	let list: ScrollBoxRenderable | undefined;
 	createEffect(() => {
 		const row = rows()?.[selectedIndex()];
@@ -170,22 +174,27 @@ export function ProjectView(props: { root: string }): JSX.Element {
 		<box flexDirection="column" flexGrow={1}>
 			<Show when={rows()}>
 				{(read: () => GoalRow[]) => (
-					<HeaderLine root={props.root} rows={read()} />
+					<HeaderLine
+						root={props.root}
+						rows={read()}
+						width={terminal().width}
+					/>
 				)}
 			</Show>
 			<box
 				border
+				customBorderChars={border}
 				borderColor={color.border}
 				title=" Goals "
 				bottomTitle={position()}
 				bottomTitleAlignment="right"
 				paddingLeft={1}
 				// The scrollbar, when there is one, takes the padding's column.
-				paddingRight={scrolls() ? 0 : 1}
+				paddingRight={scrollbarShown() ? 0 : 1}
 				height={goalsBoxChrome + shownRows()}
 				flexShrink={0}
 			>
-				<text fg={color.dim} flexShrink={0} wrapMode="none">
+				<text {...dimText} flexShrink={0} wrapMode="none">
 					{`${"  STATE".padEnd(stateWidth)}${"GOAL".padEnd(nameWidth())} ${"TICKETS".padEnd(ticketsWidth)}${wide() ? `${"ELAPSED".padEnd(timesWidth)}${"COST".padEnd(timesWidth)}` : ""}${fitText("NOW", widths().now)}${fitText("TITLE", widths().title)}`}
 				</text>
 				<scrollbox
@@ -193,10 +202,13 @@ export function ProjectView(props: { root: string }): JSX.Element {
 						list = box;
 					}}
 					flexGrow={1}
+					// Set here, not left to the scrollbox, which shows its scrollbar
+					// a frame before placing it.
 					verticalScrollbarOptions={{
+						visible: scrollbarShown(),
 						trackOptions: {
 							foregroundColor: color.faint,
-							backgroundColor: color.bg,
+							backgroundColor: "transparent",
 						},
 					}}
 				>
@@ -211,6 +223,14 @@ export function ProjectView(props: { root: string }): JSX.Element {
 							/>
 						)}
 					</For>
+					<Show when={rows()?.length === 0}>
+						<text {...dimText} flexShrink={0} wrapMode="none">
+							{fitText(
+								"No Goals yet. Start one with vago goal new <goal>.",
+								terminal().width - boxEdges,
+							)}
+						</text>
+					</Show>
 				</scrollbox>
 			</box>
 			<Show when={rows()?.[selectedIndex()]}>
@@ -219,25 +239,29 @@ export function ProjectView(props: { root: string }): JSX.Element {
 				)}
 			</Show>
 			<box flexShrink={0} paddingLeft={1} paddingRight={1}>
-				<KeyFooter keys={footerKeys} width={terminal().width - 2} />
+				<KeyFooter
+					keys={footerKeys(symbol.upDown)}
+					width={terminal().width - 2}
+				/>
 			</box>
 			<Show when={helpShown()}>
-				<KeyHelp keys={helpKeys} />
+				<KeyHelp keys={helpKeys(symbol.upDown)} />
 			</Show>
 		</box>
 	);
 }
 
 // `q` and Ctrl-C belong to `tui.tsx`, which quits on them on every screen.
-const footerKeys: FooterKey[] = [
-	{ keys: "↑↓", label: "Goal", use: 4 },
+// `upDown` names the arrow keys.
+const footerKeys = (upDown: string): FooterKey[] => [
+	{ keys: upDown, label: "Goal", use: 4 },
 	{ keys: "g G", label: "First, last", use: 1 },
 	{ keys: "?", label: "Help", use: 3 },
 	{ keys: "q", label: "Quit", use: 2 },
 ];
 
-const helpKeys: HelpKey[] = [
-	{ keys: "↑↓ j k", meaning: "select the Goal above, below" },
+const helpKeys = (upDown: string): HelpKey[] => [
+	{ keys: `${upDown} j k`, meaning: "select the Goal above, below" },
 	{ keys: "g G", meaning: "select the first, the last Goal" },
 	{ keys: "click", meaning: "select the Goal clicked" },
 	{ keys: "wheel", meaning: "scroll the Goals" },
@@ -245,24 +269,39 @@ const helpKeys: HelpKey[] = [
 	{ keys: "q Ctrl-C", meaning: "quit" },
 ];
 
-// The Project's name and its counts on one line above the Goals box. Not
-// drawn until the Goals are read, so a slow read never shows zero Goals.
-function HeaderLine(props: { root: string; rows: GoalRow[] }): JSX.Element {
-	const totals = () => projectTotals(props.rows);
+// The Project's name and its counts on one line above the Goals box,
+// `width` columns wide, the counts on the right. The name is cut first when
+// the line is short of room. Not drawn until the Goals are read, so a slow
+// read never shows zero Goals.
+function HeaderLine(props: {
+	root: string;
+	rows: GoalRow[];
+	width: number;
+}): JSX.Element {
+	const { symbol, dimText } = theme();
+	const line = () => {
+		const totals = projectTotals(props.rows);
+		const goals = ` ${symbol.sep} ${totals.goals} Goals`;
+		const counts = [
+			`${totals.running} running`,
+			`${totals.needYou} need you`,
+			`${money(totals.costUsd)} spent`,
+		].join(` ${symbol.sep} `);
+		// A space at each end of the line and one before the counts.
+		const left = props.width - 3 - Bun.stringWidth(counts);
+		const name = fitText(
+			basename(props.root),
+			Math.min(
+				Bun.stringWidth(basename(props.root)),
+				left - Bun.stringWidth(goals),
+			),
+		);
+		return ` ${fitText(`${name}${goals}`, left)} ${counts}`;
+	};
 	return (
-		<box flexDirection="row" flexShrink={0} paddingLeft={1} paddingRight={1}>
-			<text fg={color.dim} wrapMode="none">
-				{`${basename(props.root)} ${symbol.sep} ${totals().goals} Goals`}
-			</text>
-			<box flexGrow={1} />
-			<text fg={color.dim} wrapMode="none">
-				{[
-					`${totals().running} running`,
-					`${totals().needYou} need you`,
-					`${money(totals().costUsd)} spent`,
-				].join(` ${symbol.sep} `)}
-			</text>
-		</box>
+		<text {...dimText} flexShrink={0} wrapMode="none">
+			{line()}
+		</text>
 	);
 }
 
@@ -298,15 +337,18 @@ function GoalRowLine(props: {
 	wide: boolean;
 	onClick: () => void;
 }): JSX.Element {
-	// The selected row is drawn in bg on accent throughout, so its own
-	// colours don't fight the highlight.
-	const fg = (own: string) => (props.selected ? color.bg : own);
+	const { color, symbol, selection, dimSpan } = theme();
+	// The selected row is drawn in the selection's colours throughout, so its
+	// own colours don't fight the highlight.
+	const fg = (own: ColorInput) => (props.selected ? selection.fg : own);
+	const dim = () => ({ ...dimSpan, fg: fg(dimSpan.fg) });
 	return (
 		<text
 			id={rowId(props.row.goal)}
 			onMouseDown={props.onClick}
 			fg={fg(color.fg)}
-			bg={props.selected ? color.accent : undefined}
+			bg={props.selected ? selection.bg : undefined}
+			attributes={props.selected ? selection.attributes : 0}
 			flexShrink={0}
 			wrapMode="none"
 		>
@@ -318,23 +360,21 @@ function GoalRowLine(props: {
 			<span style={{ fg: fg(color.fg) }}>
 				{fitText(props.row.goal, props.widths.name)}
 			</span>
-			<span style={{ fg: fg(color.dim) }}> </span>
+			<span style={dim()}> </span>
 			<TicketBar
 				tickets={props.row.tickets}
 				standing={props.row.standing}
 				width={barWidth}
 				selected={props.selected}
 			/>
-			<span style={{ fg: fg(color.dim) }}>
+			<span style={dim()}>
 				{` ${`${props.row.tickets.done}/${ticketTotal(props.row.tickets)}`.padEnd(ticketsWidth - barWidth - 1)}`}
 				{props.wide
 					? `${duration(props.row.elapsedMs).padEnd(timesWidth)}${money(props.row.costUsd).padEnd(timesWidth)}`
 					: ""}
 				{fitText(props.row.now, props.widths.now)}
 			</span>
-			<span style={{ fg: fg(color.dim) }}>
-				{fitText(props.row.title, props.widths.title)}
-			</span>
+			<span style={dim()}>{fitText(props.row.title, props.widths.title)}</span>
 		</text>
 	);
 }

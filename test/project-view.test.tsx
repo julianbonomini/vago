@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { rm } from "node:fs/promises";
 import { basename, join } from "node:path";
-import { RGBA } from "@opentui/core";
+import { RGBA, TextAttributes } from "@opentui/core";
 import type { TestRendererSetup } from "@opentui/core/testing";
 import { testRender } from "@opentui/solid";
 import { ProjectView } from "../src/tui/project-view.tsx";
@@ -266,13 +266,15 @@ for (const [what, files] of [
 	["an empty .vago-goals", { ".vago-goals/.keep": "" }],
 	["no .vago-goals at all", {}],
 ] as const) {
-	test(`a Project with ${what} shows an empty Goals box`, async () => {
+	test(`a Project with ${what} says it has none and names vago goal new`, async () => {
 		const root = await makeProject(files);
 		const view = await renderView(root);
 
 		const frame = await frameWith(view, " 0/0 ");
 
-		expect(frame).toContain("Goals");
+		expect(frame).toContain(
+			"No Goals yet. Start one with vago goal new <goal>.",
+		);
 	});
 }
 
@@ -1019,17 +1021,197 @@ test("before any key the selection stays on the first Goal read when rows reorde
 	expect(frame).toContain(" 2/3 ");
 });
 
-test("a Ticket that can't be read for a moment keeps the last rows on screen", async () => {
+test("a Ticket broken on disk turns its Goal broken, and fixing it brings the Goal back", async () => {
 	const root = await projectWithTickets({ "01-first": ticketText("ready") });
 	const view = await renderView(root, wide);
 	await frameWith(view, "0/1");
 	const first = ".vago-goals/a/tickets/01-first.md";
 
 	await rewrite(root, first, "+++\nstatus = \n");
-	await Bun.sleep(1500);
-	await view.renderOnce();
-	expect(rowOf(view.captureCharFrame(), "a")).toContain(" 0/1 ");
+	expect(rowOf(await frameWith(view, "broken"), "a")).toMatch(
+		/! broken +a +━+ 0\/0 +0s +\$0\.00 +\.vago-goals\/a\/tickets\/01-first\.md /,
+	);
 
 	await rewrite(root, first, ticketText("done"));
 	expect(rowOf(await frameWith(view, "finished"), "a")).toContain(" 1/1 ");
+});
+
+for (const [what, tickets, error] of [
+	[
+		"a bad Ticket header",
+		{ "01-a": '+++\nstatus = "nope"\n+++\n' },
+		".vago-goals/bad/tickets/01-a.md: ",
+	],
+	[
+		"a blocker cycle",
+		{
+			"01-a": ticketText("ready", { blockedBy: [2] }),
+			"02-b": ticketText("ready", { blockedBy: [1] }),
+		},
+		"Goal bad has a blocker cycle in .vago-goals/bad/tickets: 01-a -> 02-b",
+	],
+] as const) {
+	test(`a Goal with ${what} shows as one broken row with its error, and the others as normal`, async () => {
+		const root = await makeProject({
+			".vago-goals/bad/goal.md": goalText("w"),
+			...Object.fromEntries(
+				Object.entries(tickets).map(([name, text]) => [
+					`.vago-goals/bad/tickets/${name}.md`,
+					text,
+				]),
+			),
+			".vago-goals/good/goal.md": goalText("w"),
+		});
+
+		const view = await renderView(root, wide);
+		const frame = await frameWith(view, " good ");
+
+		expect(rowOf(frame, "bad")).toMatch(/! broken +bad +━+ 0\/0 /);
+		expect(rowOf(frame, "bad")).toContain(error.slice(0, 30));
+		expect(rowOf(frame, "good")).toMatch(/○ ready +good .+ ready to start/);
+		expect(frame).toContain("1 need you");
+		expect(frame.match(/ broken /g)).toHaveLength(1);
+		// The preview, on the broken Goal, shows the whole error.
+		expect(frame.replace(/[│\s]+/g, " ")).toContain(error);
+	});
+}
+
+let setVariables: string[] = [];
+
+// Sets the environment variables in `variables` for the rest of the test.
+function setEnv(variables: Record<string, string>): void {
+	for (const [name, value] of Object.entries(variables)) {
+		process.env[name] = value;
+		setVariables.push(name);
+	}
+}
+
+afterEach(() => {
+	for (const name of setVariables) delete process.env[name];
+	setVariables = [];
+});
+
+// Every Goal standing, and more Goals than the Goals box shows at 20 rows,
+// so its scrollbar draws too.
+async function projectThatScrolls(): Promise<string> {
+	const root = await projectOfEveryStanding();
+	for (const goal of ["f-more", "g-more"]) {
+		await rewrite(
+			root,
+			`.vago-goals/${goal}/goal.md`,
+			goalText("w", `# ${"A long title ".repeat(12)}\n\nSome words.\n`),
+		);
+	}
+	return root;
+}
+
+const short = { width: 120, height: 20 };
+
+test("under NO_COLOR every text takes the terminal's own colours, dim and inverse keep their meaning", async () => {
+	setEnv({ NO_COLOR: "1" });
+	const root = await projectThatScrolls();
+
+	const view = await renderView(root, short);
+	await frameWith(view, " 8 Goals");
+
+	const spans = view
+		.captureSpans()
+		.lines.flatMap((line) => line.spans)
+		.filter((span) => span.text.trim() !== "");
+	const coloured = spans
+		.filter((span) => span.fg.intent !== "default")
+		.map((span) => span.text);
+	expect(coloured).toEqual([]);
+	// A whole word, so the Project's random temp name, which may hold a `q`,
+	// never matches.
+	const spanWith = (word: string) =>
+		spans.find((span) => span.text.split(/\s+/).includes(word));
+	expect((spanWith("e-run")?.attributes ?? 0) & TextAttributes.INVERSE).toBe(
+		TextAttributes.INVERSE,
+	);
+	expect((spanWith("b-ready")?.attributes ?? 0) & TextAttributes.INVERSE).toBe(
+		0,
+	);
+	expect((spanWith("STATE")?.attributes ?? 0) & TextAttributes.DIM).toBe(
+		TextAttributes.DIM,
+	);
+	// In the footer the keys stay bright and only their labels are dim.
+	expect((spanWith("q")?.attributes ?? 0) & TextAttributes.DIM).toBe(0);
+	expect((spanWith("Quit")?.attributes ?? 0) & TextAttributes.DIM).toBe(
+		TextAttributes.DIM,
+	);
+});
+
+const onlyAscii = /^[\x20-\x7e\n]*$/;
+
+test("under VAGO_ASCII=1 every symbol, bar and border is ASCII", async () => {
+	setEnv({ VAGO_ASCII: "1" });
+	const root = await projectThatScrolls();
+
+	const view = await renderView(root, short);
+	const frame = await frameWith(view, " 8 Goals");
+
+	expect(frame).toMatch(onlyAscii);
+	expect(rowOf(frame, "e-run")).toMatch(/^\| \* running +e-run +=+ 0\/1 /);
+	expect(rowOf(frame, "d-lost")).toContain("? lost");
+	expect(rowOf(frame, "c-stuck")).toContain("x stuck");
+	expect(rowOf(frame, "b-ready")).toContain("o ready");
+	view.mockInput.pressKey("G");
+	const last = await frameWith(view, " 8/8 ");
+	expect(last).toMatch(onlyAscii);
+	expect(rowOf(last, "a-old")).toContain("+ done");
+	view.mockInput.pressKey("?");
+	expect(await frameWith(view, " Keys ")).toMatch(onlyAscii);
+});
+
+// Whether no text of `frame` spills: every line inside a box ends on its
+// right border, and no row of the Goals box is drawn over.
+function holdsTogether(frame: string, width: number): void {
+	const lines = frame.split("\n").slice(0, -1);
+	const boxed = lines.filter((line) => line.startsWith("│"));
+	expect(boxed.length).toBeGreaterThan(0);
+	for (const line of boxed) {
+		expect(Bun.stringWidth(line)).toBe(width);
+		expect(line.at(-1)).toMatch(/[│█▀▄]/);
+	}
+}
+
+for (const size of [
+	{ width: 60, height: 24 },
+	{ width: 80, height: 24 },
+]) {
+	test(`at ${size.width}×${size.height} nothing overlaps or spills`, async () => {
+		const root = await projectThatScrolls();
+
+		const view = await renderView(root, size);
+		const frame = await frameWith(view, " 8 Goals");
+
+		holdsTogether(frame, size.width);
+		const lines = frame.split("\n");
+		expect(lines[0]).toMatch(
+			/^ \S+ · 8 Goals +1 running · 2 need you · \$\d+\.\d\d spent *$/,
+		);
+		for (const goal of ["e-run", "d-lost", "c-stuck", "b-ready"]) {
+			expect(rowOf(frame, goal)).toMatch(
+				/^│ [●?✗○✓] \w+ +[\w-]+ +━+ \d+\/\d+ /,
+			);
+		}
+		expect(frame).toContain("Workflow w");
+		expect(lines.at(-2)).toContain("q Quit");
+	});
+}
+
+test("a resize redraws the view to the new size", async () => {
+	const root = await projectOfEveryStanding();
+	const view = await renderView(root);
+	await frameWith(view, " 6 Goals");
+
+	view.resize(60, 24);
+	const narrow = await frameWith(view, `${"─".repeat(30)}┐\n`);
+	holdsTogether(narrow, 60);
+
+	view.resize(120, 30);
+	const wider = await frameWith(view, "ELAPSED");
+	holdsTogether(wider, 120);
+	expect(wider.split("\n")).toHaveLength(31);
 });

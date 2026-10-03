@@ -4,7 +4,7 @@
 import { beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import {
 	makeProject,
 	oneStep,
@@ -29,8 +29,8 @@ beforeAll(async () => {
 	}
 });
 
-// The compiled `vago`, started with no command in an 80×24 terminal on the
-// Project at `root`.
+// The compiled `vago`, started with no command in an 80×24 terminal in
+// folder `cwd`, with `env` added to its environment.
 type TerminalVago = {
 	screen: TerminalScreen;
 	press(keys: string): void;
@@ -38,11 +38,16 @@ type TerminalVago = {
 	exited: Promise<number>;
 };
 
-function openVago(root: string): TerminalVago {
+function openVago(cwd: string, env: Record<string, string> = {}): TerminalVago {
 	const screen = terminalScreen(24, 80);
 	const child = Bun.spawn([vago], {
-		cwd: root,
-		env: { ...process.env, VAGO_HOME: vagoHome, TERM: "xterm-256color" },
+		cwd,
+		env: {
+			...process.env,
+			VAGO_HOME: vagoHome,
+			TERM: "xterm-256color",
+			...env,
+		},
 		terminal: {
 			cols: 80,
 			rows: 24,
@@ -196,5 +201,39 @@ test("with nothing changing vago writes nothing, and a key lands at once", async
 	tui.press("\x1b[B");
 	// The quiet window of `frameWhere` and less than a quarter of a re-read.
 	await tui.screen.frameWhere((lines) => rowOf(lines, " 2/3 ") !== -1, 200);
+	tui.kill("SIGKILL");
+});
+
+test("under NO_COLOR vago prints no RGB colour, scrollbar and keys included", async () => {
+	const names = Array.from({ length: 20 }, (_, index) => `goal-${index}`);
+	const tui = openVago(await projectWithGoals(names), { NO_COLOR: "1" });
+	await tui.screen.frameWhere((lines) => rowOf(lines, " 1/20 ") !== -1);
+
+	tui.press("G");
+	await tui.screen.frameWhere((lines) => rowOf(lines, " 20/20 ") !== -1);
+	tui.press("?");
+	await tui.screen.frameWhere((lines) => rowOf(lines, " Keys ") !== -1);
+
+	expect(tui.screen.printed()).not.toMatch(/\[[\d;]*[34]8;2;/);
+	tui.kill("SIGKILL");
+});
+
+test("vago started in a Goal's worktree shows the main checkout's Goals", async () => {
+	const root = await projectWithGoals(["alpha", "beta"]);
+	const worktree = join(vagoHome, "worktrees", `${basename(root)}-alpha`);
+	Bun.spawnSync(
+		["git", "worktree", "add", "--quiet", worktree, "-b", "alpha"],
+		{
+			cwd: root,
+		},
+	);
+
+	const tui = openVago(worktree);
+
+	const frame = await tui.screen.frameWhere(
+		(lines) => rowOf(lines, " 1/2 ") !== -1,
+	);
+	expect(rowOf(frame, " alpha ")).not.toBe(-1);
+	expect(rowOf(frame, " beta ")).not.toBe(-1);
 	tui.kill("SIGKILL");
 });

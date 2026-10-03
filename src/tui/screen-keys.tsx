@@ -5,7 +5,7 @@
 import { type JSX, useTerminalDimensions } from "@opentui/solid";
 import { For } from "solid-js";
 import { fitText } from "./text-fit.ts";
-import { color } from "./theme.ts";
+import { theme } from "./theme.ts";
 
 /**
  * A key in a screen's footer: `keys` as pressed, `label` what it does in a
@@ -27,6 +27,7 @@ export function KeyFooter(props: {
 	keys: FooterKey[];
 	width: number;
 }): JSX.Element {
+	const { color, dimSpan } = theme();
 	const shown = () => {
 		const kept = [...props.keys];
 		const lineWidth = () =>
@@ -42,13 +43,13 @@ export function KeyFooter(props: {
 		return kept;
 	};
 	return (
-		<text fg={color.dim} flexShrink={0} wrapMode="none">
+		<text fg={color.fg} flexShrink={0} wrapMode="none">
 			<For each={shown()}>
 				{(key, index) => (
 					<>
 						{index() === 0 ? "" : footerGap}
-						<span style={{ fg: color.fg }}>{key.keys}</span>
-						{` ${key.label}`}
+						{key.keys}
+						<span style={dimSpan}>{` ${key.label}`}</span>
 					</>
 				)}
 			</For>
@@ -66,9 +67,10 @@ const keysWidth = 12;
  * decides when it shows.
  */
 export function KeyHelp(props: { keys: HelpKey[] }): JSX.Element {
+	const { color, border, dimSpan } = theme();
 	const terminal = useTerminalDimensions();
 	const width = () => Math.min(helpWidth, terminal().width);
-	// The border and the padding on both sides.
+	// The border and a space on both sides.
 	const meaningWidth = () => width() - 4 - keysWidth;
 	return (
 		<box
@@ -78,18 +80,22 @@ export function KeyHelp(props: { keys: HelpKey[] }): JSX.Element {
 			width={width()}
 			zIndex={10}
 			border
+			customBorderChars={border}
 			borderColor={color.accent}
+			// The lines cover the inside, spaces included: a filled box would
+			// leave its blank cells OpenTUI's white, which `NO_COLOR` forbids.
 			backgroundColor={color.bg}
+			shouldFill={false}
 			title=" Keys "
 			flexDirection="column"
-			paddingLeft={1}
-			paddingRight={1}
 		>
 			<For each={props.keys}>
 				{(key) => (
-					<text fg={color.dim} flexShrink={0} wrapMode="none">
-						<span style={{ fg: color.fg }}>{fitText(key.keys, keysWidth)}</span>
-						{fitText(key.meaning, meaningWidth())}
+					<text fg={color.fg} bg={color.bg} flexShrink={0} wrapMode="none">
+						{` ${fitText(key.keys, keysWidth)}`}
+						<span style={dimSpan}>
+							{`${fitText(key.meaning, meaningWidth())} `}
+						</span>
 					</text>
 				)}
 			</For>

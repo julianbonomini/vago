@@ -3,11 +3,12 @@
 // Hides the slots' sizes, which never depend on the Goal shown, so nothing
 // moves as the selection does.
 
+import type { ColorInput } from "@opentui/core";
 import type { JSX } from "@opentui/solid";
 import { For, Show } from "solid-js";
 import type { GoalRow, GoalRowRun, GoalStanding } from "./goal-rows.ts";
 import { fitText, wrapText } from "./text-fit.ts";
-import { color, symbol } from "./theme.ts";
+import { theme } from "./theme.ts";
 import { TicketBar, ticketTotal } from "./ticket-bar.tsx";
 import { clock, duration, money } from "./time-and-money.ts";
 
@@ -20,6 +21,7 @@ export function GoalPreview(props: {
 	row: GoalRow;
 	width: number;
 }): JSX.Element {
+	const { color, symbol, border, dimText } = theme();
 	const inner = () => props.width - boxEdges;
 	// The Runs column keeps its full width while the description has room
 	// for a few words, and gives up the rest below that.
@@ -35,6 +37,7 @@ export function GoalPreview(props: {
 	return (
 		<box
 			border
+			customBorderChars={border}
 			borderColor={color.border}
 			title={` ${props.row.goal} `}
 			bottomTitle={` Workflow ${props.row.workflow} ${symbol.sep} ${activity()} `}
@@ -47,7 +50,7 @@ export function GoalPreview(props: {
 			<text fg={color.fg} flexShrink={0} wrapMode="none">
 				{fitText(props.row.title, inner())}
 			</text>
-			<text fg={color.dim} flexShrink={0} wrapMode="none">
+			<text {...dimText} flexShrink={0} wrapMode="none">
 				<TicketBar
 					tickets={props.row.tickets}
 					standing={props.row.standing}
@@ -64,13 +67,13 @@ export function GoalPreview(props: {
 					flexDirection="column"
 					overflow="hidden"
 				>
-					<text fg={color.dim} flexShrink={0} wrapMode="none">
+					<text {...dimText} flexShrink={0} wrapMode="none">
 						{fitText("LATEST RUNS", runsColumn())}
 					</text>
 					<Show
 						when={props.row.latestRuns.length > 0}
 						fallback={
-							<text fg={color.dim} flexShrink={0} wrapMode="none">
+							<text {...dimText} flexShrink={0} wrapMode="none">
 								{fitText("No Run yet.", runsColumn())}
 							</text>
 						}
@@ -93,7 +96,7 @@ export function GoalPreview(props: {
 					flexDirection="column"
 					overflow="hidden"
 				>
-					<text fg={color.dim} flexShrink={0} wrapMode="none">
+					<text {...dimText} flexShrink={0} wrapMode="none">
 						{fitText("GOAL", descriptionColumn())}
 					</text>
 					<For
@@ -134,6 +137,7 @@ function RunLine(props: {
 	standing: GoalStanding;
 	width: number;
 }): JSX.Element {
+	const { color, dimSpan } = theme();
 	const mark = () => runMark(props.run.outcome, props.standing);
 	const fields = () => {
 		let left = props.width;
@@ -156,11 +160,11 @@ function RunLine(props: {
 		};
 	};
 	return (
-		<text fg={color.dim} flexShrink={0} wrapMode="none">
-			{fields().start}
-			<span style={{ fg: color.fg }}>{fields().step}</span>
+		<text fg={color.fg} flexShrink={0} wrapMode="none">
+			<span style={dimSpan}>{fields().start}</span>
+			{fields().step}
 			<span style={{ fg: mark().fg }}>{fields().outcome}</span>
-			{fields().rest}
+			<span style={dimSpan}>{fields().rest}</span>
 		</text>
 	);
 }
@@ -170,7 +174,8 @@ function RunLine(props: {
 function runMark(
 	outcome: string | undefined,
 	standing: GoalStanding,
-): { text: string; fg: string } {
+): { text: string; fg: ColorInput } {
+	const { color, symbol } = theme();
 	if (outcome === undefined && standing === "running") {
 		return { text: `${symbol.running} live`, fg: color.accent };
 	}

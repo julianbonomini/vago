@@ -3,6 +3,7 @@
 // order of the rows, the header line's totals, and what the preview shows of
 // the selected Goal. Hides the rules behind each.
 
+import { sep } from "node:path";
 import {
 	type GoalState,
 	isGoalClaimed,
@@ -11,8 +12,17 @@ import {
 	type TicketStatus,
 } from "../tickets/tickets.ts";
 
-/** A Goal's state as the Goals list shows it. */
-export type GoalStanding = "running" | "lost" | "stuck" | "ready" | "done";
+/**
+ * A Goal's state as the Goals list shows it. `broken` is a Goal whose files
+ * can't be read.
+ */
+export type GoalStanding =
+	| "running"
+	| "lost"
+	| "stuck"
+	| "broken"
+	| "ready"
+	| "done";
 
 /** How many of a Goal's Tickets are in each status. */
 export type GoalTicketCounts = {
@@ -32,9 +42,12 @@ export type GoalRow = {
 	elapsedMs: number;
 	/** Sum of every Run's cost, 0 with none. */
 	costUsd: number;
-	/** What the Goal is doing or waiting for, like `04 review`. */
+	/**
+	 * What the Goal is doing or waiting for, like `04 review`; for a broken
+	 * Goal, why its files can't be read.
+	 */
 	now: string;
-	/** The Workflow the Goal's header names. */
+	/** The Workflow the Goal's header names; `unknown` for a broken Goal. */
 	workflow: string;
 	/**
 	 * How long before the rows were read a Run last started or ended;
@@ -46,7 +59,8 @@ export type GoalRow = {
 	/**
 	 * `goal.md`'s body after its title, one string per paragraph with its
 	 * hard-wrapped lines joined. A heading or list item is a paragraph of its
-	 * own; "" stands for the blank line between paragraphs.
+	 * own; "" stands for the blank line between paragraphs. For a broken Goal,
+	 * why its files can't be read.
 	 */
 	description: string[];
 };
@@ -66,8 +80,10 @@ export type GoalRowRun = {
 
 /**
  * Every Goal of the Project at `root` as a row, sorted running, lost, stuck,
- * ready, done, then latest activity first, then name. Elapsed time runs to
- * `now` while a Goal is running. Throws what `readGoal` throws.
+ * broken, ready, done, then latest activity first, then name. Elapsed time
+ * runs to `now` while a Goal is running. A Goal `readGoal` can't read is a
+ * broken row saying why, with paths relative to `root`. Throws what
+ * `listGoals` throws.
  */
 export async function readGoalRows(
 	root: string,
@@ -75,7 +91,15 @@ export async function readGoalRows(
 ): Promise<GoalRow[]> {
 	const read = await Promise.all(
 		(await listGoals(root)).map(async (goal) => {
-			const state = await readGoal(root, goal);
+			let state: GoalState;
+			try {
+				state = await readGoal(root, goal);
+			} catch (error) {
+				const message = (error instanceof Error ? error.message : `${error}`)
+					.replaceAll(`${root}${sep}`, "")
+					.trim();
+				return { row: brokenRow(goal, message), last: undefined };
+			}
 			const claimed = await isGoalClaimed(root, goal);
 			const last = lastActivity(state);
 			return { row: goalRow(goal, state, claimed, now, last), last };
@@ -97,7 +121,7 @@ export async function readGoalRows(
 export type ProjectTotals = {
 	goals: number;
 	running: number;
-	/** Stuck plus lost: the Goals waiting on the human. */
+	/** Stuck, lost and broken: the Goals waiting on the human. */
 	needYou: number;
 	costUsd: number;
 };
@@ -109,7 +133,7 @@ export function projectTotals(rows: GoalRow[]): ProjectTotals {
 	return {
 		goals: rows.length,
 		running: inStanding("running"),
-		needYou: inStanding("stuck", "lost"),
+		needYou: inStanding("stuck", "lost", "broken"),
 		costUsd: rows.reduce((sum, row) => sum + row.costUsd, 0),
 	};
 }
@@ -118,9 +142,28 @@ const standingOrder: GoalStanding[] = [
 	"running",
 	"lost",
 	"stuck",
+	"broken",
 	"ready",
 	"done",
 ];
+
+// The row of Goal `goal`, whose files can't be read because of `message`:
+// the row's "now" says it on one line, the preview in full.
+function brokenRow(goal: string, message: string): GoalRow {
+	return {
+		goal,
+		standing: "broken",
+		title: "",
+		tickets: { done: 0, running: 0, stuck: 0, ready: 0 },
+		elapsedMs: 0,
+		costUsd: 0,
+		now: message.replace(/\s+/g, " "),
+		workflow: "unknown",
+		sinceLastActivityMs: undefined,
+		latestRuns: [],
+		description: paragraphs(message),
+	};
+}
 
 // `last` is the Goal's last activity, which the sort reads too.
 function goalRow(
@@ -176,8 +219,9 @@ function goalRow(
 	};
 }
 
-// The paragraphs of `text`, a Goal's description. `goal.md` is hard-wrapped at about 75 columns, which the preview's column
-// never is, so a paragraph's lines are joined to be wrapped again.
+// The paragraphs of `text`, a Goal's description. `goal.md` is hard-wrapped
+// at about 75 columns, which the preview's column never is, so a paragraph's
+// lines are joined to be wrapped again.
 function paragraphs(text: string): string[] {
 	const out: string[] = [];
 	let paragraph = "";
