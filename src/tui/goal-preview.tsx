@@ -34,7 +34,7 @@ export function GoalPreview(props: {
 		Math.max(0, Math.min(runWidth, inner() - columnGap - descriptionMin));
 	const descriptionColumn = () => inner() - runsColumn() - columnGap;
 	const ticketsLabel = () =>
-		`  ${props.row.tickets.done}/${ticketTotal(props.row.tickets)} Tickets`;
+		`  ${props.row.ticketCounts.done}/${ticketTotal(props.row.ticketCounts)} Tickets`;
 	const activity = () =>
 		props.row.sinceLastActivityMs === undefined
 			? "no Runs yet"
@@ -57,10 +57,11 @@ export function GoalPreview(props: {
 			</text>
 			<text {...dimText} flexShrink={0} wrapMode="none">
 				<TicketBar
-					tickets={props.row.tickets}
+					tickets={props.row.ticketCounts}
 					standing={props.row.standing}
 					width={Math.max(0, inner() - ticketsLabel().length)}
 					selected={false}
+					solid={false}
 				/>
 				{ticketsLabel()}
 			</text>

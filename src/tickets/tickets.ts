@@ -102,6 +102,8 @@ export type GoalState = {
 		ticket: Ticket;
 		/** The first `# ` heading of the body, or the slug after `NN-`. */
 		title: string;
+		/** The body after the line of its title, or all of it with none. */
+		description: string;
 		status: TicketStatus;
 		/** The numbers of the Tickets this one waits on. */
 		blockedBy: number[];
@@ -193,6 +195,7 @@ export async function readGoal(root: string, goal: string): Promise<GoalState> {
 	const tickets = entries.map(({ ticket, header, body }) => ({
 		ticket,
 		title: headingTitle(body, ticket.name.replace(/^\d+-/, "")),
+		description: afterHeading(body),
 		status: header.status,
 		blockedBy: header.blocked_by ?? [],
 		workflow: header.workflow ?? workflow,

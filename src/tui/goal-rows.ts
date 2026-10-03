@@ -1,7 +1,8 @@
 // What the Project view knows of each Goal: its standing, the "now" phrase
 // saying what it is doing or waiting for, how many Tickets it has, its
-// elapsed time and cost, the order of the rows, the header line's totals, and
-// what the preview shows of the selected Goal. Hides the rules behind each.
+// elapsed time, tokens and cost, the order of the rows, the header line's
+// totals, what the preview shows of the selected Goal, and the Tickets the
+// Goal view shows of it. Hides the rules behind each.
 
 import { sep } from "node:path";
 import {
@@ -12,6 +13,8 @@ import {
 	type TicketStatus,
 	ticketNumberText,
 } from "../tickets/tickets.ts";
+import { type GoalTicket, goalTickets } from "./goal-tickets.ts";
+import { joinParagraphs } from "./text-fit.ts";
 
 /**
  * A Goal's state as the Goals list shows it. `broken` is a Goal whose files
@@ -44,8 +47,10 @@ export type GoalRow = {
 	standing: GoalStanding;
 	/** From goal.md's first heading. */
 	title: string;
-	tickets: GoalTicketCounts;
+	ticketCounts: GoalTicketCounts;
 	elapsedMs: number;
+	/** Sum of every Run's input and output tokens, 0 with none. */
+	tokens: number;
 	/** Sum of every Run's cost, 0 with none. */
 	costUsd: number;
 	/**
@@ -60,13 +65,13 @@ export type GoalRow = {
 	 * undefined with no Runs.
 	 */
 	sinceLastActivityMs: number | undefined;
+	/** Every Ticket of the Goal, lowest number first. */
+	tickets: GoalTicket[];
 	/** The Goal's eight latest Runs, newest first. */
 	latestRuns: GoalRowRun[];
 	/**
-	 * `goal.md`'s body after its title, one string per paragraph with its
-	 * hard-wrapped lines joined. A heading or list item is a paragraph of its
-	 * own; "" stands for the blank line between paragraphs. For a broken Goal,
-	 * why its files can't be read.
+	 * `goal.md`'s body after its title as `joinParagraphs` gives it. For a
+	 * broken Goal, why its files can't be read.
 	 */
 	description: string[];
 };
@@ -161,14 +166,16 @@ function brokenRow(goal: string, message: string): GoalRow {
 		goal,
 		standing: "broken",
 		title: "",
-		tickets: { done: 0, running: 0, stuck: 0, ready: 0 },
+		ticketCounts: { done: 0, running: 0, stuck: 0, ready: 0 },
 		elapsedMs: 0,
+		tokens: 0,
 		costUsd: 0,
 		now: message.replace(/\s+/g, " "),
 		workflow: "unknown",
 		sinceLastActivityMs: undefined,
+		tickets: [],
 		latestRuns: [],
-		description: paragraphs(message),
+		description: joinParagraphs(message),
 	};
 }
 
@@ -181,9 +188,8 @@ function goalRow(
 	last: Date | undefined,
 ): GoalRow {
 	const { standing, phrase } = goalStanding(state, claimed);
-	const starts = state.tickets.flatMap(({ runs }) =>
-		runs.map(({ started }) => started.getTime()),
-	);
+	const runs = state.tickets.flatMap((ticket) => ticket.runs);
+	const starts = runs.map(({ started }) => started.getTime());
 	const end = standing === "running" ? now : last;
 	const count = (status: TicketStatus) =>
 		state.tickets.filter((ticket) => ticket.status === status).length;
@@ -191,7 +197,7 @@ function goalRow(
 		goal,
 		standing,
 		title: state.title,
-		tickets: {
+		ticketCounts: {
 			done: count("done"),
 			running: count("running"),
 			stuck: count("stuck"),
@@ -202,13 +208,16 @@ function goalRow(
 			end === undefined || starts.length === 0
 				? 0
 				: end.getTime() - Math.min(...starts),
-		costUsd: state.tickets
-			.flatMap(({ runs }) => runs)
-			.reduce((sum, run) => sum + (run.costUsd ?? 0), 0),
+		tokens: runs.reduce(
+			(sum, run) => sum + (run.tokens?.input ?? 0) + (run.tokens?.output ?? 0),
+			0,
+		),
+		costUsd: runs.reduce((sum, run) => sum + (run.costUsd ?? 0), 0),
 		now: phrase,
 		workflow: state.workflow,
 		sinceLastActivityMs:
 			last === undefined ? undefined : now.getTime() - last.getTime(),
+		tickets: goalTickets(state, claimed),
 		latestRuns: state.tickets
 			.flatMap(({ ticket, runs }) =>
 				runs.map((run) => ({
@@ -222,38 +231,8 @@ function goalRow(
 			)
 			.sort((a, b) => b.started.getTime() - a.started.getTime())
 			.slice(0, 8),
-		description: paragraphs(state.description),
+		description: joinParagraphs(state.description),
 	};
-}
-
-// The paragraphs of `text`, a Goal's description. `goal.md` is hard-wrapped
-// at about 75 columns, which the preview's column never is, so a paragraph's
-// lines are joined to be wrapped again.
-function paragraphs(text: string): string[] {
-	const out: string[] = [];
-	let paragraph = "";
-	const endParagraph = () => {
-		if (paragraph !== "") out.push(paragraph);
-		paragraph = "";
-	};
-	for (const line of text.split("\n").map((each) => each.trim())) {
-		if (line === "") {
-			endParagraph();
-			if (out.length > 0 && out.at(-1) !== "") out.push("");
-		} else if (/^#+ /.test(line)) {
-			endParagraph();
-			out.push(line.replace(/^#+ /, ""));
-		} else if (/^([-*] |\d+\. )/.test(line)) {
-			endParagraph();
-			paragraph = line;
-		} else {
-			paragraph = paragraph === "" ? line : `${paragraph} ${line}`;
-		}
-	}
-	endParagraph();
-	while (out[0] === "") out.shift();
-	while (out.at(-1) === "") out.pop();
-	return out;
 }
 
 // The Goal's standing and the "now" phrase that goes with it. The first

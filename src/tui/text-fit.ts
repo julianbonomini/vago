@@ -1,6 +1,8 @@
 // Fitting text to a column of the terminal by display width, cut to one line
 // or wrapped to many, so CJK and emoji, which take two cells, keep columns
-// aligned. Hides the grapheme splitting and the width measure.
+// aligned, and hard-wrapped Markdown joined into paragraphs to be wrapped
+// again. Hides the grapheme splitting, the width measure and which lines
+// start a paragraph.
 
 import { theme } from "./theme.ts";
 
@@ -55,4 +57,38 @@ export function wrapText(text: string, width: number): string[] {
 	}
 	lines.push(line);
 	return lines;
+}
+
+/**
+ * The paragraphs of `text`, hard-wrapped Markdown such as a Goal's or a
+ * Ticket's text, one string per paragraph with its lines joined, for
+ * `wrapText` to wrap to a column. A heading, its `#`s dropped, or a list item
+ * is a paragraph of its own; "" stands for the blank line between
+ * paragraphs, and none starts or ends the list.
+ */
+export function joinParagraphs(text: string): string[] {
+	const out: string[] = [];
+	let paragraph = "";
+	const endParagraph = () => {
+		if (paragraph !== "") out.push(paragraph);
+		paragraph = "";
+	};
+	for (const line of text.split("\n").map((each) => each.trim())) {
+		if (line === "") {
+			endParagraph();
+			if (out.length > 0 && out.at(-1) !== "") out.push("");
+		} else if (/^#+ /.test(line)) {
+			endParagraph();
+			out.push(line.replace(/^#+ /, ""));
+		} else if (/^([-*] |\d+\. )/.test(line)) {
+			endParagraph();
+			paragraph = line;
+		} else {
+			paragraph = paragraph === "" ? line : `${paragraph} ${line}`;
+		}
+	}
+	endParagraph();
+	while (out[0] === "") out.shift();
+	while (out.at(-1) === "") out.pop();
+	return out;
 }

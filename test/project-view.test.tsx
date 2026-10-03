@@ -3,8 +3,6 @@ import { rm } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { RGBA, TextAttributes } from "@opentui/core";
 import type { TestRendererSetup } from "@opentui/core/testing";
-import { testRender } from "@opentui/solid";
-import { ProjectView } from "../src/tui/project-view.tsx";
 import {
 	goalText,
 	type HeldLock,
@@ -13,40 +11,7 @@ import {
 	projectWithGoals,
 	ticketText,
 } from "./project.ts";
-
-let rendered: TestRendererSetup[] = [];
-
-// Each test renderer is destroyed after its test, so none keeps drawing while
-// the rest of the suite runs in the same process.
-afterEach(() => {
-	for (const view of rendered) view.renderer.destroy();
-	rendered = [];
-});
-
-async function renderView(
-	root: string,
-	size = { width: 80, height: 24 },
-): Promise<TestRendererSetup> {
-	const view = await testRender(() => <ProjectView root={root} />, size);
-	rendered.push(view);
-	return view;
-}
-
-// Draws frames until one contains `text`, and returns it. The view reads its
-// Goals from disk, so the first frames can come before the read is done, and
-// a change on disk shows within one second's re-read.
-async function frameWith(
-	view: TestRendererSetup,
-	text: string,
-): Promise<string> {
-	for (let tries = 0; ; tries++) {
-		await view.renderOnce();
-		const frame = view.captureCharFrame();
-		if (frame.includes(text)) return frame;
-		if (tries === 300) throw new Error(`No frame shows ${text}:\n${frame}`);
-		await Bun.sleep(10);
-	}
-}
+import { frameWith, frameWithout, renderView } from "./view-render.tsx";
 
 test("the Project view lists every Goal by name, in name order", async () => {
 	const root = await projectWithGoals(["beta", "alpha", "gamma"]);
@@ -100,20 +65,6 @@ test("g and G move the selection to the first and the last Goal", async () => {
 	await frameWith(view, " 1/3 ");
 });
 
-// Draws frames until none contains `text`, and returns the last.
-async function frameWithout(
-	view: TestRendererSetup,
-	text: string,
-): Promise<string> {
-	for (let tries = 0; ; tries++) {
-		await view.renderOnce();
-		const frame = view.captureCharFrame();
-		if (!frame.includes(text)) return frame;
-		if (tries === 300) throw new Error(`Every frame shows ${text}:\n${frame}`);
-		await Bun.sleep(10);
-	}
-}
-
 test("? shows every key, and Esc or ? hides them", async () => {
 	const root = await projectWithGoals(["alpha", "beta"]);
 	const view = await renderView(root);
@@ -121,7 +72,15 @@ test("? shows every key, and Esc or ? hides them", async () => {
 
 	view.mockInput.pressKey("?");
 	const help = await frameWith(view, " Keys ");
-	for (const key of ["↑↓ j k", "g G", "click", "wheel", "Esc", "q Ctrl-C"]) {
+	for (const key of [
+		"↑↓ j k",
+		"Enter",
+		"g G",
+		"click",
+		"wheel",
+		"Esc",
+		"q Ctrl-C",
+	]) {
 		expect(help).toContain(key);
 	}
 	view.mockInput.pressEscape();
@@ -166,7 +125,7 @@ test("the footer names the keys of the Project view", async () => {
 	const frame = await frameWith(view, " 1/1 ");
 
 	expect(frame.trimEnd().split("\n").at(-1)).toMatch(
-		/^ ↑↓ Goal {3}g G First, last {3}\? Help {3}q Quit *$/,
+		/^ ↑↓ Goal {3}Enter Open {3}g G First, last {3}\? Help {3}q Quit *$/,
 	);
 });
 
@@ -177,7 +136,7 @@ test("on a narrow terminal the footer drops its least used keys first", async ()
 	const frame = await frameWith(view, " 1/1 ");
 
 	expect(frame.trimEnd().split("\n").at(-1)).toMatch(
-		/^ ↑↓ Goal {3}\? Help {3}q Quit *$/,
+		/^ ↑↓ Goal {3}Enter Open {3}\? Help *$/,
 	);
 });
 

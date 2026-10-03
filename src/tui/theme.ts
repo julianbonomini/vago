@@ -11,6 +11,7 @@ import {
 } from "@opentui/core";
 import type { TicketStatus } from "../tickets/tickets.ts";
 import type { GoalStanding } from "./goal-rows.ts";
+import type { GoalTicketMark } from "./goal-tickets.ts";
 
 /** The colour tokens. */
 export type ThemeColors = {
@@ -27,7 +28,8 @@ export type ThemeColors = {
 /**
  * The symbols. The keys for the six Goal standings are the standing words,
  * so `symbol[standing]` is a standing's symbol. `blocked` is a ready Ticket
- * waiting on a blocker, `bar` one cell of a progress bar, `sep` the mark
+ * waiting on a blocker, `bar` one cell of a progress bar, `solidBar` one
+ * cell of the heavier bar a roomy Goal view's header draws, `sep` the mark
  * between items on a line, `cut` the end of a text cut short, and `upDown`
  * the arrow keys as a footer names them.
  */
@@ -40,6 +42,7 @@ export type ThemeSymbols = {
 	broken: string;
 	blocked: string;
 	bar: string;
+	solidBar: string;
 	sep: string;
 	cut: string;
 	upDown: string;
@@ -128,6 +131,19 @@ export function ticketColor(
 	}
 }
 
+/**
+ * The span style of a Ticket's mark in the Goal view, its symbol and state
+ * word: `goalColor` for the words they share, and dim for a blocked Ticket.
+ */
+export function ticketMarkStyle(mark: GoalTicketMark): {
+	fg: ColorInput;
+	dim: boolean;
+} {
+	return mark === "blocked"
+		? theme().dimSpan
+		: { fg: goalColor(mark), dim: false };
+}
+
 // One orange accent on near-black, as the human picked in the prototype.
 const palette: ThemeColors = {
 	bg: "#0c0c0c",
@@ -168,6 +184,7 @@ const glyphs: ThemeSymbols = {
 	broken: "!",
 	blocked: "◌",
 	bar: "━",
+	solidBar: "█",
 	sep: "·",
 	cut: "…",
 	upDown: "↑↓",
@@ -182,6 +199,7 @@ const asciiGlyphs: ThemeSymbols = {
 	broken: "!",
 	blocked: "-",
 	bar: "=",
+	solidBar: "#",
 	sep: "|",
 	cut: "~",
 	upDown: "Up Dn",

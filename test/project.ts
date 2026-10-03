@@ -84,15 +84,16 @@ export type FixtureRun = {
 	ended?: Date;
 	outcome?: string;
 	costUsd?: number;
+	tokens?: { input: number; output: number };
 };
 
 /**
- * A Ticket file with status `status` in a `+++` header, then a short body.
- * Each run gets a log path Vago never reads in these tests.
+ * A Ticket file with status `status` in a `+++` header, then `body`, a short
+ * one by default. Each run gets a log path Vago never reads in these tests.
  */
 export function ticketText(
 	status: "ready" | "running" | "done" | "stuck",
-	options: { runs?: FixtureRun[]; blockedBy?: number[] } = {},
+	options: { runs?: FixtureRun[]; blockedBy?: number[]; body?: string } = {},
 ): string {
 	const lines = [`status = "${status}"`];
 	if (options.blockedBy !== undefined) {
@@ -105,9 +106,14 @@ export function ticketText(
 			lines.push(`ended = ${run.ended.toISOString()}`);
 		if (run.outcome !== undefined) lines.push(`outcome = "${run.outcome}"`);
 		if (run.costUsd !== undefined) lines.push(`cost_usd = ${run.costUsd}`);
+		if (run.tokens !== undefined) {
+			lines.push(
+				`tokens = { input = ${run.tokens.input}, output = ${run.tokens.output} }`,
+			);
+		}
 		lines.push(`log = "logs/${run.step}-${index + 1}.log"`);
 	}
-	return `+++\n${lines.join("\n")}\n+++\n\n# A Ticket\n`;
+	return `+++\n${lines.join("\n")}\n+++\n\n${options.body ?? "# A Ticket\n"}`;
 }
 
 /** A `running.lock` held by a live process, until `release` is called. */

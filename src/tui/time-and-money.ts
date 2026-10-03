@@ -1,5 +1,5 @@
-// How the TUI spells a stretch of time, a time of day and dollars, so every
-// view spells them alike.
+// How the TUI spells a stretch of time, a time of day, dollars and a count
+// of tokens, so every view spells them alike.
 
 /** The largest two units of `ms`, like `13h 36m`, `25m 52s` or `0s`. */
 export function duration(ms: number): string {
@@ -21,4 +21,11 @@ export function money(usd: number): string {
 /** The hour and minute of `time` in the local time zone, like `09:05`. */
 export function clock(time: Date): string {
 	return time.toTimeString().slice(0, 5);
+}
+
+/** A count of tokens to three figures, like `950`, `12.3k` or `29.7M`. */
+export function tokenCount(tokens: number): string {
+	if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`;
+	if (tokens >= 1000) return `${(tokens / 1000).toFixed(1)}k`;
+	return `${tokens}`;
 }
