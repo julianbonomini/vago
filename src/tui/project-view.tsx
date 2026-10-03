@@ -5,22 +5,20 @@
 import { basename } from "node:path";
 import { type JSX, useKeyboard, useTerminalDimensions } from "@opentui/solid";
 import { createResource, createSignal, For, Show } from "solid-js";
-import {
-	type GoalRow,
-	type GoalStanding,
-	type GoalTicketCounts,
-	projectTotals,
-	readGoalRows,
-} from "./goal-rows.ts";
+import { GoalPreview } from "./goal-preview.tsx";
+import { type GoalRow, projectTotals, readGoalRows } from "./goal-rows.ts";
 import { fitText } from "./text-fit.ts";
-import { color, goalColor, symbol, ticketColor } from "./theme.ts";
+import { color, goalColor, symbol } from "./theme.ts";
+import { TicketBar, ticketTotal } from "./ticket-bar.tsx";
+import { duration, money } from "./time-and-money.ts";
 
 /**
  * The Project view of the Project at `root`: a header line with the
  * Project's counts and spend, and a Goals box with one row per Goal showing
  * its standing, Tickets, time, cost, what it is doing and its title, the
  * selected one in the accent colour, moved by ↑↓ and j k, with `n/N` on the
- * box's bottom border. Reads the Goals itself.
+ * box's bottom border. Below it, the selected Goal's preview fills the rest
+ * of the screen. Reads the Goals itself.
  */
 export function ProjectView(props: { root: string }): JSX.Element {
 	const [rows] = createResource(() => readGoalRows(props.root, new Date()));
@@ -80,6 +78,7 @@ export function ProjectView(props: { root: string }): JSX.Element {
 				bottomTitleAlignment="right"
 				paddingLeft={1}
 				paddingRight={1}
+				flexShrink={0}
 			>
 				<text fg={color.dim} flexShrink={0} wrapMode="none">
 					{`${"  STATE".padEnd(stateWidth)}${"GOAL".padEnd(nameWidth())} ${"TICKETS".padEnd(ticketsWidth)}${wide() ? `${"ELAPSED".padEnd(timesWidth)}${"COST".padEnd(timesWidth)}` : ""}${fitText("NOW", widths().now)}${fitText("TITLE", widths().title)}`}
@@ -95,6 +94,11 @@ export function ProjectView(props: { root: string }): JSX.Element {
 					)}
 				</For>
 			</box>
+			<Show when={rows()?.[selected()]}>
+				{(row: () => GoalRow) => (
+					<GoalPreview row={row()} width={terminal().width} />
+				)}
+			</Show>
 		</box>
 	);
 }
@@ -118,23 +122,6 @@ function HeaderLine(props: { root: string; rows: GoalRow[] }): JSX.Element {
 			</text>
 		</box>
 	);
-}
-
-// The largest two units, like `13h 36m`, `25m 52s` or `0s`.
-function duration(ms: number): string {
-	const seconds = Math.max(0, Math.floor(ms / 1000));
-	const days = Math.floor(seconds / 86400);
-	const hours = Math.floor((seconds % 86400) / 3600);
-	const minutes = Math.floor((seconds % 3600) / 60);
-	if (days > 0) return `${days}d ${hours}h`;
-	if (hours > 0) return `${hours}h ${minutes}m`;
-	if (minutes > 0) return `${minutes}m ${seconds % 60}s`;
-	return `${seconds}s`;
-}
-
-// Dollars to the cent, like `$3.70`.
-function money(usd: number): string {
-	return `$${usd.toFixed(2)}`;
 }
 
 // The Goals box's border and padding, on both sides.
@@ -195,58 +182,5 @@ function GoalRowLine(props: {
 				{fitText(props.row.title, props.widths.title)}
 			</span>
 		</text>
-	);
-}
-
-function ticketTotal(tickets: GoalTicketCounts): number {
-	return barStatuses.reduce((sum, status) => sum + tickets[status], 0);
-}
-
-// The order of a bar's segments, left to right.
-const barStatuses = ["done", "running", "stuck", "ready"] as const;
-
-// `width` cells of the bar, split between the Ticket statuses by their share
-// of the Tickets. Every status present gets at least one cell, so one stuck
-// Ticket among many never rounds away. Each takes the whole cells of its
-// share, the cells left go to the largest fractions, and the largest segment
-// gives up what the one-cell floor adds. Spans, so it sits inside a row's
-// text.
-function TicketBar(props: {
-	tickets: GoalTicketCounts;
-	standing: GoalStanding;
-	width: number;
-	selected: boolean;
-}): JSX.Element {
-	const segments = () => {
-		const total = ticketTotal(props.tickets);
-		if (total === 0) return [{ fg: color.faint, cells: props.width }];
-		const shares = barStatuses
-			.filter((status) => props.tickets[status] > 0)
-			.map((status) => {
-				const share = (props.tickets[status] / total) * props.width;
-				return {
-					fg: ticketColor(status, props.standing),
-					cells: Math.max(1, Math.floor(share)),
-					fraction: share - Math.floor(share),
-				};
-			});
-		let left = props.width - shares.reduce((sum, s) => sum + s.cells, 0);
-		for (const share of [...shares].sort((a, b) => b.fraction - a.fraction)) {
-			if (left <= 0) break;
-			share.cells++;
-			left--;
-		}
-		const largest = shares.reduce((a, b) => (b.cells > a.cells ? b : a));
-		largest.cells += left;
-		return shares;
-	};
-	return (
-		<For each={segments()}>
-			{(segment) => (
-				<span style={{ fg: props.selected ? color.bg : segment.fg }}>
-					{symbol.bar.repeat(segment.cells)}
-				</span>
-			)}
-		</For>
 	);
 }

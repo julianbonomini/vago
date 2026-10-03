@@ -80,6 +80,8 @@ export type TicketRun = {
 export type GoalState = {
 	/** The first `# ` heading of `goal.md`'s body, or the Goal's name. */
 	title: string;
+	/** `goal.md`'s body after the line of its title, or all of it with none. */
+	description: string;
 	/**
 	 * The name of the Workflow the Goal's `goal.md` header names, which a
 	 * Ticket goes through unless its own header names another. It might not
@@ -209,6 +211,7 @@ export async function readGoal(root: string, goal: string): Promise<GoalState> {
 	);
 	return {
 		title: headingTitle(body, goal),
+		description: afterHeading(body),
 		workflow,
 		tickets,
 		nextReady:
@@ -445,6 +448,14 @@ function checkName(label: string, name: string): void {
 // when it has none.
 function headingTitle(body: string, fallback: string): string {
 	return /^# +(.+?)\s*$/m.exec(body)?.[1] ?? fallback;
+}
+
+// What follows the line `headingTitle` reads, or `body` with no heading.
+function afterHeading(body: string): string {
+	const heading = /^# +.+$/m.exec(body);
+	return heading === null
+		? body
+		: body.slice(heading.index + heading[0].length);
 }
 
 // A file with no body gives the agent nothing to work from.

@@ -1,6 +1,7 @@
-// The Goals table's knowledge: each Goal's standing, the "now" phrase saying
-// what it is doing or waiting for, its elapsed time and cost, the order of
-// the rows, and the header line's totals. Hides the rules behind each.
+// What the Project view knows of each Goal: its standing, the "now" phrase
+// saying what it is doing or waiting for, its elapsed time and cost, the
+// order of the rows, the header line's totals, and what the preview shows of
+// the selected Goal. Hides the rules behind each.
 
 import {
 	type GoalState,
@@ -21,7 +22,7 @@ export type GoalTicketCounts = {
 	ready: number;
 };
 
-/** One row of the Goals table. */
+/** One row of the Goals table, with what the preview shows of its Goal. */
 export type GoalRow = {
 	goal: string;
 	standing: GoalStanding;
@@ -33,6 +34,34 @@ export type GoalRow = {
 	costUsd: number;
 	/** What the Goal is doing or waiting for, like `04 review`. */
 	now: string;
+	/** The Workflow the Goal's header names. */
+	workflow: string;
+	/**
+	 * How long before the rows were read a Run last started or ended;
+	 * undefined with no Runs.
+	 */
+	sinceLastActivityMs: number | undefined;
+	/** The Goal's eight latest Runs, newest first. */
+	latestRuns: GoalRowRun[];
+	/**
+	 * `goal.md`'s body after its title, one string per paragraph with its
+	 * hard-wrapped lines joined. A heading or list item is a paragraph of its
+	 * own; "" stands for the blank line between paragraphs.
+	 */
+	description: string[];
+};
+
+/** One Run as the preview lists it. */
+export type GoalRowRun = {
+	started: Date;
+	ticketNumber: number;
+	step: string;
+	/** As spelled in the header, like `ok`; absent while the Run is open. */
+	outcome?: string;
+	/** To the Run's end, or to the time the rows were read while open. */
+	durationMs: number;
+	/** Absent for a shell Step. */
+	costUsd?: number;
 };
 
 /**
@@ -127,7 +156,53 @@ function goalRow(
 			.flatMap(({ runs }) => runs)
 			.reduce((sum, run) => sum + (run.costUsd ?? 0), 0),
 		now: phrase,
+		workflow: state.workflow,
+		sinceLastActivityMs:
+			last === undefined ? undefined : now.getTime() - last.getTime(),
+		latestRuns: state.tickets
+			.flatMap(({ ticket, runs }) =>
+				runs.map((run) => ({
+					started: run.started,
+					ticketNumber: ticket.number,
+					step: run.step,
+					outcome: run.outcome,
+					durationMs: (run.ended ?? now).getTime() - run.started.getTime(),
+					costUsd: run.costUsd,
+				})),
+			)
+			.sort((a, b) => b.started.getTime() - a.started.getTime())
+			.slice(0, 8),
+		description: paragraphs(state.description),
 	};
+}
+
+// The paragraphs of `text`, a Goal's description. `goal.md` is hard-wrapped at about 75 columns, which the preview's column
+// never is, so a paragraph's lines are joined to be wrapped again.
+function paragraphs(text: string): string[] {
+	const out: string[] = [];
+	let paragraph = "";
+	const endParagraph = () => {
+		if (paragraph !== "") out.push(paragraph);
+		paragraph = "";
+	};
+	for (const line of text.split("\n").map((each) => each.trim())) {
+		if (line === "") {
+			endParagraph();
+			if (out.length > 0 && out.at(-1) !== "") out.push("");
+		} else if (/^#+ /.test(line)) {
+			endParagraph();
+			out.push(line.replace(/^#+ /, ""));
+		} else if (/^([-*] |\d+\. )/.test(line)) {
+			endParagraph();
+			paragraph = line;
+		} else {
+			paragraph = paragraph === "" ? line : `${paragraph} ${line}`;
+		}
+	}
+	endParagraph();
+	while (out[0] === "") out.shift();
+	while (out.at(-1) === "") out.pop();
+	return out;
 }
 
 // The Goal's standing and the "now" phrase that goes with it. The first
