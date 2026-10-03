@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, realpath, rm } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdtemp, realpath, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -50,6 +51,7 @@ test("a shell Step runs in a worktree on vago/<goal>, outside the repo", async (
 
 test("the worktree is cut from the default branch, whatever it's called", async () => {
 	const root = await makeProject({
+		// The uncommitted head.txt also keeps the worktree for the test to read.
 		".vago/workflows/test.toml": oneStep("git rev-parse HEAD > head.txt"),
 		[`${goalDir}/goal.md`]: goalText("test"),
 		[ticketPath]: ticket,
@@ -444,4 +446,152 @@ test("with .vago/ tracked, re-running a Goal picks up a later edit and keeps the
 	// version.txt is the Step's own output, left uncommitted.
 	expect(gitStatus(worktree)).toBe("?? version.txt\n");
 	expect(goalBranchChanges(root)).toBe("one.txt\n");
+});
+
+// The main checkout of a Goal hello Project whose `main` is pushed to a bare
+// origin, holding an untracked notes.txt and an ignored .env, with `workflow`
+// as its Workflow.
+async function makePushedProject(workflow: string): Promise<string> {
+	const root = await makeProject({
+		".vago/workflows/test.toml": workflow,
+		".gitignore": ".env\n",
+		".env": "secret\n",
+		"notes.txt": "note\n",
+		[`${goalDir}/goal.md`]: goalText("test"),
+		[ticketPath]: ticket,
+	});
+	const origin = await mkdtemp(join(tmpdir(), "vago-origin-"));
+	Bun.spawnSync(["git", "init", "--quiet", "--bare"], { cwd: origin });
+	Bun.spawnSync(["git", "remote", "add", "origin", origin], { cwd: root });
+	Bun.spawnSync(["git", "push", "--quiet", "origin", "main"], { cwd: root });
+	return root;
+}
+
+// Shell commands that commit made.txt on the Goal's branch, and push it.
+const commit = `echo made > made.txt && git add made.txt && git ${gitIdentity.join(" ")} commit -qm made`;
+const push = "git push -q -u origin vago/hello";
+
+// The worktree path from the `Worktree <path>` line `vago run` starts with.
+// Never `goalWorktree`, which waits forever for a removed one.
+function printedWorktree(stdout: string): string {
+	return (stdout.split("\n")[0] ?? "").slice("Worktree ".length);
+}
+
+function listedWorktrees(root: string): string {
+	return Bun.spawnSync(["git", "worktree", "list", "--porcelain"], {
+		cwd: root,
+	}).stdout.toString();
+}
+
+function hasRef(root: string, ref: string): boolean {
+	return (
+		Bun.spawnSync(["git", "rev-parse", "--verify", "--quiet", ref], {
+			cwd: root,
+		}).exitCode === 0
+	);
+}
+
+test("a done Goal's clean, pushed worktree is removed, and every branch and the Goal's state are kept", async () => {
+	const root = await makePushedProject(
+		oneStep(`${commit} && git branch hello/side && ${push}`),
+	);
+
+	const result = await runVago(root, ["run", "hello"]);
+
+	expect(result.stderr).toBe("");
+	expect(result.exitCode).toBe(0);
+	const worktree = printedWorktree(result.stdout);
+	expect(existsSync(worktree)).toBe(false);
+	expect(listedWorktrees(root)).not.toContain(worktree);
+	expect(hasRef(root, "vago/hello")).toBe(true);
+	expect(hasRef(root, "hello/side")).toBe(true);
+	expect(result.stdout).toContain(
+		`Removed worktree ${worktree}; branch vago/hello is kept`,
+	);
+	expect(existsSync(join(root, goalDir, "goal.md"))).toBe(true);
+	expect(existsSync(join(root, ticketPath))).toBe(true);
+});
+
+test("a done Goal's worktree with a commit not pushed is kept, and vago run says why", async () => {
+	const root = await makePushedProject(oneStep(commit));
+
+	const result = await runVago(root, ["run", "hello"]);
+
+	expect(result.exitCode).toBe(0);
+	const worktree = printedWorktree(result.stdout);
+	expect(existsSync(worktree)).toBe(true);
+	expect(result.stdout).toContain(
+		`Kept worktree ${worktree}: vago/hello has commits not pushed`,
+	);
+});
+
+test("a done Goal's pushed worktree with a new uncommitted file is kept, and vago run says why", async () => {
+	const root = await makePushedProject(
+		oneStep(`${commit} && ${push} && echo wip > wip.txt`),
+	);
+
+	const result = await runVago(root, ["run", "hello"]);
+
+	expect(result.exitCode).toBe(0);
+	const worktree = printedWorktree(result.stdout);
+	expect(existsSync(worktree)).toBe(true);
+	expect(result.stdout).toContain(
+		`Kept worktree ${worktree}: it has uncommitted changes`,
+	);
+});
+
+test("a done Goal's pushed worktree with an edited copy of an untracked file is kept", async () => {
+	const root = await makePushedProject(
+		oneStep(`${commit} && ${push} && echo more >> notes.txt`),
+	);
+
+	const result = await runVago(root, ["run", "hello"]);
+
+	expect(result.exitCode).toBe(0);
+	const worktree = printedWorktree(result.stdout);
+	expect(existsSync(worktree)).toBe(true);
+	expect(result.stdout).toContain(
+		`Kept worktree ${worktree}: it has uncommitted changes`,
+	);
+});
+
+test("a Goal that goes stuck keeps its worktree", async () => {
+	const root = await makePushedProject(`${oneStep(`${commit} && ${push}`)}
+[[steps]]
+id   = "fail"
+type = "shell"
+run  = "exit 1"
+`);
+
+	const result = await runVago(root, ["run", "hello"]);
+
+	expect(result.exitCode).not.toBe(0);
+	expect(listedWorktrees(root)).toContain(printedWorktree(result.stdout));
+	expect(result.stdout).not.toContain("Removed worktree");
+	expect(result.stdout).not.toContain("Kept worktree");
+});
+
+test("vago goal report shows the Runs of a Goal whose worktree was removed", async () => {
+	const root = await makePushedProject(oneStep(`${commit} && ${push}`));
+	const run = await runVago(root, ["run", "hello"]);
+	expect(run.stdout).toContain("Removed worktree");
+
+	const report = await runVago(root, ["goal", "report", "hello"]);
+
+	expect(report.exitCode).toBe(0);
+	expect(report.stdout).toContain("| 01-say-hello | work | ok |");
+});
+
+test("a done Goal's clean, pushed worktree is removed when the main checkout has an untracked symlink to a folder", async () => {
+	const root = await makePushedProject(oneStep(`${commit} && ${push}`));
+	await Bun.write(join(root, "assets/logo.txt"), "logo\n");
+	await symlink("assets", join(root, "latest"));
+
+	const result = await runVago(root, ["run", "hello"]);
+
+	expect(result.stderr).toBe("");
+	expect(result.exitCode).toBe(0);
+	const worktree = printedWorktree(result.stdout);
+	expect(existsSync(worktree)).toBe(false);
+	expect(result.stdout).toContain(`Removed worktree ${worktree}`);
 });

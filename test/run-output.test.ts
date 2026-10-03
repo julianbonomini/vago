@@ -108,14 +108,16 @@ run  = "true"
 
 	const result = await runVago(root, ["run", "hello"]);
 
-	expect(steady(result.stdout)).toEndWith(`
+	// Only the line about the Goal's worktree follows the summary.
+	expect(steady(result.stdout)).toContain(`
 hello: 3 of 3 Tickets done
 Ticket    Status  Runs   Took   Cost
 01-greet  done       1  5m30s  $1.25
 02-wave   done       1  2m00s  $0.50
 03-later  done       1   1.0s
 Total                3  7m30s  $1.75
-`);
+Kept worktree `);
+	expect(result.stdout).toEndWith(": vago/hello has commits not pushed\n");
 });
 
 test("a long outcome pushes no column of the Step lines", async () => {

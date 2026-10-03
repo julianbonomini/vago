@@ -1,7 +1,8 @@
 // A Goal's lifecycle: creating it with the Workflow it names, the main loop
 // of `vago run`, which takes the Goal's ready Tickets one at a time through
-// every Step of the Workflow in the Goal's worktree, and resetting a stuck
-// Ticket. Hides the order of a Goal's lifecycle and where its Steps run.
+// every Step of the Workflow in the Goal's worktree and closing it once every
+// Ticket is done, and resetting a stuck Ticket. Hides the order of a Goal's
+// lifecycle and where its Steps run.
 
 import {
 	printGoalSummary,
@@ -9,6 +10,7 @@ import {
 	printStuckRefusal,
 	printTicketStarted,
 	printWorktree,
+	printWorktreeClose,
 } from "./progress.ts";
 import { runStep, spellOutcome } from "./step-runner.ts";
 import {
@@ -19,7 +21,7 @@ import {
 	type Ticket,
 } from "./tickets.ts";
 import { loadWorkflow, type Workflow } from "./workflow.ts";
-import { openWorktree } from "./worktree.ts";
+import { closeWorktree, openWorktree } from "./worktree.ts";
 
 /** How `vago run` left the Goal: every Ticket `done`, or not. */
 export type GoalEnd = "done" | "unfinished";
@@ -55,7 +57,9 @@ export async function newGoal(
  * when `goal.md` names no Workflow or one that doesn't exist, or when the
  * Workflow or the Goal's format is bad. The Goal is checked before the first
  * Run and again after each Ticket, so a `goal.md` or Ticket file broken
- * mid-Goal stops it there, without a summary.
+ * mid-Goal stops it there, without a summary. When this run takes the Goal's
+ * last Tickets to done, it then removes the Goal's worktree if nothing in it
+ * would be lost, or prints why it keeps it.
  */
 export async function runGoal(root: string, goal: string): Promise<GoalEnd> {
 	let state = await readGoal(root, goal);
@@ -76,7 +80,8 @@ export async function runGoal(root: string, goal: string): Promise<GoalEnd> {
 		printStuckRefusal(goal, stuck);
 		return "unfinished";
 	}
-	if (state.nextReady !== undefined) {
+	const opened = state.nextReady !== undefined;
+	if (opened) {
 		const checkout = await openWorktree(root, goal);
 		printWorktree(checkout);
 		while (state.nextReady !== undefined) {
@@ -86,6 +91,7 @@ export async function runGoal(root: string, goal: string): Promise<GoalEnd> {
 		}
 	}
 	printGoalSummary(goal, state);
+	if (opened && state.done) printWorktreeClose(await closeWorktree(root, goal));
 	return state.done ? "done" : "unfinished";
 }
 

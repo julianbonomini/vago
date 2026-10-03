@@ -1,10 +1,12 @@
 // A Goal's worktree, where its Steps run: creating it, recreating it from its
-// branch, reusing it, and the way back from it to the main checkout. Hides the
+// branch, reusing it, removing it once the Goal is done and nothing in it would
+// be lost, and the way back from it to the main checkout. Hides the
 // `VAGO_HOME` layout, the branch name, the default-branch rule, the git
-// commands, what gets copied, and how `.vago/` is kept out of git.
+// commands, what gets copied, how `.vago/` is kept out of git, and what counts
+// as a change or as pushed.
 
 import { existsSync } from "node:fs";
-import { cp, mkdir, realpath, rm } from "node:fs/promises";
+import { cp, lstat, mkdir, readlink, realpath, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, relative, sep } from "node:path";
 import { goalsFolderName } from "./tickets.ts";
@@ -32,7 +34,7 @@ export async function openWorktree(
 	const path = await worktreePath(root, goal);
 	if (!existsSync(path)) {
 		await mkdir(dirname(path), { recursive: true });
-		const branch = `vago/${goal}`;
+		const branch = goalBranch(goal);
 		if (await hasBranch(root, `refs/heads/${branch}`)) {
 			// A worktree deleted by hand can leave git's record of it behind,
 			// which keeps the branch checked out there.
@@ -56,6 +58,124 @@ export async function openWorktree(
 	// prompts beside it must come from there too, not from an earlier copy.
 	await refreshVagoFolder(root, path);
 	return realpath(path);
+}
+
+/** Why a done Goal's worktree was kept. */
+export type WorktreeKeptReason = "uncommitted" | "unpushed";
+
+/**
+ * What `closeWorktree` did with a Goal's worktree, at its real path unless it
+ * was already gone, and the Goal's branch.
+ */
+export type WorktreeClose =
+	| { outcome: "removed"; path: string; branch: string }
+	| {
+			outcome: "kept";
+			path: string;
+			branch: string;
+			reasons: WorktreeKeptReason[];
+	  };
+
+/**
+ * Removes Goal `goal`'s worktree of the Project at `root` when nothing in it
+ * would be lost, and otherwise keeps it and says why. Nothing would be lost
+ * when the worktree has no uncommitted changes and every commit of the
+ * Goal's branch and of the worktree's HEAD is on a remote branch, as last
+ * fetched. A file `root` has with the same bytes at the same path, or a
+ * symlink with the same target, isn't a change, so the files copied in when
+ * the worktree was made don't count, and neither do ignored files or
+ * `.vago/`. A worktree that is already gone counts as removed. Every branch
+ * is kept, and the Goal's state in `root` is never touched. Throws an Error
+ * naming the problem when git fails.
+ */
+export async function closeWorktree(
+	root: string,
+	goal: string,
+): Promise<WorktreeClose> {
+	const path = await worktreePath(root, goal);
+	const branch = goalBranch(goal);
+	// Nothing in a worktree that's gone can be lost. Pruning drops git's record
+	// of it, as `openWorktree` does before recreating it.
+	if (!existsSync(path)) {
+		await git(root, ["worktree", "prune"]);
+		return { outcome: "removed", path, branch };
+	}
+	// Read while the folder exists, so it matches the path `vago run` printed.
+	const real = await realpath(path);
+	const reasons: WorktreeKeptReason[] = [];
+	if (await hasUncommittedChanges(root, real)) reasons.push("uncommitted");
+	if (await hasUnpushedCommits(real, branch)) reasons.push("unpushed");
+	if (reasons.length > 0) {
+		return { outcome: "kept", path: real, branch, reasons };
+	}
+	// The copied untracked files make git refuse without --force, and they
+	// were just checked.
+	await git(root, ["worktree", "remove", "--force", real]);
+	return { outcome: "removed", path: real, branch };
+}
+
+// Any tracked change counts, so a rename's second path never needs reading.
+// Skip-worktree and the worktree's own `.gitignore` already hide `.vago/`,
+// and git lists no ignored file unless asked.
+async function hasUncommittedChanges(
+	root: string,
+	path: string,
+): Promise<boolean> {
+	const status = await git(path, [
+		"status",
+		"--porcelain",
+		"-z",
+		"--untracked-files=all",
+	]);
+	for (const entry of status.split("\0")) {
+		if (entry === "") continue;
+		if (!entry.startsWith("?? ")) return true;
+		const file = entry.slice("?? ".length);
+		if (!(await sameBytes(join(root, file), join(path, file)))) return true;
+	}
+	return false;
+}
+
+// `copyUntracked` copies a symlink as it is, so a copied one has the same
+// target, and reading through it would fail on a folder.
+async function sameBytes(original: string, copy: string): Promise<boolean> {
+	const originalStat = await lstat(original).catch(() => undefined);
+	if (originalStat === undefined) return false;
+	const copyStat = await lstat(copy);
+	if (originalStat.isSymbolicLink() || copyStat.isSymbolicLink()) {
+		return (
+			originalStat.isSymbolicLink() &&
+			copyStat.isSymbolicLink() &&
+			(await readlink(original)) === (await readlink(copy))
+		);
+	}
+	if (!originalStat.isFile() || originalStat.size !== copyStat.size) {
+		return false;
+	}
+	return Bun.deepEquals(
+		await Bun.file(original).bytes(),
+		await Bun.file(copy).bytes(),
+	);
+}
+
+// No fetch, as for `defaultBranch`. With no remote every commit counts.
+async function hasUnpushedCommits(
+	path: string,
+	branch: string,
+): Promise<boolean> {
+	const unpushed = await git(path, [
+		"rev-list",
+		"--max-count=1",
+		"HEAD",
+		branch,
+		"--not",
+		"--remotes",
+	]);
+	return unpushed !== "";
+}
+
+function goalBranch(goal: string): string {
+	return `vago/${goal}`;
 }
 
 // Skip-worktree hides the tracked files from `git status` and makes

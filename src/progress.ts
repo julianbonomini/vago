@@ -1,12 +1,13 @@
 // Everything `vago run` prints to stdout while it runs: the Goal's worktree,
 // one line naming each Ticket as it starts, and under it a line when each
 // Step starts and one when it ends, where to look when a Ticket goes stuck,
-// and the Goal summary table on exit. Also the Goal report `vago goal report`
-// prints. Hides the line formats, columns and colours, and how durations and
-// costs read.
+// the Goal summary table on exit, and what became of the Goal's worktree,
+// after the summary. Also the Goal report `vago goal report` prints. Hides the
+// line formats, columns and colours, and how durations and costs read.
 
 import { relative } from "node:path";
 import type { GoalState, Ticket, TicketRun, TicketStatus } from "./tickets.ts";
+import type { WorktreeClose } from "./worktree.ts";
 
 /** Prints the line naming the worktree the Goal's Steps run in. */
 export function printWorktree(path: string): void {
@@ -131,6 +132,25 @@ export function printGoalSummary(goal: string, state: GoalState): void {
 		];
 		console.log(cells.join("  ").trimEnd());
 	}
+}
+
+/**
+ * Prints what became of a done Goal's worktree: removed, with its path and
+ * the branch that's kept, or kept, with its path and each reason.
+ */
+export function printWorktreeClose(close: WorktreeClose): void {
+	if (close.outcome === "removed") {
+		console.log(
+			`Removed worktree ${close.path}; branch ${close.branch} is kept`,
+		);
+		return;
+	}
+	const why = close.reasons.map((reason) =>
+		reason === "uncommitted"
+			? "it has uncommitted changes"
+			: `${close.branch} has commits not pushed`,
+	);
+	console.log(`Kept worktree ${close.path}: ${why.join(" and ")}`);
 }
 
 /**
