@@ -159,7 +159,5 @@ test("the end line shows the Run's cost", async () => {
 	const result = await runPunt(root, ["run", "hello"], claude.env);
 
 	const lines = result.stdout.trimEnd().split("\n");
-	expect(lines[1]).toMatch(
-		/^\S+ +01-say-hello +implement +ok +\d+\.\ds +\$0\.01$/,
-	);
+	expect(lines[2]).toMatch(/^ {2}\S+ +\d+\.\ds +\$0\.01 {2}implement ok$/);
 });

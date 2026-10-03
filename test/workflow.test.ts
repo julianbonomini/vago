@@ -332,10 +332,15 @@ prompt = "prompts/implement.md"
 		"Implement it.\n",
 		"Implement it.\n",
 	]);
-	const started = result.stdout
-		.split("\n")
-		.filter((line) => line.endsWith(" started"))
-		.map((line) => line.split(/ +/).slice(1, 3).join(" "));
+	// Each started Step under the Ticket heading above it.
+	const started: string[] = [];
+	let heading = "";
+	for (const line of result.stdout.split("\n")) {
+		if (line !== "" && !line.includes(" ")) heading = line;
+		if (line.endsWith(" started")) {
+			started.push(`${heading} ${line.split(/ +/)[2]}`);
+		}
+	}
 	expect(started).toEqual([
 		"01-say-hello edit",
 		"01-say-hello implement",

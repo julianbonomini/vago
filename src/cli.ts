@@ -2,7 +2,8 @@
 // The `punt` command: parses arguments, runs the command, prints help and
 // errors, and picks the exit code. Exit 0 means the command succeeded, help
 // was printed, or the Goal is done. Each command's help, usage line and
-// argument parsing all come from its one entry in `commands`.
+// argument parsing all come from its one entry in `commands`, and its `run`
+// reads what was given through that same entry's declarations.
 
 import { newGoal, resetTicket, runGoal } from "./goal-runner.ts";
 import { initProject } from "./init.ts";
@@ -17,14 +18,50 @@ type Operand = {
 	digits?: true;
 };
 
-/** A `--name <value>` flag, given after the operands. */
-type Flag = {
+/** A `--name <value>` flag given exactly once, after the operands. */
+type RequiredFlag = {
 	name: string;
 	/** The placeholder for the flag's value in the usage, such as `<path>`. */
 	value: string;
-	times: "once" | "at most once" | "any number of times";
+	times: "once";
 	meaning: string;
 	digits?: true;
+};
+
+/** A `--name <value>` flag given zero or one time, after the operands. */
+type OptionalFlag = {
+	name: string;
+	/** The placeholder for the flag's value in the usage, such as `<path>`. */
+	value: string;
+	times: "at most once";
+	meaning: string;
+	digits?: true;
+};
+
+/** A `--name <value>` flag given any number of times, after the operands. */
+type RepeatedFlag = {
+	name: string;
+	/** The placeholder for the flag's value in the usage, such as `<path>`. */
+	value: string;
+	times: "any number of times";
+	meaning: string;
+	digits?: true;
+};
+
+type Flag = RequiredFlag | OptionalFlag | RepeatedFlag;
+
+/**
+ * What a command was given, read through the declarations in its own entry.
+ * Reading an operand or required flag the command doesn't declare throws:
+ * that is a mistake in `commands`, not bad input.
+ */
+type GivenArguments = {
+	operand(operand: Operand): string;
+	requiredFlag(flag: RequiredFlag): string;
+	/** Undefined when the flag wasn't given. */
+	optionalFlag(flag: OptionalFlag): string | undefined;
+	/** The values in the order given, none when the flag wasn't given. */
+	repeatedFlag(flag: RepeatedFlag): string[];
 };
 
 type Command = {
@@ -39,13 +76,57 @@ type Command = {
 	example: string;
 	/**
 	 * Runs the command in the Project at `root` and returns the exit code.
-	 * `values` maps each operand and flag name to what was given for it, in
-	 * the counts its `times` allows, so an operand or a `once` flag is there.
+	 * `given` holds exactly what `operands` and `flags` declare.
 	 */
-	run(root: string, values: Map<string, string[]>): Promise<number>;
+	run(root: string, given: GivenArguments): Promise<number>;
 };
 
-const bodyFileFlag: Flag = {
+const goalToRun: Operand = { name: "<goal>", meaning: "The Goal to run." };
+
+const newGoalName: Operand = {
+	name: "<goal>",
+	meaning: "The new Goal's name, used for its folder.",
+};
+
+const goalToReport: Operand = {
+	name: "<goal>",
+	meaning: "The Goal to report on.",
+};
+
+const ticketGoal: Operand = {
+	name: "<goal>",
+	meaning: "The Goal the Ticket belongs to.",
+};
+
+const ticketSlug: Operand = {
+	name: "<slug>",
+	meaning: "The Ticket's name, used in its file name after the number.",
+};
+
+const ticketNumber: Operand = {
+	name: "<NN>",
+	meaning: "The Ticket's number, the digits its file name starts with.",
+	digits: true,
+};
+
+const workflowFlag: RequiredFlag = {
+	name: "--workflow",
+	value: "<name>",
+	times: "once",
+	meaning:
+		"The Workflow the Goal's Tickets go through, from .punt/workflows/<name>.toml.",
+};
+
+const blockedByFlag: RepeatedFlag = {
+	name: "--blocked-by",
+	value: "<NN>",
+	times: "any number of times",
+	meaning:
+		"The number of a Ticket that must be done before this one runs. Repeat it for each blocker.",
+	digits: true,
+};
+
+const bodyFileFlag: OptionalFlag = {
 	name: "--body-file",
 	value: "<path>",
 	times: "at most once",
@@ -78,41 +159,27 @@ names, one Ticket at a time, until no Ticket is ready or one goes stuck. It
 prints a line per Step and a summary at the end. While any Ticket of the Goal
 is stuck it runs nothing and says which. Exits 0 only when every Ticket is
 done.`,
-		operands: [{ name: "<goal>", meaning: "The Goal to run." }],
+		operands: [goalToRun],
 		flags: [],
 		example: "punt run search",
-		run: async (root, values) =>
-			(await runGoal(root, first(values, "<goal>"))) === "done" ? 0 : 1,
+		run: async (root, given) =>
+			(await runGoal(root, given.operand(goalToRun))) === "done" ? 0 : 1,
 	},
 	{
 		name: "goal new",
 		summary: "Create a Goal with no Tickets",
 		description: `Creates the Goal with no Tickets and prints the path of its goal.md. It refuses,
 creating nothing, when the Goal exists or punt run would refuse the Workflow.`,
-		operands: [
-			{
-				name: "<goal>",
-				meaning: "The new Goal's name, used for its folder.",
-			},
-		],
-		flags: [
-			{
-				name: "--workflow",
-				value: "<name>",
-				times: "once",
-				meaning:
-					"The Workflow the Goal's Tickets go through, from .punt/workflows/<name>.toml.",
-			},
-			bodyFileFlag,
-		],
+		operands: [newGoalName],
+		flags: [workflowFlag, bodyFileFlag],
 		example: "punt goal new search --workflow small --body-file goal.md",
-		run: async (root, values) => {
-			const body = await readBodyFile(values.get("--body-file")?.[0]);
+		run: async (root, given) => {
+			const body = await readBodyFile(given.optionalFlag(bodyFileFlag));
 			console.log(
 				await newGoal(
 					root,
-					first(values, "<goal>"),
-					first(values, "--workflow"),
+					given.operand(newGoalName),
+					given.requiredFlag(workflowFlag),
 					body,
 				),
 			);
@@ -124,11 +191,11 @@ creating nothing, when the Goal exists or punt run would refuse the Workflow.`,
 		summary: "Print a Markdown report of a Goal's Tickets and Runs",
 		description: `Prints the Goal's body, then a table of its Tickets with the Runs each took,
 how long they took and what they cost, ready to paste into a PR description.`,
-		operands: [{ name: "<goal>", meaning: "The Goal to report on." }],
+		operands: [goalToReport],
 		flags: [],
 		example: "punt goal report search",
-		run: async (root, values) => {
-			const goal = first(values, "<goal>");
+		run: async (root, given) => {
+			const goal = given.operand(goalToReport);
 			// readGoal first, since it names a missing Goal as such.
 			const state = await readGoal(root, goal);
 			printGoalReport(await readGoalBody(root, goal), state);
@@ -140,34 +207,18 @@ how long they took and what they cost, ready to paste into a PR description.`,
 		summary: "Add a ready Ticket to a Goal",
 		description: `Adds a Ticket to the Goal, numbered one past its highest Ticket, with status
 ready, and prints the path of the Ticket file.`,
-		operands: [
-			{ name: "<goal>", meaning: "The Goal the Ticket belongs to." },
-			{
-				name: "<slug>",
-				meaning: "The Ticket's name, used in its file name after the number.",
-			},
-		],
-		flags: [
-			{
-				name: "--blocked-by",
-				value: "<NN>",
-				times: "any number of times",
-				meaning:
-					"The number of a Ticket that must be done before this one runs. Repeat it for each blocker.",
-				digits: true,
-			},
-			bodyFileFlag,
-		],
+		operands: [ticketGoal, ticketSlug],
+		flags: [blockedByFlag, bodyFileFlag],
 		example:
 			"punt ticket add search ranking --blocked-by 1 --body-file ticket.md",
-		run: async (root, values) => {
-			const body = await readBodyFile(values.get("--body-file")?.[0]);
-			const blockedBy = (values.get("--blocked-by") ?? []).map(Number);
+		run: async (root, given) => {
+			const body = await readBodyFile(given.optionalFlag(bodyFileFlag));
+			const blockedBy = given.repeatedFlag(blockedByFlag).map(Number);
 			console.log(
 				await addTicket(
 					root,
-					first(values, "<goal>"),
-					first(values, "<slug>"),
+					given.operand(ticketGoal),
+					given.operand(ticketSlug),
 					blockedBy,
 					body,
 				),
@@ -180,21 +231,14 @@ ready, and prints the path of the Ticket file.`,
 		summary: "Make a stuck Ticket ready to run again",
 		description: `Sets a stuck Ticket back to ready, so the next punt run takes it again. Its Runs
 stay in the Ticket file. It refuses a Ticket that isn't stuck.`,
-		operands: [
-			{ name: "<goal>", meaning: "The Goal the Ticket belongs to." },
-			{
-				name: "<NN>",
-				meaning: "The Ticket's number, the digits its file name starts with.",
-				digits: true,
-			},
-		],
+		operands: [ticketGoal, ticketNumber],
 		flags: [],
 		example: "punt ticket reset search 2",
-		run: async (root, values) => {
+		run: async (root, given) => {
 			await resetTicket(
 				root,
-				first(values, "<goal>"),
-				Number(first(values, "<NN>")),
+				given.operand(ticketGoal),
+				Number(given.operand(ticketNumber)),
 			);
 			return 0;
 		},
@@ -204,94 +248,153 @@ stay in the Ticket file. It refuses a Ticket that isn't stuck.`,
 const helpPointer = "Run `punt --help` for what each command does.";
 
 async function main(args: string[]): Promise<number> {
-	const helpAsked =
-		args[0] === "help" || args.includes("--help") || args.includes("-h");
-	const words = args
-		.slice(args[0] === "help" ? 1 : 0)
-		.filter((arg) => arg !== "--help" && arg !== "-h");
-	const command = commands.find((candidate) =>
-		startsWith(words, candidate.name.split(" ")),
-	);
-	if (helpAsked) {
-		if (command !== undefined) {
-			console.log(commandHelp(command));
-			return 0;
-		}
-		// `punt help` lists every command, and `punt goal --help` the goal ones.
-		const matching = commands.filter((candidate) =>
-			startsWith(candidate.name.split(" "), words),
-		);
-		if (matching.length > 0) {
-			console.log(listing(matching));
-			return 0;
-		}
-	}
+	const { words, helpAsked, command, rest } = commandWords(args);
 	if (command === undefined) {
-		console.error(`${allUsage()}\n${helpPointer}`);
+		const shown = helpAsked ? listing(words) : undefined;
+		if (shown !== undefined) {
+			console.log(shown);
+			return 0;
+		}
+		console.error(`${usages(commands)}\n${helpPointer}`);
 		return 1;
 	}
-	const given = words.slice(command.name.split(" ").length);
-	const values = parseArguments(command, given);
-	if (values === undefined) {
+	if (helpAsked) {
+		console.log(commandHelp(command));
+		return 0;
+	}
+	const given = parseArguments(command, rest);
+	if (given === "help") {
+		console.log(commandHelp(command));
+		return 0;
+	}
+	if (given === undefined) {
 		console.error(
 			`${usage(command)}\nRun \`punt ${command.name} --help\` for what it does and what each argument means.`,
 		);
 		return 1;
 	}
-	return command.run(process.cwd(), values);
+	return command.run(process.cwd(), given);
 }
 
-function startsWith(words: string[], prefix: string[]): boolean {
-	return prefix.every((word, index) => words[index] === word);
+function isHelp(token: string): boolean {
+	return token === "--help" || token === "-h";
 }
 
-// Parsing gives each operand and `once` flag its one value, so a name with
-// none is a typo in `commands`.
-function first(values: Map<string, string[]>, name: string): string {
-	const value = values.get(name)?.[0];
-	if (value === undefined)
-		throw new Error(`cli.ts reads ${name}, which the command doesn't take`);
-	return value;
+// Reads the words that name a command, skipping `--help` and `-h` among them,
+// and stops at the command they name or at the first word no command's name
+// goes on with. A leading `help` asks for help too. `command` is undefined
+// when the words name none, and the tokens after the stop are then ignored.
+function commandWords(args: string[]): {
+	words: string[];
+	helpAsked: boolean;
+	command: Command | undefined;
+	rest: string[];
+} {
+	let helpAsked = args[0] === "help";
+	const tokens = args.slice(helpAsked ? 1 : 0);
+	const words: string[] = [];
+	for (const [index, token] of tokens.entries()) {
+		if (isHelp(token)) {
+			helpAsked = true;
+			continue;
+		}
+		words.push(token);
+		const named = commandsStartingWith(words);
+		const command = named.find(
+			({ name }) => name.split(" ").length === words.length,
+		);
+		if (command !== undefined) {
+			return { words, helpAsked, command, rest: tokens.slice(index + 1) };
+		}
+		if (named.length === 0) break;
+	}
+	return { words, helpAsked, command: undefined, rest: [] };
 }
 
-// Maps each operand of `command` to the one value given for it, and each flag
-// to its values in the order given, read as `--name value` pairs after the
-// operands. A flag's value is taken as given, even `-` or one starting with
-// `--`. Returns undefined, so the caller prints the usage, when the count of
-// operands is wrong, a flag isn't the command's or is given more or fewer
+function commandsStartingWith(words: string[]): Command[] {
+	return commands.filter(({ name }) =>
+		words.every((word, index) => name.split(" ")[index] === word),
+	);
+}
+
+// Fills the operand slots in order, then reads the rest as `--name value`
+// pairs. A `--help` or `-h` where an operand or a flag name goes asks for the
+// command's help and takes no slot, and it wins over any mistake around it.
+// A flag's value is taken as given, even `-`, `-h`, `--help` or one starting
+// with `--`. Returns undefined, so the caller prints the usage, when the count
+// of operands is wrong, a flag isn't the command's or is given more or fewer
 // times than it allows, or a value that must be digits isn't.
 function parseArguments(
 	command: Command,
-	given: string[],
-): Map<string, string[]> | undefined {
-	const operandCount = command.operands.length;
-	const flags = given.slice(operandCount);
-	if (given.length < operandCount || flags.length % 2 !== 0) return undefined;
-	const values = new Map<string, string[]>();
-	command.operands.forEach((operand, index) => {
-		values.set(operand.name, [given[index] ?? ""]);
-	});
-	for (const flag of command.flags) values.set(flag.name, []);
-	for (let index = 0; index < flags.length; index += 2) {
-		const flag = command.flags.find(({ name }) => name === flags[index]);
-		if (flag === undefined) return undefined;
-		values.get(flag.name)?.push(flags[index + 1] ?? "");
+	tokens: string[],
+): GivenArguments | "help" | undefined {
+	const operandValues = new Map<Operand, string>();
+	const flagValues = new Map<Flag, string[]>(
+		command.flags.map((flag) => [flag, []]),
+	);
+	let helpAsked = false;
+	let unknownFlag = false;
+	// Where the next token goes when it is a flag's value.
+	let valueGoesTo: string[] | undefined;
+	for (const token of tokens) {
+		if (valueGoesTo !== undefined) {
+			valueGoesTo.push(token);
+			valueGoesTo = undefined;
+			continue;
+		}
+		if (isHelp(token)) {
+			helpAsked = true;
+			continue;
+		}
+		const operand = command.operands[operandValues.size];
+		if (operand !== undefined) {
+			operandValues.set(operand, token);
+			continue;
+		}
+		const flag = command.flags.find(({ name }) => name === token);
+		if (flag === undefined) unknownFlag = true;
+		// An unknown flag still takes the next token as its value.
+		valueGoesTo = flag === undefined ? [] : (flagValues.get(flag) ?? []);
+	}
+	if (helpAsked) return "help";
+	if (unknownFlag || valueGoesTo !== undefined) return undefined;
+	if (operandValues.size < command.operands.length) return undefined;
+	const digits = (value: string) => /^\d+$/.test(value);
+	for (const operand of command.operands) {
+		if (operand.digits && !digits(operandValues.get(operand) ?? "")) {
+			return undefined;
+		}
 	}
 	for (const flag of command.flags) {
-		const count = values.get(flag.name)?.length ?? 0;
-		if (flag.times === "once" && count !== 1) return undefined;
-		if (flag.times === "at most once" && count > 1) return undefined;
+		const values = flagValues.get(flag) ?? [];
+		if (flag.times === "once" && values.length !== 1) return undefined;
+		if (flag.times === "at most once" && values.length > 1) return undefined;
+		if (flag.digits && !values.every(digits)) return undefined;
 	}
-	for (const argument of [...command.operands, ...command.flags]) {
-		if (!argument.digits) continue;
-		const all = values.get(argument.name) ?? [];
-		if (!all.every((value) => /^\d+$/.test(value))) return undefined;
-	}
-	return values;
+	const declared = (value: string | undefined, name: string): string => {
+		if (value === undefined) {
+			throw new Error(
+				`cli.ts reads ${name}, which \`punt ${command.name}\` doesn't take`,
+			);
+		}
+		return value;
+	};
+	return {
+		operand: (operand) => declared(operandValues.get(operand), operand.name),
+		requiredFlag: (flag) => declared(flagValues.get(flag)?.[0], flag.name),
+		optionalFlag: (flag) => flagValues.get(flag)?.[0],
+		repeatedFlag: (flag) => flagValues.get(flag) ?? [],
+	};
 }
 
 function usage(command: Command): string {
-	const parts = [`usage: punt ${command.name}`];
+	return `usage: ${commandLine(command)}`;
+}
+
+// The command as typed, such as
+// `punt goal new <goal> --workflow <name> [--body-file <path>]`.
+function commandLine(command: Command): string {
+	const parts = [`punt ${command.name}`];
 	for (const operand of command.operands) parts.push(operand.name);
 	for (const flag of command.flags) {
 		const spelled = `${flag.name} ${flag.value}`;
@@ -302,20 +405,29 @@ function usage(command: Command): string {
 	return parts.join(" ");
 }
 
-function allUsage(): string {
-	return commands
-		.map((command, index) =>
-			index === 0 ? usage(command) : usage(command).replace("usage:", "      "),
+// One usage line per command, the later ones lined up under the first.
+function usages(listed: Command[]): string {
+	return listed
+		.map(
+			(command, index) =>
+				`${index === 0 ? "usage: " : " ".repeat("usage: ".length)}${commandLine(command)}`,
 		)
 		.join("\n");
 }
 
-function listing(listed: Command[]): string {
+// What `punt --help` prints, or for `punt goal --help` the same for the
+// commands whose name starts with `goal`, headed by their usage lines instead
+// of the generic one. Undefined when no command's name starts with `words`.
+function listing(words: string[]): string | undefined {
+	const listed = commandsStartingWith(words);
+	if (listed.length === 0) return undefined;
+	const header =
+		words.length === 0 ? "usage: punt <command> [arguments]" : usages(listed);
 	const width = Math.max(...listed.map(({ name }) => name.length)) + 2;
 	const rows = listed.map(
 		({ name, summary }) => `  ${name.padEnd(width)}${summary}`,
 	);
-	return `usage: punt <command> [arguments]
+	return `${header}
 
 punt takes a Goal's Tickets through the Workflow the Goal names, with a coding
 agent doing each agent Step.

@@ -33,11 +33,12 @@ async function statusOf(root: string, name: string): Promise<unknown> {
 	return (await readTicketFile(root, path)).header.status;
 }
 
+// The Ticket headings: the only lines with no space in them, since a Ticket
+// name has none and every other line does.
 function startedTickets(stdout: string): string[] {
 	return stdout
 		.split("\n")
-		.filter((line) => line.endsWith(" started"))
-		.map((line) => line.split(/ +/)[1] ?? "");
+		.filter((line) => line !== "" && !line.includes(" "));
 }
 
 test("a Ticket blocked by another runs after it and both end done", async () => {

@@ -25,7 +25,7 @@ status = "ready"
 +++
 ${ticketBody}`;
 
-const goalDir = ".punt/goals/hello";
+const goalDir = ".punt-goals/hello";
 const ticketPath = `${goalDir}/tickets/01-say-hello.md`;
 
 test("a Ticket goes through every shell Step and ends done", async () => {
@@ -102,19 +102,13 @@ test("stdout shows a start and an end line for each Step", async () => {
 
 	const time = String.raw`\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ`;
 	const lines = result.stdout.trimEnd().split("\n");
-	expect(lines).toHaveLength(6);
-	expect(lines[0]).toMatch(new RegExp(`^${time} 01-say-hello greet started$`));
-	expect(lines[1]).toMatch(
-		new RegExp(`^${time} 01-say-hello greet ok \\d+\\.\\ds$`),
-	);
-	expect(lines[2]).toMatch(new RegExp(`^${time} 01-say-hello check started$`));
-	expect(lines[3]).toMatch(
-		new RegExp(`^${time} 01-say-hello check ok \\d+\\.\\ds$`),
-	);
-	expect(lines.slice(4)).toEqual([
-		"hello: 1 of 1 Tickets done",
-		"  01-say-hello done",
-	]);
+	expect(lines[0]).toBe("01-say-hello");
+	expect(lines[1]).toMatch(new RegExp(`^  ${time} +greet started$`));
+	expect(lines[2]).toMatch(new RegExp(`^  ${time} +\\d+\\.\\ds +greet ok$`));
+	expect(lines[3]).toMatch(new RegExp(`^  ${time} +check started$`));
+	expect(lines[4]).toMatch(new RegExp(`^  ${time} +\\d+\\.\\ds +check ok$`));
+	expect(lines[5]).toBe("");
+	expect(lines[6]).toBe("hello: 1 of 1 Tickets done");
 });
 
 test("header fields Alpha doesn't know survive its rewrites", async () => {

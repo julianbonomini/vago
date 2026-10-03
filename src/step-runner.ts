@@ -64,7 +64,7 @@ export async function runStep(
 ): Promise<FinishedRun> {
 	const started = new Date();
 	const entry = await recordRunStart(ticket, step, started);
-	printStepStarted(ticket, step.id, started);
+	printStepStarted(step.id, started);
 	await mkdir(dirname(entry.log), { recursive: true });
 	// One descriptor for both streams keeps stdout and stderr in the order the
 	// Step wrote them, which two separate pipes can't promise.
@@ -119,7 +119,7 @@ export async function runStep(
 	const ended = new Date();
 	const spelled = spellOutcome(outcome);
 	await recordRunEnd(entry, spelled, ended, session);
-	printStepEnded(ticket, step.id, spelled, started, ended, session?.costUsd);
+	printStepEnded(step.id, spelled, started, ended, session?.costUsd);
 	return { outcome, output, log: entry.log, resumeHint };
 }
 

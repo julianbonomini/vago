@@ -47,7 +47,7 @@ test("goal new creates a Goal with no Tickets that punt run accepts", async () =
 
 	expect(run.stderr).toBe("");
 	expect(run.exitCode).toBe(0);
-	expect(run.stdout).toStartWith("hello: 0 of 0 Tickets done\n");
+	expect(run.stdout).toStartWith("\nhello: 0 of 0 Tickets done\n");
 });
 
 test("goal new without --workflow prints the usage and creates no Goal", async () => {
@@ -354,6 +354,27 @@ test("ticket add takes --body-file and --blocked-by in any order", async () => {
 	});
 	expect(await readTicketFile(root, `${goalDir}/tickets/04-wave.md`)).toEqual({
 		header: { status: "ready", blocked_by: [1] },
+		body,
+	});
+});
+
+test("ticket add --body-file -h reads the file named -h", async () => {
+	const root = await bodyProject({ "-h": body });
+
+	const result = await runPunt(root, [
+		"ticket",
+		"add",
+		"hello",
+		"greet",
+		"--body-file",
+		"-h",
+	]);
+
+	expect(result.stderr).toBe("");
+	expect(result.exitCode).toBe(0);
+	expect(result.stdout).toEndWith(`${goalDir}/tickets/01-greet.md\n`);
+	expect(await readTicketFile(root, `${goalDir}/tickets/01-greet.md`)).toEqual({
+		header: { status: "ready" },
 		body,
 	});
 });

@@ -64,6 +64,13 @@ const ticketFileName = /^((\d+)-.+)\.md$/;
 const headerStart = "+++\n";
 const headerEnd = "\n+++\n";
 
+/**
+ * The name of the folder, directly at a Project's root, that holds every
+ * Goal. Other modules may name the folder, to keep it out of git, but never
+ * build a path inside it: only this module does.
+ */
+export const goalsFolderName = ".punt-goals";
+
 /** One entry of a Ticket's `[[runs]]` as `readGoal` found it. */
 export type TicketRun = {
 	step: string;
@@ -433,7 +440,7 @@ function twoDigits(number: number): string {
 
 function goalFolder(root: string, goal: string): string {
 	checkName("Goal name", goal);
-	return join(root, ".punt-goals", goal);
+	return join(root, goalsFolderName, goal);
 }
 
 function ticketFile(ticket: Ticket): string {

@@ -29,6 +29,7 @@ import smallWorkflow from "../starter/workflows/small.toml" with {
 import tryHardWorkflow from "../starter/workflows/try-hard.toml" with {
 	type: "text",
 };
+import { goalsFolderName } from "./tickets.ts";
 
 // Each starter file's text, by its path under `starter/`, which is its path
 // under `.punt/` too.
@@ -48,14 +49,17 @@ const starterFiles: Record<string, string> = {
 	"scripts/merge.sh": mergeScript,
 };
 
+// The trailing slash makes git match only a directory.
+const goalsExcludeLine = `${goalsFolderName}/`;
+
 const commitExplanation = `Committing the Workflow in .punt/ shares it with everyone who clones this repo.
 Not committing it adds all of .punt/ to .git/info/exclude, so it stays in this checkout.
-Goals and Tickets in .punt/goals/ stay out of git either way.`;
+Goals and Tickets in ${goalsExcludeLine} stay out of git either way.`;
 
 /**
  * Asks on stdin whether the Workflow will be committed, then copies the
  * starter, every Workflow included, into `.punt/` of the Project at `root`.
- * `.git/info/exclude` gets `.punt/goals/`, and all of `.punt/` unless the
+ * `.git/info/exclude` gets the Goals folder, and `.punt/` unless the
  * answer is yes. An empty answer, or no stdin, counts as no. Throws an Error
  * naming the problem, before asking or changing anything, when a file it
  * would write already exists or `root` has no `.git` directory.
@@ -92,8 +96,8 @@ export async function initProject(root: string): Promise<void> {
 	const exclude = Bun.file(join(git, "info", "exclude"));
 	const excluded = (await exclude.exists()) ? await exclude.text() : "";
 	const wantedLines = commitWorkflow
-		? [".punt/goals/"]
-		: [".punt/goals/", ".punt/"];
+		? [goalsExcludeLine]
+		: [goalsExcludeLine, ".punt/"];
 	const missing = wantedLines.filter(
 		(line) => !excluded.split("\n").includes(line),
 	);
