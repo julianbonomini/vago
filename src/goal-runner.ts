@@ -88,10 +88,10 @@ async function runClaimedGoal(root: string, goal: string): Promise<GoalEnd> {
 	}
 	const opened = state.nextReady !== undefined;
 	if (opened) {
-		const checkout = await openWorktree(root, goal);
-		printWorktree(checkout);
+		const worktree = await openWorktree(root, goal);
+		printWorktree(worktree);
 		while (state.nextReady !== undefined) {
-			const finished = await runTicket(workflow, state.nextReady, checkout);
+			const finished = await runTicket(workflow, state.nextReady, worktree);
 			state = await readGoal(root, goal);
 			if (!finished) break;
 		}
@@ -125,7 +125,7 @@ export async function resetTicket(
 	await setStatus(found.ticket, "ready");
 }
 
-// Runs every Step of `workflow` on `ticket` in `checkout`, and returns
+// Runs every Step of `workflow` on `ticket` in `worktree`, and returns
 // whether the Ticket got to `done`. A failed Step leaves it `stuck`,
 // unless it's a shell Step whose failure the Workflow lets the Ticket go on
 // from. `on_fail` covers a Step that exits non-zero, never one the human
@@ -133,13 +133,13 @@ export async function resetTicket(
 async function runTicket(
 	workflow: Workflow,
 	ticket: Ticket,
-	checkout: string,
+	worktree: string,
 ): Promise<boolean> {
 	await setStatus(ticket, "running");
 	printTicketStarted(ticket);
 	const stepOutputs = new Map<string, string>();
 	for (const step of workflow.steps) {
-		const run = await runStep(step, ticket, checkout, stepOutputs);
+		const run = await runStep(step, ticket, worktree, stepOutputs);
 		stepOutputs.set(step.id, run.output);
 		const goesOn =
 			run.outcome.kind === "ok" ||

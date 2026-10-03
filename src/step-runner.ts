@@ -49,8 +49,9 @@ export type FinishedRun = {
 };
 
 /**
- * Runs `step` on `ticket` with `checkout`, an absolute path, as the working
- * directory of its command or Harness session, and waits for it to end. The
+ * Runs `step` on `ticket` with `worktree`, the Goal's worktree as an
+ * absolute path, as the working directory of its command or Harness session,
+ * and waits for it to end. The
  * Run gets a `[[runs]]` entry before it starts and its end filled in after, a
  * line on stdout at each, and a log of everything it wrote. An agent Step's
  * prompt reads `stepOutputs`, the outputs of the Steps already run on this
@@ -65,7 +66,7 @@ export type FinishedRun = {
 export async function runStep(
 	step: Step,
 	ticket: Ticket,
-	checkout: string,
+	worktree: string,
 	stepOutputs: ReadonlyMap<string, string>,
 ): Promise<FinishedRun> {
 	const started = new Date();
@@ -90,7 +91,7 @@ export async function runStep(
 			({ outcome, session, resumeHint } = await runAgent(
 				step,
 				ticket,
-				checkout,
+				worktree,
 				stepOutputs,
 				fd,
 				interrupt.signal,
@@ -105,7 +106,7 @@ export async function runStep(
 				(other) => other.ticket.name === ticket.name || other.status === "done",
 			);
 			const child = Bun.spawn(["sh", "-c", step.run], {
-				cwd: checkout,
+				cwd: worktree,
 				env: {
 					...process.env,
 					VAGO_GOAL: ticket.goal,
@@ -144,7 +145,7 @@ export async function runStep(
 async function runAgent(
 	step: AgentStep,
 	ticket: Ticket,
-	checkout: string,
+	worktree: string,
 	stepOutputs: ReadonlyMap<string, string>,
 	fd: number,
 	interrupt: AbortSignal,
@@ -161,7 +162,7 @@ async function runAgent(
 	const harness = findHarness(step.harness);
 	const command = harness.command(step.model, step.args);
 	const child = Bun.spawn(command, {
-		cwd: checkout,
+		cwd: worktree,
 		stdin: new Blob([prompt]),
 		stdout: "pipe",
 		stderr: fd,
