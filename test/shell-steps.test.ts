@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { goalText, makeProject, readTicketFile, runVago } from "./project.ts";
 
@@ -42,6 +43,26 @@ test("a Ticket goes through every shell Step and ends done", async () => {
 	const { header, body } = await readTicketFile(root, ticketPath);
 	expect(header.status).toBe("done");
 	expect(body).toBe(ticketBody);
+});
+
+test("a shell Step runs in the Project root", async () => {
+	const root = await makeProject({
+		".vago/workflows/test.toml": `
+[[steps]]
+id   = "where"
+type = "shell"
+run  = "pwd -P > where.txt"
+`,
+		[`${goalDir}/goal.md`]: goalText("test"),
+		[ticketPath]: ticket,
+	});
+
+	const result = await runVago(root, ["run", "hello"]);
+
+	expect(result.exitCode).toBe(0);
+	expect((await Bun.file(join(root, "where.txt")).text()).trim()).toBe(
+		await realpath(root),
+	);
 });
 
 test("a shell Step gets the Goal and Ticket names in VAGO_GOAL and VAGO_TICKET", async () => {

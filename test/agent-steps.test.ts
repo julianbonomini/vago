@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { realpath } from "node:fs/promises";
 import { join } from "node:path";
 import {
 	acceptEditsFixture,
@@ -56,6 +57,18 @@ test("a session in auto mode with no denied calls ends ok and the Ticket done", 
 	expect(result.stderr).toBe("");
 	expect(result.exitCode).toBe(0);
 	expect((await readTicketFile(root, ticketPath)).header.status).toBe("done");
+});
+
+test("an agent Step's Harness runs in the Project root", async () => {
+	const root = await agentProject();
+	const claude = await makeFakeClaude("pwd -P > where.txt");
+
+	const result = await runVago(root, ["run", "hello"], claude.env);
+
+	expect(result.exitCode).toBe(0);
+	expect((await Bun.file(join(root, "where.txt")).text()).trim()).toBe(
+		await realpath(root),
+	);
 });
 
 test("a session in the permission mode args asked for ends ok", async () => {

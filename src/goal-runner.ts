@@ -1,7 +1,8 @@
 // A Goal's lifecycle: creating it with the Workflow it names, the main loop
 // of `vago run`, which takes the Goal's ready Tickets one at a time through
-// every Step of the Workflow, and resetting a stuck Ticket. Hides the order
-// of a Goal's lifecycle.
+// every Step of the Workflow in the folder the Goal's Steps run in, and
+// resetting a stuck Ticket. Hides the order of a Goal's lifecycle and where
+// its Steps run.
 
 import {
 	printGoalSummary,
@@ -44,14 +45,15 @@ export async function newGoal(
 
 /**
  * Runs `goal` of the Project at `root` until no Ticket is ready or a Ticket
- * goes stuck, then prints the Goal summary. A Ticket found `running`, left so
- * by a `vago run` that crashed or was killed, goes stuck with its open Run
- * ended `lost`. While any Ticket of the Goal is stuck it runs nothing and
- * prints which ones instead. Throws an Error naming the problem, before any
- * Ticket changes, when `goal.md` names no Workflow or one that doesn't exist,
- * or when the Workflow or the Goal's format is bad. The Goal is checked
- * before the first Run and again after each Ticket, so a `goal.md` or Ticket
- * file broken mid-Goal stops it there, without a summary.
+ * goes stuck, then prints the Goal summary. Its Steps run in the Project at
+ * `root`. A Ticket found `running`, left so by a `vago run` that crashed or
+ * was killed, goes stuck with its open Run ended `lost`. While any Ticket of
+ * the Goal is stuck it runs nothing and prints which ones instead. Throws an
+ * Error naming the problem, before any Ticket changes, when `goal.md` names
+ * no Workflow or one that doesn't exist, or when the Workflow or the Goal's
+ * format is bad. The Goal is checked before the first Run and again after
+ * each Ticket, so a `goal.md` or Ticket file broken mid-Goal stops it there,
+ * without a summary.
  */
 export async function runGoal(root: string, goal: string): Promise<GoalEnd> {
 	let state = await readGoal(root, goal);
@@ -71,8 +73,11 @@ export async function runGoal(root: string, goal: string): Promise<GoalEnd> {
 		printStuckRefusal(goal, stuck);
 		return "unfinished";
 	}
+	// Where the Goal's Steps run, kept apart from `root`, which locates the
+	// Goal's state. It's the Project itself.
+	const checkout = root;
 	while (state.nextReady !== undefined) {
-		const finished = await runTicket(workflow, state.nextReady);
+		const finished = await runTicket(workflow, state.nextReady, checkout);
 		state = await readGoal(root, goal);
 		if (!finished) break;
 	}
@@ -104,16 +109,21 @@ export async function resetTicket(
 	await setStatus(found.ticket, "ready");
 }
 
-// Returns whether the Ticket got to `done`. A failed Step leaves it `stuck`,
+// Runs every Step of `workflow` on `ticket` in `checkout`, and returns
+// whether the Ticket got to `done`. A failed Step leaves it `stuck`,
 // unless it's a shell Step whose failure the Workflow lets the Ticket go on
 // from. `on_fail` covers a Step that exits non-zero, never one the human
 // interrupted.
-async function runTicket(workflow: Workflow, ticket: Ticket): Promise<boolean> {
+async function runTicket(
+	workflow: Workflow,
+	ticket: Ticket,
+	checkout: string,
+): Promise<boolean> {
 	await setStatus(ticket, "running");
 	printTicketStarted(ticket);
 	const stepOutputs = new Map<string, string>();
 	for (const step of workflow.steps) {
-		const run = await runStep(step, ticket, stepOutputs);
+		const run = await runStep(step, ticket, checkout, stepOutputs);
 		stepOutputs.set(step.id, run.output);
 		const goesOn =
 			run.outcome.kind === "ok" ||

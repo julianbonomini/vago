@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import { knownHarness } from "./harness/registry.ts";
 
-/** A Step that runs `run` with `sh -c` in the repo root. */
+/** A Step that runs `run` with `sh -c` in the Goal's checkout. */
 export type ShellStep = {
 	readonly id: string;
 	readonly type: "shell";
