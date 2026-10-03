@@ -178,7 +178,8 @@ names, one Ticket at a time, until no Ticket is ready or one goes stuck. It
 prints a line per Step and a summary at the end. While any Ticket of the Goal
 is stuck it runs nothing and says which. Exits 0 only when every Ticket is
 done. The Steps run in the Goal's own worktree, outside the repo on branch
-vago/<goal>, whose path it prints.`,
+vago/<goal>, whose path it prints. It refuses a Goal another vago run is
+running.`,
 		operands: [goalToRun],
 		flags: [],
 		example: "vago run search",

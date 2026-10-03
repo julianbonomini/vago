@@ -6,7 +6,13 @@ import {
 	permissionModeFallbackFixture,
 	sessionFixture,
 } from "./fake-claude.ts";
-import { goalText, makeProject, readTicketFile, runVago } from "./project.ts";
+import {
+	goalText,
+	makeProject,
+	readTicketFile,
+	runsOf,
+	runVago,
+} from "./project.ts";
 
 const goalDir = ".vago-goals/hello";
 
@@ -35,10 +41,6 @@ async function headerOf(
 	name: string,
 ): Promise<Record<string, unknown>> {
 	return (await readTicketFile(root, `${goalDir}/tickets/${name}.md`)).header;
-}
-
-function runsOf(header: Record<string, unknown>): Record<string, unknown>[] {
-	return (header.runs ?? []) as Record<string, unknown>[];
 }
 
 const agentWorkflow = `

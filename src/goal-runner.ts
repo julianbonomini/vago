@@ -19,6 +19,7 @@ import {
 	readGoal,
 	setStatus,
 	type Ticket,
+	withGoalClaimed,
 } from "./tickets.ts";
 import { loadWorkflow, type Workflow } from "./workflow.ts";
 import { closeWorktree, openWorktree } from "./worktree.ts";
@@ -59,9 +60,14 @@ export async function newGoal(
  * Run and again after each Ticket, so a `goal.md` or Ticket file broken
  * mid-Goal stops it there, without a summary. When this run takes the Goal's
  * last Tickets to done, it then removes the Goal's worktree if nothing in it
- * would be lost, or prints why it keeps it.
+ * would be lost, or prints why it keeps it. Throws an Error naming the Goal,
+ * before anything changes, when another `vago run` is running it.
  */
 export async function runGoal(root: string, goal: string): Promise<GoalEnd> {
+	return withGoalClaimed(root, goal, () => runClaimedGoal(root, goal));
+}
+
+async function runClaimedGoal(root: string, goal: string): Promise<GoalEnd> {
 	let state = await readGoal(root, goal);
 	const workflow = await loadWorkflow(root, state.workflow);
 	// The Goal's worktree may hold a lost Run's partial work, so its Ticket

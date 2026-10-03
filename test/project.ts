@@ -133,6 +133,23 @@ export async function readTicketFile(
 	};
 }
 
+/** The `[[runs]]` of a Ticket header, empty when it has none. */
+export function runsOf(
+	header: Record<string, unknown>,
+): Record<string, unknown>[] {
+	return (header.runs ?? []) as Record<string, unknown>[];
+}
+
+/** A Workflow of one shell Step, `work`, running `run`. */
+export function oneStep(run: string): string {
+	return `
+[[steps]]
+id   = "work"
+type = "shell"
+run  = '''${run}'''
+`;
+}
+
 /**
  * Runs `vago <args>` as `runVago` does, but with a terminal for stdout, and
  * resolves to everything it printed there once the terminal closes. The
@@ -182,6 +199,34 @@ export async function goalWorktree(
 		}
 		await Bun.sleep(20);
 	}
+}
+
+/** What the main checkout looks like: its branch, git status and files. */
+export type CheckoutSnapshot = {
+	branch: string;
+	status: string;
+	files: string[];
+};
+
+/**
+ * Takes a snapshot of the main checkout at `root`, leaving out `.git/`, which
+ * holds the store every worktree shares, and `.vago-goals/`, which Vago
+ * writes during a run.
+ */
+export async function checkoutSnapshot(
+	root: string,
+): Promise<CheckoutSnapshot> {
+	const git = (...args: string[]) =>
+		Bun.spawnSync(["git", ...args], { cwd: root }).stdout.toString();
+	const files: string[] = [];
+	for await (const path of new Bun.Glob("**").scan({ cwd: root, dot: true })) {
+		if (!/^\.(git|vago-goals)\//.test(path)) files.push(path);
+	}
+	return {
+		branch: git("branch", "--show-current"),
+		status: git("status", "--porcelain"),
+		files: files.sort(),
+	};
 }
 
 /**

@@ -6,6 +6,7 @@ import {
 	goalWorktree,
 	makeProject,
 	readTicketFile,
+	runsOf,
 	runVago,
 	startVago,
 } from "./project.ts";
@@ -21,10 +22,6 @@ async function headerOf(
 	name: string,
 ): Promise<Record<string, unknown>> {
 	return (await readTicketFile(root, `${goalDir}/tickets/${name}.md`)).header;
-}
-
-function runsOf(header: Record<string, unknown>): Record<string, unknown>[] {
-	return (header.runs ?? []) as Record<string, unknown>[];
 }
 
 const agentWorkflow = `

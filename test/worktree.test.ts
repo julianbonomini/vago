@@ -4,10 +4,12 @@ import { mkdtemp, realpath, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+	checkoutSnapshot,
 	gitIdentity,
 	goalText,
 	goalWorktree,
 	makeProject,
+	oneStep,
 	readTicketFile,
 	runVago,
 	type VagoExit,
@@ -18,16 +20,6 @@ import {
 const goalDir = ".vago-goals/hello";
 const ticketPath = `${goalDir}/tickets/01-say-hello.md`;
 const ticket = `+++\nstatus = "ready"\n+++\n# Say hello\n`;
-
-// A Workflow of one shell Step running `run`.
-function oneStep(run: string): string {
-	return `
-[[steps]]
-id   = "work"
-type = "shell"
-run  = '${run}'
-`;
-}
 
 test("a shell Step runs in a worktree on vago/<goal>, outside the repo", async () => {
 	const root = await makeProject({
@@ -86,29 +78,12 @@ test("the main checkout's branch, files and git status are as they were", async 
 		[`${goalDir}/goal.md`]: goalText("test"),
 		[ticketPath]: ticket,
 	});
-	const snapshot = async () => {
-		const git = (...args: string[]) =>
-			Bun.spawnSync(["git", ...args], { cwd: root }).stdout.toString();
-		const files: string[] = [];
-		for await (const path of new Bun.Glob("**").scan({
-			cwd: root,
-			dot: true,
-		})) {
-			// `.git/` holds the store every worktree shares.
-			if (!/^\.(git|vago-goals)\//.test(path)) files.push(path);
-		}
-		return {
-			branch: git("branch", "--show-current"),
-			status: git("status", "--porcelain"),
-			files: files.sort(),
-		};
-	};
-	const before = await snapshot();
+	const before = await checkoutSnapshot(root);
 
 	const result = await runVago(root, ["run", "hello"]);
 
 	expect(result.exitCode).toBe(0);
-	expect(await snapshot()).toEqual(before);
+	expect(await checkoutSnapshot(root)).toEqual(before);
 });
 
 test("the worktree holds the main checkout's untracked and ignored files, but not .vago-goals/", async () => {
