@@ -187,6 +187,52 @@ test("ticket add numbers past the highest Ticket and writes each blocker once", 
 	expect(bow.header).toEqual({ status: "ready", blocked_by: [3, 1] });
 });
 
+test("ticket add --workflow names the Workflow the Ticket goes through", async () => {
+	const root = await makeProject({
+		".vago/workflows/test.toml": workflow,
+		".vago/workflows/other.toml": workflow,
+		[`${goalDir}/goal.md`]: goalText("test"),
+	});
+
+	const result = await runVago(root, [
+		"ticket",
+		"add",
+		"hello",
+		"greet",
+		"--workflow",
+		"other",
+	]);
+
+	expect(result.stderr).toBe("");
+	expect(result.exitCode).toBe(0);
+	const greet = await readTicketFile(root, `${goalDir}/tickets/01-greet.md`);
+	expect(greet.header).toEqual({ status: "ready", workflow: "other" });
+});
+
+test("ticket add refuses a Workflow vago run would refuse and writes no Ticket", async () => {
+	const root = await makeProject({
+		".vago/workflows/test.toml": workflow,
+		[`${goalDir}/goal.md`]: goalText("test"),
+		[`${goalDir}/tickets/01-greet.md`]: `+++\nstatus = "ready"\n+++\n`,
+	});
+
+	const result = await runVago(root, [
+		"ticket",
+		"add",
+		"hello",
+		"wave",
+		"--workflow",
+		"big",
+	]);
+
+	expect(result.exitCode).toBe(1);
+	expect(result.stderr).toMatch(/No Workflow "big" in \S*: it holds test\n/);
+	expect(result.stdout).toBe("");
+	expect(await readdir(join(root, goalDir, "tickets"))).toEqual([
+		"01-greet.md",
+	]);
+});
+
 test("ticket add refuses an unknown blocker and writes no Ticket", async () => {
 	const root = await makeProject({
 		".vago/workflows/test.toml": workflow,
@@ -512,7 +558,7 @@ for (const flags of [
 
 		expect(result.exitCode).toBe(1);
 		expect(result.stderr).toContain(
-			"vago ticket add <goal> <slug> [--blocked-by <NN>]... [--body-file <path>]",
+			"vago ticket add <goal> <slug> [--blocked-by <NN>]... [--workflow <name>] [--body-file <path>]",
 		);
 		expect(await readdir(join(root, goalDir, "tickets"))).toEqual([]);
 	});

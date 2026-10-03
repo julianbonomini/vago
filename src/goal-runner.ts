@@ -1,7 +1,7 @@
-// A Goal's lifecycle: creating it with the Workflow it names, the main loop
-// of `vago run`, which takes the Goal's ready Tickets one at a time through
-// every Step of the Workflow in the Goal's worktree and closing it once every
-// Ticket is done, and resetting a stuck Ticket. Hides the order of a Goal's
+// A Goal's lifecycle: creating it and its Tickets with the Workflows they
+// name, the main loop of `vago run`, which takes the Goal's ready Tickets one
+// at a time through every Step of their Workflow in the Goal's worktree and
+// closing it once every Ticket is done, and resetting a stuck Ticket. Hides the order of a Goal's
 // lifecycle and where its Steps run.
 
 import {
@@ -15,6 +15,7 @@ import {
 } from "./progress.ts";
 import { runStep, spellOutcome } from "./step-runner.ts";
 import {
+	addTicket,
 	closeOpenRun,
 	createGoal,
 	isLastTicket,
@@ -50,6 +51,26 @@ export async function newGoal(
 }
 
 /**
+ * Adds a ready Ticket named `slug` to `goal` of the Project at `root`, as
+ * `addTicket` does, going through Workflow `workflow` in place of the Goal's
+ * when it's given. Returns the path of the Ticket file. Throws an Error
+ * naming the problem, and writes nothing, when `vago run` would refuse the
+ * Workflow or `addTicket` refuses the Ticket.
+ */
+export async function newTicket(
+	root: string,
+	goal: string,
+	slug: string,
+	blockedBy: number[],
+	workflow: string | undefined,
+	body?: string,
+): Promise<string> {
+	// The check vago run makes, so ticket add never writes a Ticket vago run would refuse.
+	if (workflow !== undefined) await loadWorkflow(root, workflow);
+	return addTicket(root, goal, slug, blockedBy, workflow, body);
+}
+
+/**
  * Runs `goal` of the Project at `root` until no Ticket is ready or a Ticket
  * goes stuck, then prints the Goal summary. Its Steps run in the Goal's
  * worktree, whose path it prints before the first Ticket; a Goal with no
@@ -71,7 +92,21 @@ export async function runGoal(root: string, goal: string): Promise<GoalEnd> {
 
 async function runClaimedGoal(root: string, goal: string): Promise<GoalEnd> {
 	let state = await readGoal(root, goal);
-	const workflow = await loadWorkflow(root, state.workflow);
+	// Each Workflow is loaded once, so every Ticket that names it runs the
+	// Workflow as it was when first loaded, even if an agent edits `.vago/`.
+	const workflows = new Map<string, Workflow>();
+	const workflowNamed = async (name: string): Promise<Workflow> => {
+		const loaded = workflows.get(name) ?? (await loadWorkflow(root, name));
+		workflows.set(name, loaded);
+		return loaded;
+	};
+	// Loaded before any Run, so a Workflow name that's wrong anywhere in the
+	// Goal refuses it before anything changes. A Ticket added mid-Goal loads
+	// its Workflow when it comes up.
+	await workflowNamed(state.workflow);
+	for (const { status, workflow } of state.tickets) {
+		if (status !== "done") await workflowNamed(workflow);
+	}
 	// The Goal's worktree may hold a lost Run's partial work, so its Ticket
 	// goes stuck for the human to look at instead of running again on top of
 	// it.
@@ -93,7 +128,12 @@ async function runClaimedGoal(root: string, goal: string): Promise<GoalEnd> {
 		const worktree = await openWorktree(root, goal);
 		printWorktree(worktree);
 		while (state.nextReady !== undefined) {
-			const finished = await runTicket(workflow, state.nextReady, worktree);
+			const { ticket, workflow } = state.nextReady;
+			const finished = await runTicket(
+				await workflowNamed(workflow),
+				ticket,
+				worktree,
+			);
 			state = await readGoal(root, goal);
 			if (!finished) break;
 		}

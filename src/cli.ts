@@ -5,10 +5,10 @@
 // argument parsing all come from its one entry in `commands`, and its `run`
 // reads what was given through that same entry's declarations.
 
-import { newGoal, resetTicket, runGoal } from "./goal-runner.ts";
+import { newGoal, newTicket, resetTicket, runGoal } from "./goal-runner.ts";
 import { initProject, updateProject } from "./init.ts";
 import { printGoalReport } from "./progress.ts";
-import { addTicket, readGoal, readGoalBody } from "./tickets.ts";
+import { readGoal, readGoalBody } from "./tickets.ts";
 import { projectRoot } from "./worktree.ts";
 
 /** One positional argument, such as `<goal>`. */
@@ -116,6 +116,14 @@ const workflowFlag: RequiredFlag = {
 	times: "once",
 	meaning:
 		"The Workflow the Goal's Tickets go through, from .vago/workflows/<name>.toml.",
+};
+
+const ticketWorkflowFlag: OptionalFlag = {
+	name: "--workflow",
+	value: "<name>",
+	times: "at most once",
+	meaning:
+		"The Workflow this Ticket goes through in place of the Goal's, from .vago/workflows/<name>.toml.",
 };
 
 const blockedByFlag: RepeatedFlag = {
@@ -227,20 +235,23 @@ how long they took and what they cost, ready to paste into a PR description.`,
 		name: "ticket add",
 		summary: "Add a ready Ticket to a Goal",
 		description: `Adds a Ticket to the Goal, numbered one past its highest Ticket, with status
-ready, and prints the path of the Ticket file.`,
+ready, and prints the path of the Ticket file. The Ticket goes through the
+Goal's Workflow unless --workflow names another. It refuses, writing nothing,
+when vago run would refuse that Workflow.`,
 		operands: [ticketGoal, ticketSlug],
-		flags: [blockedByFlag, bodyFileFlag],
+		flags: [blockedByFlag, ticketWorkflowFlag, bodyFileFlag],
 		example:
 			"vago ticket add search ranking --blocked-by 1 --body-file ticket.md",
 		run: async (root, given) => {
 			const body = await readBodyFile(given.optionalFlag(bodyFileFlag));
 			const blockedBy = given.repeatedFlag(blockedByFlag).map(Number);
 			console.log(
-				await addTicket(
+				await newTicket(
 					root,
 					given.operand(ticketGoal),
 					given.operand(ticketSlug),
 					blockedBy,
+					given.optionalFlag(ticketWorkflowFlag),
 					body,
 				),
 			);

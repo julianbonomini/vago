@@ -6,6 +6,7 @@ import {
 	goalWorktree,
 	makeProject,
 	readTicketFile,
+	runsOf,
 	runVago,
 } from "./project.ts";
 
@@ -82,6 +83,45 @@ prompt = "prompts/implement.md"
 	);
 	expect(await Bun.file(join(root, ticketPath)).text()).toBe(ticket);
 	expect(await claude.calls()).toEqual([]);
+});
+
+test("a Ticket whose header names a Workflow goes through it, the others through the Goal's", async () => {
+	const root = await workflowProject({
+		".vago/workflows/a.toml": echoWorkflow("a"),
+		".vago/workflows/b.toml": echoWorkflow("b"),
+		[`${goalDir}/goal.md`]: goalText("a"),
+		[`${goalDir}/tickets/02-wave.md`]: `+++\nstatus = "ready"\nworkflow = "b"\n+++\n\n# Wave\n`,
+	});
+
+	const result = await runVago(root, ["run", "hello"]);
+
+	expect(result.stderr).toBe("");
+	expect(result.exitCode).toBe(0);
+	const steps = async (path: string) =>
+		runsOf((await readTicketFile(root, path)).header).map((run) => run.step);
+	expect(await steps(ticketPath)).toEqual(["a"]);
+	expect(await steps(`${goalDir}/tickets/02-wave.md`)).toEqual(["b"]);
+});
+
+test("vago run refuses a Ticket's Workflow that isn't in .vago/workflows/ before any Run", async () => {
+	const wave = `+++\nstatus = "ready"\nworkflow = "big"\n+++\n\n# Wave\n`;
+	const root = await workflowProject({
+		".vago/workflows/a.toml": echoWorkflow("a"),
+		[`${goalDir}/goal.md`]: goalText("a"),
+		[`${goalDir}/tickets/02-wave.md`]: wave,
+	});
+
+	const result = await runVago(root, ["run", "hello"]);
+
+	expect(result.exitCode).toBe(1);
+	expect(result.stdout).toBe("");
+	expect(result.stderr).toMatch(
+		/No Workflow "big" in \S*\.vago\/workflows\/: it holds a\n/,
+	);
+	expect(await Bun.file(join(root, ticketPath)).text()).toBe(ticket);
+	expect(await Bun.file(join(root, goalDir, "tickets/02-wave.md")).text()).toBe(
+		wave,
+	);
 });
 
 test("vago run no longer reads .vago/workflow.toml", async () => {
