@@ -18,12 +18,14 @@ Items marked _(grill)_ have design questions to settle before writing Tickets.
 - [ ] worfklow still produces red flags when checked as a whole
 - [x] fix all red flags
 - [ ] pr descrition does not use full width. it has weird enters. it comes from goals
-- [ ] workflows to use skills instead of docs. for example implementer and design to use custom made skills for red flags and code style. maybe even hooks
+- [-] workflows to use skills instead of docs. for example implementer and design to use custom made skills for red flags and code style. maybe even hooks
 - [x] @ me in PRs when they are ready for review + a label that they are ready for me to review them
 - [ ] resiliance is bad, when something fails everything halts for now
 - [ ] figure a way to run goals in paralel, probably worktrees
 - [ ] planner skill, ships with punt. basically mimics grilling or grill-with-docs and ends up in to-tickets, (similar to mattpocock) but the result is in punt goals and tickets
-- [ ] vago to re init without destroying config (vago re-init or vago update)
+- [-] vago to re init without destroying config (vago re-init or vago update)
+- [ ] TUI - needs grilling + prototyping
+  - [ ] TUI to show all goals, done and to do and in progress
 
 
 
