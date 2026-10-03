@@ -35,6 +35,8 @@ Items marked _(grill)_ have design questions to settle before writing Tickets.
 - [ ] Split tickets.ts into a folder; it's past 400 lines.
 - [ ] create github app maybe?
 - [ ] goal on start and on end configuration steps, so workflows don't have to manually do those thigns
+- [ ] TUI Run stream extras, from the prototype's round 6: Bash edits shown as edits with the diff a key away, a live clock on long commands, background tasks as one line, Skill loads, live tokens and cost for an open Run.
+- [ ] Show Milestones in the TUI, once Vago has them.
 
 
 ## From the Alpha map's out-of-scope list

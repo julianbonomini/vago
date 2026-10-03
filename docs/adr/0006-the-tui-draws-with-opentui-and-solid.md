@@ -15,5 +15,5 @@ The TUI uses OpenTUI (`@opentui/core`, with `@opentui/solid` and `solid-js`) to 
 - OpenTUI is 0.x and releases nightly, so its version is pinned and upgraded on purpose.
 - Bun has broken loading OpenTUI's library from compiled binaries before (oven-sh/bun#30717, #44238), so a test runs the compiled `vago` and opens the TUI.
 - OpenTUI's Markdown and tree-sitter worker isn't embedded in compiled binaries (anomalyco/opentui#807) and falls back to plain text, so the TUI doesn't use it.
-- Solid's JSX needs its transform at build time, in `bun test` and in `bun build --compile`. TODO: the prototype confirms this works with `--compile`; if it doesn't, this ADR is revisited.
+- Solid's JSX needs its transform at build time, in `bun test`, `bun run` and the compiled binary. The prototype (branch `prototype/tui`, `build.ts`) found two conditions for the binary. It is built by a `Bun.build` script with `@opentui/solid/bun-plugin`: a plain `bun build --compile` draws the first frame and never updates, with no error, so the test that opens the compiled `vago` checks a second frame. And the build sets `compile: { autoloadBunfig: false }`, or the binary loads the repo's `bunfig.toml` preload when run inside it and dies with `preload not found`.
 - TUI tests render views from fixture `.vago-goals/` folders through OpenTUI's test renderer and check the frame's text.

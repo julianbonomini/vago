@@ -10,5 +10,6 @@
 
 ## Consequences
 
-- To show which Goals are running, the kernel records which process runs each Goal. While that process lives, the TUI trusts the Ticket files. A Ticket whose file says `running` after its process is gone is shown as `lost`, the outcome the next `vago run` gives its open Run.
+- To show which Goals are running, the TUI reads the lock that `vago run` holds in `.vago-goals/<goal>/running.lock`, through `tickets.ts`. While the process in the lock lives, the TUI trusts the Ticket files. A Ticket whose file says `running` after its process is gone is shown as `lost`, the outcome the next `vago run` gives its open Run.
 - Actions (start, stop, reset, steering) need their own decision before the TUI gets any.
+- Claude Code's `stream-json` stays inside its Harness module (architecture rule 4). The TUI renders Run activity that doesn't depend on the Harness, so a second Harness needs no TUI change.

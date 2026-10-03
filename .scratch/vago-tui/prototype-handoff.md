@@ -2,7 +2,7 @@
 
 You're starting a prototype session for Vago's TUI. A grilling session on 2026-10-03 settled what the TUI is. This session answers how it looks and feels, with throwaway code, so the human can then split the real work into Goals and Tickets. Use the `/prototype` skill for the method and the `/tui-design` skill for every design and build decision.
 
-Read first: `CONTEXT.md` (Vago's words; use them exactly), `docs/adr/0004-the-tui-is-a-read-only-layer-in-the-vago-binary.md`, `docs/adr/0005-the-tui-draws-with-opentui-and-solid.md`, and `.scratch/vago-tui/research/factory-missions.md`, the research on Factory's Mission Control, the TUI the human wants Vago's to feel like.
+Read first: `CONTEXT.md` (Vago's words; use them exactly), `docs/adr/0005-the-tui-is-a-read-only-layer-in-the-vago-binary.md`, `docs/adr/0006-the-tui-draws-with-opentui-and-solid.md`, and `.scratch/vago-tui/research/factory-missions.md`, the research on Factory's Mission Control, the TUI the human wants Vago's to feel like.
 
 ## Where to work
 
@@ -26,7 +26,7 @@ Read first: `CONTEXT.md` (Vago's words; use them exactly), `docs/adr/0004-the-tu
 2. The Project view's layout, and how the human moves from it into a Goal and back.
 3. Whether the live Run activity from `.jsonl` logs reads well: which Claude Code events to show, how to condense tool calls (Factory shows `Execute`, `Read file (N lines)`), and how it follows a Run as it writes.
 4. The visual style: colours (Factory uses a near-black background and one orange accent), symbols for Ticket status, how the screen is divided, borders, navigation and keys, and how it behaves on a narrow terminal and with `NO_COLOR`.
-5. Whether Solid's JSX transform works in a `bun build --compile` binary. Build the prototype into a binary and run it. ADR 0005 has a TODO that depends on this.
+5. Whether Solid's JSX transform works in a `bun build --compile` binary. Build the prototype into a binary and run it. ADR 0006 has a TODO that depends on this.
 
 ## The data
 
@@ -42,7 +42,7 @@ When the human is happy with the prototype, write `.scratch/vago-tui/prototype-f
 
 - the answer to each of the five questions, with a screenshot or a text capture of each view
 - the design decisions the Goals should carry (layout, keys, colours, the event list for the live Run activity)
-- anything that contradicts ADR 0004 or 0005, or the settled list above
+- anything that contradicts ADR 0005 or 0006, or the settled list above
 - what was hard, which tells the human where the Tickets need to be small
 
 Commit the prototype and the findings to `prototype/tui`. The human takes the findings back to the grilling session, which splits the work into Goals and Tickets.
