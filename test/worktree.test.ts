@@ -1,0 +1,243 @@
+import { expect, test } from "bun:test";
+import { mkdtemp, realpath } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+	gitIdentity,
+	goalText,
+	goalWorktree,
+	makeProject,
+	readTicketFile,
+	runVago,
+	vagoHome,
+	vagoOnPath,
+} from "./project.ts";
+
+const goalDir = ".vago-goals/hello";
+const ticketPath = `${goalDir}/tickets/01-say-hello.md`;
+const ticket = `+++\nstatus = "ready"\n+++\n# Say hello\n`;
+
+// A Workflow of one shell Step running `run`.
+function oneStep(run: string): string {
+	return `
+[[steps]]
+id   = "work"
+type = "shell"
+run  = '${run}'
+`;
+}
+
+test("a shell Step runs in a worktree on vago/<goal>, outside the repo", async () => {
+	const root = await makeProject({
+		".vago/workflows/test.toml": oneStep(
+			"pwd -P > where.txt; git branch --show-current > branch.txt",
+		),
+		[`${goalDir}/goal.md`]: goalText("test"),
+		[ticketPath]: ticket,
+	});
+
+	const result = await runVago(root, ["run", "hello"]);
+
+	expect(result.exitCode).toBe(0);
+	const worktree = await goalWorktree(root, "hello");
+	const read = (name: string) => Bun.file(join(worktree, name)).text();
+	expect((await read("where.txt")).trim()).toBe(worktree);
+	expect(worktree.startsWith(await realpath(vagoHome))).toBe(true);
+	expect(worktree.startsWith(await realpath(root))).toBe(false);
+	expect((await read("branch.txt")).trim()).toBe("vago/hello");
+});
+
+test("the worktree is cut from the default branch, whatever it's called", async () => {
+	const root = await makeProject({
+		".vago/workflows/test.toml": oneStep("git rev-parse HEAD > head.txt"),
+		[`${goalDir}/goal.md`]: goalText("test"),
+		[ticketPath]: ticket,
+	});
+	const origin = await mkdtemp(join(tmpdir(), "vago-origin-"));
+	const git = (cwd: string, ...args: string[]) =>
+		Bun.spawnSync(["git", ...gitIdentity, ...args], { cwd }).stdout.toString();
+	git(origin, "init", "--quiet", "--bare", "-b", "trunk");
+	git(root, "branch", "-m", "main", "trunk");
+	git(root, "commit", "--quiet", "--allow-empty", "-m", "on trunk");
+	git(root, "remote", "add", "origin", origin);
+	git(root, "push", "--quiet", "origin", "trunk");
+	git(root, "remote", "set-head", "origin", "trunk");
+	git(root, "switch", "--quiet", "-c", "feature");
+	git(root, "commit", "--quiet", "--allow-empty", "-m", "on feature");
+
+	const result = await runVago(root, ["run", "hello"]);
+
+	expect(result.stderr).toBe("");
+	expect(result.exitCode).toBe(0);
+	const worktree = await goalWorktree(root, "hello");
+	const head = (await Bun.file(join(worktree, "head.txt")).text()).trim();
+	expect(head).toBe(git(root, "rev-parse", "trunk").trim());
+	expect(head).not.toBe(git(root, "rev-parse", "feature").trim());
+});
+
+test("the main checkout's branch, files and git status are as they were", async () => {
+	const root = await makeProject({
+		".vago/workflows/test.toml": oneStep(
+			`echo made > made.txt && git add made.txt && git ${gitIdentity.join(" ")} commit -qm made`,
+		),
+		[`${goalDir}/goal.md`]: goalText("test"),
+		[ticketPath]: ticket,
+	});
+	const snapshot = async () => {
+		const git = (...args: string[]) =>
+			Bun.spawnSync(["git", ...args], { cwd: root }).stdout.toString();
+		const files: string[] = [];
+		for await (const path of new Bun.Glob("**").scan({
+			cwd: root,
+			dot: true,
+		})) {
+			// `.git/` holds the store every worktree shares.
+			if (!/^\.(git|vago-goals)\//.test(path)) files.push(path);
+		}
+		return {
+			branch: git("branch", "--show-current"),
+			status: git("status", "--porcelain"),
+			files: files.sort(),
+		};
+	};
+	const before = await snapshot();
+
+	const result = await runVago(root, ["run", "hello"]);
+
+	expect(result.exitCode).toBe(0);
+	expect(await snapshot()).toEqual(before);
+});
+
+test("the worktree holds the main checkout's untracked and ignored files, but not .vago-goals/", async () => {
+	const root = await makeProject({
+		".vago/workflows/test.toml": oneStep(
+			"cat .env notes.txt > seen.txt && test ! -e .vago-goals",
+		),
+		".gitignore": ".env\n",
+		".env": "secret\n",
+		"notes.txt": "note\n",
+		[`${goalDir}/goal.md`]: goalText("test"),
+		[ticketPath]: ticket,
+	});
+
+	const result = await runVago(root, ["run", "hello"]);
+
+	expect(result.exitCode).toBe(0);
+	expect((await readTicketFile(root, ticketPath)).header.status).toBe("done");
+	const worktree = await goalWorktree(root, "hello");
+	expect(await Bun.file(join(worktree, "seen.txt")).text()).toBe(
+		"secret\nnote\n",
+	);
+});
+
+test("an untracked .vago/ runs its shell scripts from inside the worktree", async () => {
+	const root = await makeProject({
+		".vago/workflows/test.toml": oneStep("sh .vago/scripts/hello.sh"),
+		".vago/scripts/hello.sh": "pwd -P > ran-in.txt\n",
+		[`${goalDir}/goal.md`]: goalText("test"),
+		[ticketPath]: ticket,
+	});
+
+	const result = await runVago(root, ["run", "hello"]);
+
+	expect(result.exitCode).toBe(0);
+	expect((await readTicketFile(root, ticketPath)).header.status).toBe("done");
+	const worktree = await goalWorktree(root, "hello");
+	expect((await Bun.file(join(worktree, "ran-in.txt")).text()).trim()).toBe(
+		worktree,
+	);
+});
+
+test("[[runs]] and logs land in the main checkout's .vago-goals/, and the report shows them", async () => {
+	const root = await makeProject({
+		".vago/workflows/test.toml": `${oneStep("echo first")}
+[[steps]]
+id   = "again"
+type = "shell"
+run  = "echo second"
+`,
+		[`${goalDir}/goal.md`]: goalText("test"),
+		[ticketPath]: ticket,
+	});
+
+	await runVago(root, ["run", "hello"]);
+
+	const { header } = await readTicketFile(root, ticketPath);
+	const runs = header.runs as Record<string, unknown>[];
+	expect(runs.map((run) => run.step)).toEqual(["work", "again"]);
+	for (const run of runs) {
+		expect(await Bun.file(join(root, goalDir, String(run.log))).exists()).toBe(
+			true,
+		);
+	}
+	const report = await runVago(root, ["goal", "report", "hello"]);
+	expect(report.stdout).toContain("| 01-say-hello | work | ok |");
+	expect(report.stdout).toContain("| 01-say-hello | again | ok |");
+	const worktree = await goalWorktree(root, "hello");
+	expect(await Bun.file(join(worktree, goalDir, "goal.md")).exists()).toBe(
+		false,
+	);
+});
+
+test("vago goal report works from a Step", async () => {
+	const root = await makeProject({
+		".vago/workflows/test.toml": oneStep("vago goal report hello > report.md"),
+		[`${goalDir}/goal.md`]: goalText("test"),
+		[ticketPath]: ticket,
+	});
+
+	const result = await runVago(root, ["run", "hello"], {
+		PATH: `${await vagoOnPath()}:${process.env.PATH}`,
+	});
+
+	expect(result.exitCode).toBe(0);
+	expect((await readTicketFile(root, ticketPath)).header.status).toBe("done");
+	const worktree = await goalWorktree(root, "hello");
+	expect(await Bun.file(join(worktree, "report.md")).text()).toContain(
+		"01-say-hello",
+	);
+});
+
+test("vago run prints the worktree's path", async () => {
+	const root = await makeProject({
+		".vago/workflows/test.toml": oneStep("true"),
+		[`${goalDir}/goal.md`]: goalText("test"),
+		[ticketPath]: ticket,
+	});
+
+	const result = await runVago(root, ["run", "hello"]);
+
+	expect(result.stdout.split("\n")[0]).toBe(
+		`Worktree ${await goalWorktree(root, "hello")}`,
+	);
+});
+
+test("re-running a Goal reuses its worktree, with its work and the main checkout's .vago/ as it is now", async () => {
+	const check = 'test -e one.txt && test -n "$PASS"\n';
+	const root = await makeProject({
+		".vago/workflows/test.toml": oneStep(
+			`if [ "$VAGO_TICKET" = 01-one ]; then echo one > one.txt && git add one.txt && git ${gitIdentity.join(" ")} commit -qm one; else sh .vago/scripts/check.sh; fi`,
+		),
+		".vago/scripts/check.sh": check,
+		[`${goalDir}/goal.md`]: goalText("test"),
+		[`${goalDir}/tickets/01-one.md`]: ticket,
+		[`${goalDir}/tickets/02-two.md`]: ticket,
+	});
+	const first = await runVago(root, ["run", "hello"]);
+	expect(first.exitCode).not.toBe(0);
+	await runVago(root, ["ticket", "reset", "hello", "2"]);
+	await Bun.write(
+		join(root, ".vago/scripts/check.sh"),
+		`echo v2 > version.txt\n${check}`,
+	);
+
+	const again = await runVago(root, ["run", "hello"], { PASS: "1" });
+
+	const worktreeLine = (stdout: string) => stdout.split("\n")[0];
+	expect(worktreeLine(again.stdout)).toBe(worktreeLine(first.stdout));
+	expect(again.exitCode).toBe(0);
+	const { header } = await readTicketFile(root, `${goalDir}/tickets/02-two.md`);
+	expect(header.status).toBe("done");
+	const worktree = await goalWorktree(root, "hello");
+	expect(await Bun.file(join(worktree, "version.txt")).text()).toBe("v2\n");
+});

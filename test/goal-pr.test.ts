@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
-import { chmod, mkdtemp } from "node:fs/promises";
+import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type FakeGh, makeFakeGh } from "./fake-gh.ts";
-import { makeProject, runVago } from "./project.ts";
+import { makeProject, runVago, vagoOnPath } from "./project.ts";
 
 // The starter's own branch and merge scripts around a shell Step that does a
 // Ticket's work, failing for the Ticket named in $FAIL_TICKET.
@@ -51,13 +51,7 @@ async function makeGoalRepo(): Promise<GoalRepo> {
 	await Bun.write(join(root, ".vago/workflows/ship.toml"), workflow);
 
 	// merge.sh calls `vago goal report`, so `vago` is this checkout's CLI.
-	const bin = await mkdtemp(join(tmpdir(), "vago-bin-"));
-	const cli = join(import.meta.dir, "..", "src", "cli.ts");
-	await Bun.write(
-		join(bin, "vago"),
-		`#!/bin/sh\nexec "${process.execPath}" "${cli}" "$@"\n`,
-	);
-	await chmod(join(bin, "vago"), 0o755);
+	const bin = await vagoOnPath();
 	const gh = await makeFakeGh("octo-human");
 	const vago = (args: string[], failTicket = "") =>
 		runVago(root, args, {

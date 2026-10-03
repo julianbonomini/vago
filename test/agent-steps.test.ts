@@ -1,12 +1,17 @@
 import { expect, test } from "bun:test";
-import { realpath } from "node:fs/promises";
 import { join } from "node:path";
 import {
 	acceptEditsFixture,
 	makeFakeClaude,
 	sessionFixture,
 } from "./fake-claude.ts";
-import { goalText, makeProject, readTicketFile, runVago } from "./project.ts";
+import {
+	goalText,
+	goalWorktree,
+	makeProject,
+	readTicketFile,
+	runVago,
+} from "./project.ts";
 
 const workflow = `
 harness = "claude-code"
@@ -59,15 +64,16 @@ test("a session in auto mode with no denied calls ends ok and the Ticket done", 
 	expect((await readTicketFile(root, ticketPath)).header.status).toBe("done");
 });
 
-test("an agent Step's Harness runs in the Project root", async () => {
+test("an agent Step's Harness runs in the Goal's worktree", async () => {
 	const root = await agentProject();
 	const claude = await makeFakeClaude("pwd -P > where.txt");
 
 	const result = await runVago(root, ["run", "hello"], claude.env);
 
 	expect(result.exitCode).toBe(0);
-	expect((await Bun.file(join(root, "where.txt")).text()).trim()).toBe(
-		await realpath(root),
+	const worktree = await goalWorktree(root, "hello");
+	expect((await Bun.file(join(worktree, "where.txt")).text()).trim()).toBe(
+		worktree,
 	);
 });
 
@@ -172,5 +178,5 @@ test("the end line shows the Run's cost", async () => {
 	const result = await runVago(root, ["run", "hello"], claude.env);
 
 	const lines = result.stdout.trimEnd().split("\n");
-	expect(lines[2]).toMatch(/^ {2}\S+ +\d+\.\ds +\$0\.01 {2}implement ok$/);
+	expect(lines[3]).toMatch(/^ {2}\S+ +\d+\.\ds +\$0\.01 {2}implement ok$/);
 });

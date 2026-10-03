@@ -1,7 +1,13 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
 import { makeFakeClaude } from "./fake-claude.ts";
-import { goalText, makeProject, readTicketFile, runVago } from "./project.ts";
+import {
+	goalText,
+	goalWorktree,
+	makeProject,
+	readTicketFile,
+	runVago,
+} from "./project.ts";
 
 const goalDir = ".vago-goals/hello";
 const ticketPath = `${goalDir}/tickets/01-say-hello.md`;
@@ -320,8 +326,9 @@ prompt = "prompts/implement.md"
 
 	expect(result.stderr).toBe("");
 	expect(result.exitCode).toBe(0);
+	const worktree = await goalWorktree(root, "hello");
 	expect(
-		await Bun.file(join(root, ".vago", "workflows", "test.toml")).text(),
+		await Bun.file(join(worktree, ".vago", "workflows", "test.toml")).text(),
 	).toBe(edited);
 	const calls = await claude.calls();
 	expect(calls.map((call) => flagValue(call.argv, "--model"))).toEqual([

@@ -9,6 +9,7 @@ import { newGoal, resetTicket, runGoal } from "./goal-runner.ts";
 import { initProject, updateProject } from "./init.ts";
 import { printGoalReport } from "./progress.ts";
 import { addTicket, readGoal, readGoalBody } from "./tickets.ts";
+import { projectRoot } from "./worktree.ts";
 
 /** One positional argument, such as `<goal>`. */
 type Operand = {
@@ -176,7 +177,8 @@ show it. It refuses when there is no .vago/ yet: run vago init.`,
 names, one Ticket at a time, until no Ticket is ready or one goes stuck. It
 prints a line per Step and a summary at the end. While any Ticket of the Goal
 is stuck it runs nothing and says which. Exits 0 only when every Ticket is
-done.`,
+done. The Steps run in the Goal's own worktree, outside the repo on branch
+vago/<goal>, whose path it prints.`,
 		operands: [goalToRun],
 		flags: [],
 		example: "vago run search",
@@ -291,7 +293,7 @@ async function main(args: string[]): Promise<number> {
 		);
 		return 1;
 	}
-	return command.run(process.cwd(), given);
+	return command.run(await projectRoot(process.cwd()), given);
 }
 
 function isHelp(token: string): boolean {
@@ -481,7 +483,7 @@ function commandHelp(command: Command): string {
 }
 
 // `-` means stdin, as it does for `cat`. A relative path resolves from the
-// working directory, the Project root `main` works in. No path, no body.
+// working directory, the directory `vago` was started in. No path, no body.
 async function readBodyFile(
 	path: string | undefined,
 ): Promise<string | undefined> {

@@ -1,7 +1,12 @@
 import { expect, test } from "bun:test";
-import { realpath } from "node:fs/promises";
 import { join } from "node:path";
-import { goalText, makeProject, readTicketFile, runVago } from "./project.ts";
+import {
+	goalText,
+	goalWorktree,
+	makeProject,
+	readTicketFile,
+	runVago,
+} from "./project.ts";
 
 const workflow = `
 [[steps]]
@@ -45,7 +50,7 @@ test("a Ticket goes through every shell Step and ends done", async () => {
 	expect(body).toBe(ticketBody);
 });
 
-test("a shell Step runs in the Project root", async () => {
+test("a shell Step runs in the Goal's worktree", async () => {
 	const root = await makeProject({
 		".vago/workflows/test.toml": `
 [[steps]]
@@ -60,8 +65,9 @@ run  = "pwd -P > where.txt"
 	const result = await runVago(root, ["run", "hello"]);
 
 	expect(result.exitCode).toBe(0);
-	expect((await Bun.file(join(root, "where.txt")).text()).trim()).toBe(
-		await realpath(root),
+	const worktree = await goalWorktree(root, "hello");
+	expect((await Bun.file(join(worktree, "where.txt")).text()).trim()).toBe(
+		worktree,
 	);
 });
 
@@ -144,13 +150,14 @@ test("stdout shows a start and an end line for each Step", async () => {
 
 	const time = String.raw`\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ`;
 	const lines = result.stdout.trimEnd().split("\n");
-	expect(lines[0]).toBe("01-say-hello");
-	expect(lines[1]).toMatch(new RegExp(`^  ${time} +greet started$`));
-	expect(lines[2]).toMatch(new RegExp(`^  ${time} +\\d+\\.\\ds +greet ok$`));
-	expect(lines[3]).toMatch(new RegExp(`^  ${time} +check started$`));
-	expect(lines[4]).toMatch(new RegExp(`^  ${time} +\\d+\\.\\ds +check ok$`));
-	expect(lines[5]).toBe("");
-	expect(lines[6]).toBe("hello: 1 of 1 Tickets done");
+	expect(lines[0]).toBe(`Worktree ${await goalWorktree(root, "hello")}`);
+	expect(lines[1]).toBe("01-say-hello");
+	expect(lines[2]).toMatch(new RegExp(`^  ${time} +greet started$`));
+	expect(lines[3]).toMatch(new RegExp(`^  ${time} +\\d+\\.\\ds +greet ok$`));
+	expect(lines[4]).toMatch(new RegExp(`^  ${time} +check started$`));
+	expect(lines[5]).toMatch(new RegExp(`^  ${time} +\\d+\\.\\ds +check ok$`));
+	expect(lines[6]).toBe("");
+	expect(lines[7]).toBe("hello: 1 of 1 Tickets done");
 });
 
 test("header fields Alpha doesn't know survive its rewrites", async () => {

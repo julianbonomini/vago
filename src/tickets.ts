@@ -66,8 +66,8 @@ const headerEnd = "\n+++\n";
 
 /**
  * The name of the folder, directly at a Project's root, that holds every
- * Goal. Other modules may name the folder, to keep it out of git, but never
- * build a path inside it: only this module does.
+ * Goal. Other modules may name the folder, to keep it out of git or out of a
+ * Goal's worktree, but never build a path inside it: only this module does.
  */
 export const goalsFolderName = ".vago-goals";
 

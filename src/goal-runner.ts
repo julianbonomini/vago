@@ -1,14 +1,14 @@
 // A Goal's lifecycle: creating it with the Workflow it names, the main loop
 // of `vago run`, which takes the Goal's ready Tickets one at a time through
-// every Step of the Workflow in the folder the Goal's Steps run in, and
-// resetting a stuck Ticket. Hides the order of a Goal's lifecycle and where
-// its Steps run.
+// every Step of the Workflow in the Goal's worktree, and resetting a stuck
+// Ticket. Hides the order of a Goal's lifecycle and where its Steps run.
 
 import {
 	printGoalSummary,
 	printStuck,
 	printStuckRefusal,
 	printTicketStarted,
+	printWorktree,
 } from "./progress.ts";
 import { runStep, spellOutcome } from "./step-runner.ts";
 import {
@@ -19,6 +19,7 @@ import {
 	type Ticket,
 } from "./tickets.ts";
 import { loadWorkflow, type Workflow } from "./workflow.ts";
+import { openWorktree } from "./worktree.ts";
 
 /** How `vago run` left the Goal: every Ticket `done`, or not. */
 export type GoalEnd = "done" | "unfinished";
@@ -45,21 +46,23 @@ export async function newGoal(
 
 /**
  * Runs `goal` of the Project at `root` until no Ticket is ready or a Ticket
- * goes stuck, then prints the Goal summary. Its Steps run in the Project at
- * `root`. A Ticket found `running`, left so by a `vago run` that crashed or
- * was killed, goes stuck with its open Run ended `lost`. While any Ticket of
- * the Goal is stuck it runs nothing and prints which ones instead. Throws an
- * Error naming the problem, before any Ticket changes, when `goal.md` names
- * no Workflow or one that doesn't exist, or when the Workflow or the Goal's
- * format is bad. The Goal is checked before the first Run and again after
- * each Ticket, so a `goal.md` or Ticket file broken mid-Goal stops it there,
- * without a summary.
+ * goes stuck, then prints the Goal summary. Its Steps run in the Goal's
+ * worktree, whose path it prints before the first Ticket; a Goal with no
+ * ready Ticket gets none. A Ticket found `running`, left so by a `vago run`
+ * that crashed or was killed, goes stuck with its open Run ended `lost`.
+ * While any Ticket of the Goal is stuck it runs nothing and prints which ones
+ * instead. Throws an Error naming the problem, before any Ticket changes,
+ * when `goal.md` names no Workflow or one that doesn't exist, or when the
+ * Workflow or the Goal's format is bad. The Goal is checked before the first
+ * Run and again after each Ticket, so a `goal.md` or Ticket file broken
+ * mid-Goal stops it there, without a summary.
  */
 export async function runGoal(root: string, goal: string): Promise<GoalEnd> {
 	let state = await readGoal(root, goal);
 	const workflow = await loadWorkflow(root, state.workflow);
-	// The checkout may hold a lost Run's partial work, so its Ticket goes
-	// stuck for the human to look at instead of running again on top of it.
+	// The Goal's worktree may hold a lost Run's partial work, so its Ticket
+	// goes stuck for the human to look at instead of running again on top of
+	// it.
 	for (const { ticket, status } of state.tickets) {
 		if (status !== "running") continue;
 		await closeOpenRun(ticket, "lost", new Date());
@@ -73,13 +76,14 @@ export async function runGoal(root: string, goal: string): Promise<GoalEnd> {
 		printStuckRefusal(goal, stuck);
 		return "unfinished";
 	}
-	// Where the Goal's Steps run, kept apart from `root`, which locates the
-	// Goal's state. It's the Project itself.
-	const checkout = root;
-	while (state.nextReady !== undefined) {
-		const finished = await runTicket(workflow, state.nextReady, checkout);
-		state = await readGoal(root, goal);
-		if (!finished) break;
+	if (state.nextReady !== undefined) {
+		const checkout = await openWorktree(root, goal);
+		printWorktree(checkout);
+		while (state.nextReady !== undefined) {
+			const finished = await runTicket(workflow, state.nextReady, checkout);
+			state = await readGoal(root, goal);
+			if (!finished) break;
+		}
 	}
 	printGoalSummary(goal, state);
 	return state.done ? "done" : "unfinished";

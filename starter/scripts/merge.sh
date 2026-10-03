@@ -26,7 +26,7 @@ git push -u origin "$goal"
 # Runs. A body edited by hand on GitHub is replaced too.
 # The Runs written last time come off goal.md first, so the report doesn't
 # carry them twice.
-goal_file=".vago-goals/$VAGO_GOAL/goal.md"
+goal_file="$VAGO_PROJECT_ROOT/.vago-goals/$VAGO_GOAL/goal.md"
 kept="$(sed '/^## Runs$/,$d' "$goal_file")"
 printf '%s\n' "$kept" >"$goal_file"
 body="$(vago goal report "$VAGO_GOAL")"

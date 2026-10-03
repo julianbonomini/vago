@@ -1,5 +1,7 @@
 # Alpha's kernel owns no git and no workspace
 
+Superseded by ADR 0004.
+
 Alpha runs a Project's Workflow Steps in the human's own checkout, and it never creates branches, worktrees, commits or merges itself. Every git action is a Step's job, done through an agent prompt or a shell command. The kernel stays a primitive with only `agent` and `shell` Steps, and opinions such as a branch per Goal live in the starter Workflow that `vago init` copies into the Project. A reader might expect an orchestrator to own its workspace and branches, as warren and Sandcastle do. Alpha doesn't, so the kernel stays small and Projects stay free to choose.
 
 ## Consequences

@@ -1,11 +1,17 @@
-// Everything `vago run` prints to stdout while it runs: one line naming each
-// Ticket as it starts, and under it a line when each Step starts and one when
-// it ends, where to look when a Ticket goes stuck, and the Goal summary table
-// on exit. Also the Goal report `vago goal report` prints. Hides the line
-// formats, columns and colours, and how durations and costs read.
+// Everything `vago run` prints to stdout while it runs: the Goal's worktree,
+// one line naming each Ticket as it starts, and under it a line when each
+// Step starts and one when it ends, where to look when a Ticket goes stuck,
+// and the Goal summary table on exit. Also the Goal report `vago goal report`
+// prints. Hides the line formats, columns and colours, and how durations and
+// costs read.
 
 import { relative } from "node:path";
 import type { GoalState, Ticket, TicketRun, TicketStatus } from "./tickets.ts";
+
+/** Prints the line naming the worktree the Goal's Steps run in. */
+export function printWorktree(path: string): void {
+	console.log(`Worktree ${path}`);
+}
 
 /** Prints the line naming `ticket`, under which its Step lines follow, indented. */
 export function printTicketStarted(ticket: Ticket): void {
@@ -63,7 +69,7 @@ export function printStuck(
  */
 export function printStuckRefusal(goal: string, stuck: Ticket[]): void {
 	console.log(
-		`${goal} has stuck Tickets. Check the checkout, then reset each one:`,
+		`${goal} has stuck Tickets. Check the Goal's worktree, then reset each one:`,
 	);
 	for (const ticket of stuck) {
 		console.log(`  ${ticket.name}: ${resetCommand(ticket)}`);

@@ -222,7 +222,7 @@ test("vago run refuses while a Ticket is stuck, names it and runs nothing", asyn
 	expect(result.exitCode).not.toBe(0);
 	expect(
 		result.stdout,
-	).toBe(`hello has stuck Tickets. Check the checkout, then reset each one:
+	).toBe(`hello has stuck Tickets. Check the Goal's worktree, then reset each one:
   01-greet: vago ticket reset hello 01
 `);
 	expect(runsOf(await headerOf(root, "02-wave"))).toEqual([]);
