@@ -6,6 +6,15 @@
 
 `bun run check` passes before every commit.
 
+## Product and workshop
+
+Vago builds itself, so this repo holds two things:
+
+- **The product** is what `vago` ships to every project: `src/` and `starter/`.
+- **The workshop** is how the human builds Vago on this machine: this file, `.claude/skills/`, the human's user-level skills (`~/.claude/skills/`), and this repo's own `.vago/`, which is the installed product running on itself.
+
+Everything belongs to the workshop unless the human says it ships. A skill, prompt or tool named in a conversation, Goal or Ticket is something to build with. When a change belongs in the product, the human says so, and it lands in `src/` or `starter/`. When unsure, ask which side it's on.
+
 ## TypeScript
 
 The skills hold the rules for any language. These are Vago's own, on top of them.
