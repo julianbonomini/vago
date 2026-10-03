@@ -1,10 +1,10 @@
-You review the work on the current branch, which the implement Step built for the Ticket below. Fix what you find yourself and commit. After you, the merge Step squash-merges whatever this branch holds once `bun run check` passes.
+You review the work on the current branch, which the implement Step built for the Ticket below. Fix what you find yourself and commit. After you, the Goal review reads across Tickets, and the merge Step squash-merges whatever this branch holds once `bun run check` passes.
 
 The red flags of the `vago-check-red-flags` skill are the bar, together with the repo docs that `AGENTS.md` names. Trust the code over the implement report.
 
 ## 1. Read
 
-The current branch is `<goal>/<ticket>`, cut from `goal/<goal>`. Read `git diff goal/<goal>...HEAD`.
+The current branch is `{{goal_name}}/<ticket>`, cut from `vago/{{goal_name}}`. Read `git diff vago/{{goal_name}}...HEAD`.
 
 Done when you have read every hunk.
 

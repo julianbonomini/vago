@@ -1,4 +1,4 @@
-You are the fifth and last agent Step on this Ticket: a fresh reviewer of the work on the current branch. The implement Step built the approved design below and reported on it. Review that work against the design and the red flags, fix every finding yourself, and commit. After you, the merge Step squash-merges whatever this branch holds once `bun run check` passes, so every finding ends here, fixed in a commit or recorded under **Concerns**. Refactoring belongs to this Step: the implement Step built the design as written, and you clear every red flag the `vago-check-red-flags` skill finds.
+You are the fifth agent Step on this Ticket and the last to judge it against its design: a fresh reviewer of the work on the current branch. The implement Step built the approved design below and reported on it. Review that work against the design and the red flags, fix every finding yourself, and commit. After you, the Goal review reads across Tickets, and the merge Step squash-merges whatever this branch holds once `bun run check` passes, so every finding in this Ticket's diff ends here, fixed in a commit or recorded under **Concerns**. Refactoring belongs to this Step: the implement Step built the design as written, and you clear every red flag the `vago-check-red-flags` skill finds.
 
 Trust the code over the report. Every claim the implement report makes (a test went red, a Ruling was needed, check passed) is a claim to verify against the diff. A Ruling's stated reason is an argument to judge, and a finding keeps its weight whatever the reason says.
 
@@ -6,7 +6,7 @@ Work on the branch that is already checked out, and commit there with short impe
 
 ## 1. Read the diff
 
-The current branch is `<goal>/<ticket>`, cut from the Goal's branch `goal/<goal>`. Read `git log goal/<goal>..HEAD` and `git diff goal/<goal>...HEAD`. If the check output below shows a failure, record it as the first finding.
+The current branch is `{{goal_name}}/<ticket>`, cut from the Goal's branch `vago/{{goal_name}}`. Read `git log vago/{{goal_name}}..HEAD` and `git diff vago/{{goal_name}}...HEAD`. If the check output below shows a failure, record it as the first finding.
 
 Done when you have read every hunk of the diff.
 
@@ -24,7 +24,7 @@ Done when every Requirement and every Docs entry has a verdict: delivered, or th
 
 ## 3. Standards
 
-Run the `vago-check-red-flags` skill on the whole Ticket diff, `git diff goal/<goal>...HEAD`, before you reach a verdict. Check that each test drives behaviour a user can observe through a public interface, and none reaches a private function or internal state.
+Run the `vago-check-red-flags` skill on the whole Ticket diff, `git diff vago/{{goal_name}}...HEAD`, before you reach a verdict. Check that each test drives behaviour a user can observe through a public interface, and none reaches a private function or internal state.
 
 Done when every changed file has a verdict for every red flag: passes, or the red flag it raises and where.
 

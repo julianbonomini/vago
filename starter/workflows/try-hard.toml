@@ -53,6 +53,12 @@ type   = "agent"
 prompt = "prompts/review.md"
 
 [[steps]]
+id     = "goal-review"
+type   = "agent"
+prompt = "prompts/goal-review.md"
+when   = "last-ticket"   # skipped on every other Ticket
+
+[[steps]]
 id   = "merge"
 type = "shell"
 run  = "bun run check && sh .vago/scripts/merge.sh"
