@@ -26,6 +26,11 @@ Items marked _(grill)_ have design questions to settle before writing Tickets.
 - [-] vago to re init without destroying config (vago re-init or vago update)
 - [ ] TUI - needs grilling + prototyping
   - [ ] TUI to show all goals, done and to do and in progress
+- [ ] Configurable worktree creation: a Project says what Vago copies, what it runs and which ports each worktree's services get, so Goals that run services don't fight over ports. Like a work-project worktree command that copies, sets up and assigns new ports. _(grill)_
+- [ ] A cheaper way to copy big untracked folders (`node_modules`) into a Goal's worktree, if copying everything gets slow.
+- [ ] Vago owns pushing the Goal's branch and opening its PR, instead of the Workflow's `merge.sh`. _(grill)_
+- [ ] One command that runs several Goals at once.
+- [ ] Refuse to run a Goal that's already running in another terminal, if the worktree Goal didn't ship it.
 
 
 

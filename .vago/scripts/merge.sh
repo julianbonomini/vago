@@ -1,6 +1,7 @@
 # Squash-merges this Ticket's branch into the Goal's branch as one commit,
 # pushes the Goal's branch and makes sure it has a PR to main, described by
-# `vago goal report`. After the Goal's last Ticket, the PR also gets the
+# `vago goal report`, and writes the report's Runs to the end of the Goal's
+# goal.md too. After the Goal's last Ticket, the PR also gets the
 # ready-for-review label and a comment mentioning the human `gh` is logged in
 # as. Fails, and so leaves the Ticket stuck, when the tree is dirty or the
 # Ticket changed nothing.
@@ -23,7 +24,13 @@ git branch -D "$ticket"
 git push -u origin "$goal"
 # Rewritten after every Ticket, so the last merge leaves the whole Goal's
 # Runs. A body edited by hand on GitHub is replaced too.
+# The Runs written last time come off goal.md first, so the report doesn't
+# carry them twice.
+goal_file=".vago-goals/$VAGO_GOAL/goal.md"
+kept="$(sed '/^## Runs$/,$d' "$goal_file")"
+printf '%s\n' "$kept" >"$goal_file"
 body="$(vago goal report "$VAGO_GOAL")"
+printf '%s\n\n%s\n' "$kept" "$(printf '%s\n' "$body" | sed -n '/^## Runs$/,$p')" >"$goal_file"
 if gh pr view "$goal" >/dev/null 2>&1; then
 	gh pr edit "$goal" --body "$body"
 else
