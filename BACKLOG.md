@@ -42,7 +42,7 @@ Items marked _(grill)_ have design questions to settle before writing Tickets.
 - [ ] A TUI or viewer, including watching a Run live. _(grill)_
 - [ ] TUI should be able to drill down on what is happening per session if you are curious (grill)
 - [ ] Creating Goals and Tickets inside Vago, and decomposing Goals automatically. _(grill)_
-- [ ] Missions and nested Goals. _(grill)_
+- [ ] Milestones and nested Goals. _(grill)_
 - [ ] A view across Projects, and running several Goals of one Project at once. _(grill)_
 - [ ] A planner that sequences Tickets, and explicit terminal reasons for a Run. _(grill)_
 - [ ] Goal-level validation, and Factory Missions' validation approach. _(grill)_

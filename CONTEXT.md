@@ -24,13 +24,13 @@ _Avoid_: pipeline, process
 One entry in a Workflow, either an agent Step, which a Harness performs as one Run, or a shell Step, which runs a command.
 _Avoid_: stage, phase, task
 
-**Mission**:
-A large outcome made of several Goals, such as "build a Slack clone".
-_Avoid_: epic, initiative
+**Milestone**:
+A large outcome made of several Goals, such as "build a Slack clone"; done when all its Goals are done. Not part of Alpha.
+_Avoid_: mission, epic, initiative
 
 **Goal**:
 An outcome the human wants for a Project, from a one-Ticket feature to a whole app launch; done when all its Tickets are done. Goals do not nest.
-_Avoid_: epic, milestone
+_Avoid_: epic, mission
 
 **Run**:
 One Harness session performing one agent Step on one Ticket, such as implement, review or discuss; a Ticket usually takes several.
