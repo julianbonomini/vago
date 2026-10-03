@@ -35,6 +35,8 @@ Items marked _(grill)_ have design questions to settle before writing Tickets.
 - [ ] Split tickets.ts into a folder; it's past 400 lines.
 - [ ] create github app maybe?
 - [ ] goal on start and on end configuration steps, so workflows don't have to manually do those thigns
+- [ ] TUI Run stream extras, from the prototype's round 6: Bash edits shown as edits with the diff a key away, a live clock on long commands, background tasks as one line, Skill loads, live tokens and cost for an open Run.
+- [ ] Show Milestones in the TUI, once Vago has them.
 
 
 ## From the Alpha map's out-of-scope list
@@ -42,7 +44,7 @@ Items marked _(grill)_ have design questions to settle before writing Tickets.
 - [ ] A TUI or viewer, including watching a Run live. _(grill)_
 - [ ] TUI should be able to drill down on what is happening per session if you are curious (grill)
 - [ ] Creating Goals and Tickets inside Vago, and decomposing Goals automatically. _(grill)_
-- [ ] Missions and nested Goals. _(grill)_
+- [ ] Milestones and nested Goals. _(grill)_
 - [ ] A view across Projects, and running several Goals of one Project at once. _(grill)_
 - [ ] A planner that sequences Tickets, and explicit terminal reasons for a Run. _(grill)_
 - [ ] Goal-level validation, and Factory Missions' validation approach. _(grill)_
