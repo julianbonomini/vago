@@ -1,6 +1,6 @@
 # Purpose / Why
 
-Status: in progress. Punt is a placeholder name. Participant: Julian (sole founder).
+Status: in progress. Vago is the final name. Participant: Julian (sole founder).
 
 ## Raw
 
@@ -36,10 +36,10 @@ The founder wants to hand off the work of running a Project's process while reta
 Candidate formulations, for discussion:
 
 1. Define how your Project gets built, then leave the work to run.
-2. Your Project sets the Workflow. Punt carries its Tickets through it while you are away.
+2. Your Project sets the Workflow. Vago carries its Tickets through it while you are away.
 3. Spend your attention on the outcome and the rules; return when the work needs your judgment.
 
-The [Punt Alpha spec](../../.scratch/punt-alpha/spec.md) narrows the current release: Alpha runs user-written Goals and Tickets through a frozen, linear Workflow, one Ticket at a time. On a failed Step it marks the Ticket `stuck` and stops the Goal for human inspection and reset. Alpha does not plan or split work, retry, or recover autonomously. It also leaves branding and the final name out of scope. Those are boundaries of Alpha, not changes to the founder's longer-term aim.
+The [Vago Alpha spec](../../.scratch/vago-alpha/spec.md) narrows the current release: Alpha runs user-written Goals and Tickets through a frozen, linear Workflow, one Ticket at a time. On a failed Step it marks the Ticket `stuck` and stops the Goal for human inspection and reset. Alpha does not plan or split work, retry, or recover autonomously. It also leaves branding and the final name out of scope. Those are boundaries of Alpha, not changes to the founder's longer-term aim.
 
 Open questions:
 

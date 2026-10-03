@@ -1,15 +1,15 @@
 ## Rules and knowledge
 
-- `.punt/rules/aposd.md`: the design reference the rules come from. Read before designing a module or changing an exported interface.
-- `.punt/rules/code-style.md`: the rules for every line of code. Read before writing code.
+- `.vago/rules/aposd.md`: the design reference the rules come from. Read before designing a module or changing an exported interface.
+- `.vago/rules/code-style.md`: the rules for every line of code. Read before writing code.
 - `docs/architecture.md`: modules, owners, and the rules between them. Read before writing code.
 - `CONTEXT.md`: the domain language. `docs/adr/`: the decisions behind it; read the ones your change touches.
 
 `bun run check` passes before every commit.
 
-## The installed `punt`
+## The installed `vago`
 
-`bun run reinstall` compiles `src/cli.ts`, with the starter embedded, to `~/.local/bin/punt`, so that directory must be on `PATH`. The human runs it between Goals. Sessions and Workflow Steps leave it to the human, so a bad merge can't replace the `punt` that is driving a Goal.
+`bun run reinstall` compiles `src/cli.ts`, with the starter embedded, to `~/.local/bin/vago`, so that directory must be on `PATH`. The human runs it between Goals. Sessions and Workflow Steps leave it to the human, so a bad merge can't replace the `vago` that is driving a Goal.
 
 ## Commits and PRs
 

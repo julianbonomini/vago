@@ -1,0 +1,17 @@
+# 08: Interrupted and lost Runs
+
+**What to build:**
+
+- **Interrupted:** on SIGINT or SIGTERM, `vago run` kills the running Run's whole process group, marks the Ticket `stuck` with outcome `interrupted`, and exits non-zero.
+- **Lost:** a Ticket found `running` at startup (after a crash or `kill -9`) is marked `stuck` with outcome `lost`, and `vago run` stops without running anything.
+
+Spec: [Vago Alpha](../../vago-alpha/spec.md).
+
+**Blocked by:** 07 (A Step fails and the Ticket goes stuck).
+
+**Status:** done
+
+- [x] SIGINT during an agent Step leaves no process from the fake's process group alive.
+- [x] After SIGINT, the Ticket is `stuck`, its last `[[runs]]` entry has outcome `interrupted` and an end time, and the exit code is non-zero.
+- [x] SIGTERM behaves the same way.
+- [x] A Ticket that's already `running` before `vago run` ends `stuck` with outcome `lost`, and no Step runs.
