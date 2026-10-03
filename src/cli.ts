@@ -8,7 +8,7 @@
 import { newGoal, newTicket, resetTicket, runGoal } from "./goal-runner.ts";
 import { initProject, updateProject } from "./init.ts";
 import { printGoalReport } from "./progress.ts";
-import { readGoal, readGoalBody } from "./tickets.ts";
+import { readGoal, readGoalBody } from "./tickets/tickets.ts";
 import { projectRoot } from "./worktree.ts";
 
 /** One positional argument, such as `<goal>`. */

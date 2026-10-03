@@ -7,7 +7,8 @@ Vago Alpha's modules, what each one owns and hides, and the rules between them. 
 ```
 src/cli.ts                  src/goal-runner.ts      src/progress.ts
 src/workflow.ts             src/step-runner.ts      src/init.ts
-src/tickets.ts              src/worktree.ts
+src/tickets/tickets.ts      src/worktree.ts
+src/tickets/header.ts       src/tickets/ticket-folder.ts    src/tickets/goal-lock.ts
 src/harness/registry.ts     src/harness/claude-code.ts
 src/starter-imports.d.ts    types for init.ts's text imports of the starter
 starter/                    the starter Workflows and skills embedded in the binary
@@ -16,7 +17,7 @@ starter/                    the starter Workflows and skills embedded in the bin
 test/                       CLI tests, the fake `claude`, recorded fixtures, a fixed Workflow
 ```
 
-One file per module. A module becomes a folder only when it outgrows about 400 lines, and the folder exposes one entry file.
+One file per module. A module becomes a folder only when it outgrows about 400 lines, and the folder exposes one entry file. Other modules import only that entry file; the folder's other files are private to it. `tickets/` is such a folder: its entry is `tickets/tickets.ts`, `header.ts` holds the `+++` header format and atomic rewrites, `ticket-folder.ts` reads a Goal's `tickets/` folder and checks numbers and blockers, and `goal-lock.ts` holds `running.lock`.
 
 ## Modules
 
@@ -24,7 +25,7 @@ One file per module. A module becomes a folder only when it outgrows about 400 l
 |---|---|---|
 | `cli.ts` | Commands, argument parsing, each command's help and usage text, exit codes, printing errors, reading a `--body-file` from a path or stdin | `process.argv`, `process.exit`, which exit code means what, the `-` for stdin convention |
 | `workflow.ts` | Loading and checking `.vago/workflows/<name>.toml`, the Workflow a Goal names, and its prompt files, refusing a name that isn't there with a list of the names that are, returning the frozen Workflow, building an agent Step's prompt from it | Which Workflows exist in `.vago/workflows/`, the TOML schema, defaults (`idle_timeout`, `on_fail`, `when`), path resolution, include merging, substitution syntax (`{{ticket}}`, `{{goal}}`, `{{goal_name}}`, `{{steps.<id>.output}}`) |
-| `tickets.ts` | Goal and Ticket files: creating them, a Goal or Ticket with a given body or a title to fill in, the `goal.md` header, which names only the Goal's `workflow` and which the human may edit by hand between runs, the Workflow each Ticket goes through, its own or the Goal's, format checks, readiness, whether a Ticket is its Goal's last, status, `[[runs]]`, log paths; the mark that a `vago run` has a Goal, held while it runs | The `+++` header format, the `.vago-goals/<goal>/` layout, log naming, atomic writes; the lock file, and how a dead run's lock is taken over |
+| `tickets/` | Goal and Ticket files: creating them, a Goal or Ticket with a given body or a title to fill in, the `goal.md` header, which names only the Goal's `workflow` and which the human may edit by hand between runs, the Workflow each Ticket goes through, its own or the Goal's, format checks, readiness, whether a Ticket is its Goal's last, status, `[[runs]]`, log paths; the mark that a `vago run` has a Goal, held while it runs | The `+++` header format, the `.vago-goals/<goal>/` layout, log naming, atomic writes; the lock file, and how a dead run's lock is taken over |
 | `goal-runner.ts` | Creating a Goal or a Ticket with the Workflow it names, refused when `vago run` would refuse it; the main loop: lost and stuck handling, picking Tickets, running Steps in order and skipping a `last-ticket` Step on any other Ticket, marking `done`; opening the Goal's worktree, where its Steps run, once it has a ready Ticket; closing the Goal's worktree once every Ticket is done; running the Goal only while no other `vago run` has it | The order of a Goal's lifecycle and where its Steps run |
 | `worktree.ts` | A Goal's worktree: creating it on `vago/<goal>` from the default branch with the main checkout's untracked and ignored files, recreating it from an existing `vago/<goal>` after the human deletes it, reusing it, keeping `.vago/` current, tracked or not, and out of the worktree's git, removing it, branches kept, once the Goal is done and nothing in it would be lost, and the Project root from inside it | The `VAGO_HOME` layout, the branch name, the default-branch rule, git commands, what gets copied, how `.vago/` is kept out of git, what counts as a change or as pushed |
 | `step-runner.ts` | Running one Step on a Ticket as one Run, in the Goal's worktree it's given: its `[[runs]]` entry, its Step lines, its prompt, its child process and its log | Spawning, process groups, signals, the idle timer, writing the log, reading the Harness stream |
@@ -35,8 +36,8 @@ One file per module. A module becomes a folder only when it outgrows about 400 l
 
 ## Rules
 
-1. **Only `tickets.ts` touches `.vago-goals/`.** It reads and writes `goal.md` and Ticket files, and it names each Run's log path. `step-runner.ts` writes the log at the path it's given. No other module builds a path under `.vago-goals/`.
-2. **Only `tickets.ts` writes status.** Agents never see a header: `{{ticket}}` is the title and body only, and `{{goal}}` is `goal.md` after its header (ADR 0003).
+1. **Only `tickets/` touches `.vago-goals/`.** It reads and writes `goal.md` and Ticket files, and it names each Run's log path. `step-runner.ts` writes the log at the path it's given. No other module builds a path under `.vago-goals/`.
+2. **Only `tickets/` writes status.** Agents never see a header: `{{ticket}}` is the title and body only, and `{{goal}}` is `goal.md` after its header (ADR 0003).
 3. **Every Step runs through `step-runner.ts`,** and it's the only module that spawns a Step's process. `worktree.ts` spawns git for the Goal's worktree. A sandbox later wraps the Step point.
 4. **Harness modules are pure.** They build a command, read one stream line, and give a resume hint. They do no I/O and import only the `Harness` type from `registry.ts`. The kernel owns spawning, the idle timer, logs, `[[runs]]` and outcomes. Adding a Harness is one module plus one registry entry.
 5. **Each Workflow is frozen once per `vago run`.** `workflow.ts` reads the toml, prompts and include files at load, and returns a frozen value carrying their text. `goal-runner.ts` loads the Goal's Workflow and every one its unfinished Tickets name before the first Run, and nothing re-reads them mid-Goal. Only a Ticket added mid-Goal that names a Workflow not loaded yet has it loaded when that Ticket comes up.
@@ -44,6 +45,6 @@ One file per module. A module becomes a folder only when it outgrows about 400 l
 7. **Only `progress.ts` writes stdout during a run** or for `goal report`. It never prints agent text. `cli.ts` writes errors to stderr.
 8. **Only `cli.ts` reads `process.argv` or calls `process.exit`.**
 9. **The kernel owns the Goal's worktree and its branch `vago/<goal>`**, in `worktree.ts`, and every other git action is the Workflow's (ADR 0004). `init.ts` also appends to `.git/info/exclude`, for `init` and `update`.
-10. **Imports go one way:** `cli.ts` → `goal-runner.ts` / `init.ts` → the rest, and `step-runner.ts` → `harness/registry.ts` → Harness modules. `cli.ts` also imports `tickets.ts` with `progress.ts` for `goal report`, which only reads files. `goal-runner.ts` imports `worktree.ts` to open and close a Goal's worktree, `cli.ts` imports it for `projectRoot`, and `worktree.ts` imports only `goalsFolderName` from `tickets.ts` and `vagoFolderName` from `workflow.ts`, and nothing else of Vago's. No cycles. `tickets.ts` and `progress.ts` are leaves: they take plain values and never import the modules that call them. A type lives with the module that owns the concept it describes, never where it happens to avoid a cycle. A Harness module's type-only import of `Harness` (rule 4) is erased at runtime and doesn't count, and neither does `progress.ts`'s type-only import of the `WorktreeClose` type from `worktree.ts`.
+10. **Imports go one way:** `cli.ts` → `goal-runner.ts` / `init.ts` → the rest, and `step-runner.ts` → `harness/registry.ts` → Harness modules. `cli.ts` also imports `tickets/tickets.ts` with `progress.ts` for `goal report`, which only reads files. `goal-runner.ts` imports `worktree.ts` to open and close a Goal's worktree, `cli.ts` imports it for `projectRoot`, and `worktree.ts` imports only `goalsFolderName` from `tickets/tickets.ts` and `vagoFolderName` from `workflow.ts`, and nothing else of Vago's. No cycles. `tickets/` and `progress.ts` are leaves: they take plain values and never import the modules that call them. A type lives with the module that owns the concept it describes, never where it happens to avoid a cycle. A Harness module's type-only import of `Harness` (rule 4) is erased at runtime and doesn't count, and neither does `progress.ts`'s type-only import of the `WorktreeClose` type from `worktree.ts`.
 11. **Each module owns its types** and exports them beside its functions. There's no shared `types.ts`.
 12. **Ticket writes survive a crash.** Every header rewrite writes a temp file and renames it over the Ticket, keeping the body byte for byte. A Run's `[[runs]]` entry is written before its Step starts and filled in when it ends.

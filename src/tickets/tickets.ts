@@ -1,17 +1,27 @@
-// Creates and owns Goal and Ticket files under `.vago-goals/<goal>/`: the
-// `+++` TOML header, the `goal.md` header naming the Goal's Workflow, the
-// Workflow a Ticket names in place of it, status,
-// the `[[runs]]` history and where each Run's log goes, and the lock that
-// marks a Goal as taken by a `vago run`. Every header rewrite is atomic and
-// keeps the body byte for byte.
+// The entry to the module that creates and owns Goal and Ticket files under
+// `.vago-goals/<goal>/`: the `goal.md` header naming the Goal's Workflow, the
+// Workflow a Ticket names in place of it, status, the `[[runs]]` history and
+// where each Run's log goes, and the lock that marks a Goal as taken by a
+// `vago run`. Only this file is imported from outside `tickets/`.
 
-import { existsSync } from "node:fs";
-import { link, mkdir, readdir, rename, rm } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { parse, stringify } from "smol-toml";
-import { z } from "zod";
-import type { HarnessSessionReport } from "./harness/registry.ts";
-import type { Step } from "./workflow.ts";
+import type { HarnessSessionReport } from "../harness/registry.ts";
+import type { Step } from "../workflow.ts";
+import { claimLock, releaseLock } from "./goal-lock.ts";
+import {
+	headedText,
+	readGoalFile,
+	readTicketFile,
+	rewriteHeader,
+	type TicketHeader,
+} from "./header.ts";
+import {
+	readTicketFolder,
+	ticketFilePath,
+	ticketName,
+	ticketNumberText,
+} from "./ticket-folder.ts";
 
 /** Where a Ticket stands. Only Alpha writes it. */
 export type TicketStatus = "ready" | "running" | "done" | "stuck";
@@ -36,36 +46,6 @@ export type TicketRunEntry = {
 	/** Absolute path the Run's log must be written to. */
 	log: string;
 };
-
-// Loose objects, so header fields Alpha doesn't know survive a rewrite.
-const RunEntry = z.looseObject({
-	step: z.string(),
-	started: z.date(),
-	ended: z.date().optional(),
-	outcome: z.string().optional(),
-	log: z.string(),
-	harness: z.string().optional(),
-	model: z.string().optional(),
-	session_id: z.string().optional(),
-	tokens: z.object({ input: z.number(), output: z.number() }).optional(),
-	cost_usd: z.number().optional(),
-});
-
-const Header = z.looseObject({
-	status: z.enum(["ready", "running", "done", "stuck"]),
-	blocked_by: z.array(z.number().int()).optional(),
-	workflow: z.string().optional(),
-	runs: z.array(RunEntry).optional(),
-});
-
-type Header = z.infer<typeof Header>;
-
-const GoalHeader = z.looseObject({ workflow: z.string() });
-
-// The name without `.md` is group 1 and the Ticket number group 2.
-const ticketFileName = /^((\d+)-.+)\.md$/;
-const headerStart = "+++\n";
-const headerEnd = "\n+++\n";
 
 /**
  * The name of the folder, directly at a Project's root, that holds every
@@ -118,8 +98,6 @@ export type GoalState = {
 	done: boolean;
 };
 
-type TicketHeader = { ticket: Ticket; header: Header };
-
 /**
  * Creates Goal `goal` with an empty `tickets/` and a `goal.md` whose `+++`
  * header names `workflow`, followed by `body` exactly as given, which is what
@@ -158,52 +136,15 @@ export async function readGoal(root: string, goal: string): Promise<GoalState> {
 	const folder = goalFolder(root, goal);
 	const { workflow } = await readGoalFile(await existingGoalFile(root, goal));
 	const ticketFolder = join(folder, "tickets");
-	// node:fs because Bun.file can't tell whether a directory exists. Sorted
-	// by name so a shared number is reported the same way on every machine.
-	const fileNames = existsSync(ticketFolder)
-		? (await readdir(ticketFolder)).sort()
-		: [];
-	const entries: TicketHeader[] = [];
-	for (const fileName of fileNames) {
-		if (!fileName.endsWith(".md")) continue;
-		const match = ticketFileName.exec(fileName);
-		if (match?.[1] === undefined || match[2] === undefined) {
-			throw new Error(
-				`${join(ticketFolder, fileName)} isn't named like a Ticket, NN-<slug>.md`,
-			);
-		}
-		const ticket = { root, goal, name: match[1], number: Number(match[2]) };
-		const { header } = await readTicketFile(ticketFile(ticket));
-		entries.push({ ticket, header });
-	}
-	entries.sort((a, b) => a.ticket.number - b.ticket.number);
-
-	const byNumber = new Map<number, TicketHeader>();
-	for (const entry of entries) {
-		const twin = byNumber.get(entry.ticket.number);
-		if (twin !== undefined) {
-			throw new Error(
-				`${ticketFile(twin.ticket)} and ${ticketFile(entry.ticket)} share number ${entry.ticket.number}`,
-			);
-		}
-		byNumber.set(entry.ticket.number, entry);
-	}
-	for (const { ticket, header } of entries) {
-		for (const blocker of header.blocked_by ?? []) {
-			if (!byNumber.has(blocker)) {
-				throw new Error(
-					`${ticketFile(ticket)} is blocked by Ticket ${blocker}, which isn't in Goal ${goal}`,
-				);
-			}
-		}
-	}
-	const cycle = findBlockerCycle(byNumber);
-	if (cycle !== undefined) {
-		const names = cycle.map((number) => byNumber.get(number)?.ticket.name);
-		throw new Error(
-			`Goal ${goal} has a blocker cycle in ${ticketFolder}: ${names.join(" -> ")}`,
-		);
-	}
+	const entries = (await readTicketFolder(goal, ticketFolder)).map(
+		({ name, number, header }) => ({
+			ticket: { root, goal, name, number },
+			header,
+		}),
+	);
+	const byNumber = new Map(
+		entries.map((entry) => [entry.ticket.number, entry]),
+	);
 
 	const tickets = entries.map(({ ticket, header }) => ({
 		ticket,
@@ -278,8 +219,8 @@ export async function addTicket(
 		}
 	}
 	const number = Math.max(0, ...tickets.map(({ ticket }) => ticket.number)) + 1;
-	const ticket = { root, goal, name: `${twoDigits(number)}-${slug}`, number };
-	const header: Header = { status: "ready" };
+	const ticket = { root, goal, name: ticketName(number, slug), number };
+	const header: TicketHeader = { status: "ready" };
 	if (blockedBy.length > 0) header.blocked_by = [...new Set(blockedBy)];
 	if (workflow !== undefined) header.workflow = workflow;
 	const file = ticketFile(ticket);
@@ -349,7 +290,7 @@ export async function recordRunStart(
 			const runs = header.runs ?? [];
 			const position = runs.length + 1;
 			// The position in the name gives a reset Ticket's new Runs new logs.
-			const logStem = `logs/${twoDigits(ticket.number)}-${step.id}-${position}`;
+			const logStem = `logs/${ticketNumberText(ticket.number)}-${step.id}-${position}`;
 			const entry =
 				step.type === "agent"
 					? {
@@ -428,113 +369,15 @@ export async function withGoalClaimed<T>(
 	goal: string,
 	run: () => Promise<T>,
 ): Promise<T> {
-	await claimGoal(root, goal);
+	// Checked first: writing the lock would create a mistyped Goal's folder.
+	await existingGoalFile(root, goal);
+	const lock = join(goalFolder(root, goal), "running.lock");
+	await claimLock(lock, goal);
 	try {
 		return await run();
 	} finally {
-		await releaseGoal(root, goal);
+		await releaseLock(lock);
 	}
-}
-
-async function claimGoal(root: string, goal: string): Promise<void> {
-	// Checked first: writing the lock would create a mistyped Goal's folder.
-	await existingGoalFile(root, goal);
-	const lock = lockFile(root, goal);
-	if (await createLock(lock)) return;
-	let holder = await lockHolder(lock);
-	if (holder === undefined || !isRunning(holder)) {
-		// Two runs taking over the same dead lock at once can both win, when
-		// one removes the lock the other has just created. That takes a
-		// crashed run and then two starts within milliseconds, and closing it
-		// would take a second lock.
-		await rm(lock, { force: true });
-		if (await createLock(lock)) return;
-		holder = await lockHolder(lock);
-	}
-	throw new Error(
-		`Goal ${goal} is already being run by vago (pid ${holder ?? "unknown"}). If no vago run is running it, delete ${lock}`,
-	);
-}
-
-async function releaseGoal(root: string, goal: string): Promise<void> {
-	const lock = lockFile(root, goal);
-	// A lock holding another pid was taken over from this run, so it's not
-	// this run's to remove.
-	if ((await lockHolder(lock)) === process.pid) await rm(lock, { force: true });
-}
-
-function lockFile(root: string, goal: string): string {
-	return join(goalFolder(root, goal), "running.lock");
-}
-
-// Creates the lock holding this process's pid, and returns false when it
-// already exists. The pid is written to a file of its own and then linked:
-// a link fails when its target exists, and a reader never sees the lock half
-// written.
-async function createLock(lock: string): Promise<boolean> {
-	const temp = `${lock}.${process.pid}`;
-	await Bun.write(temp, `${process.pid}\n`);
-	try {
-		await link(temp, lock);
-		return true;
-	} catch (error) {
-		if (errorCode(error) === "EEXIST") return false;
-		throw error;
-	} finally {
-		await rm(temp, { force: true });
-	}
-}
-
-// The pid in the lock, or undefined when there's no lock or it holds no pid.
-async function lockHolder(lock: string): Promise<number | undefined> {
-	const text = await Bun.file(lock)
-		.text()
-		.catch(() => "");
-	return /^\d+\n$/.test(text) ? Number(text) : undefined;
-}
-
-// This process's own pid in the lock can only be stale: a crashed run's pid
-// that the system has since given to this one.
-function isRunning(pid: number): boolean {
-	if (pid === process.pid) return false;
-	try {
-		process.kill(pid, 0);
-		return true;
-	} catch (error) {
-		// EPERM is a live process owned by someone else.
-		return errorCode(error) !== "ESRCH";
-	}
-}
-
-function errorCode(error: unknown): unknown {
-	return error instanceof Error && "code" in error ? error.code : undefined;
-}
-
-// Walks `blocked_by` depth first from the lowest number. Returns the Ticket
-// numbers of the first cycle found, starting and ending on the same Ticket.
-function findBlockerCycle(
-	byNumber: Map<number, TicketHeader>,
-): number[] | undefined {
-	const cleared = new Set<number>();
-	const path: number[] = [];
-	const visit = (number: number): number[] | undefined => {
-		const onPath = path.indexOf(number);
-		if (onPath !== -1) return [...path.slice(onPath), number];
-		if (cleared.has(number)) return undefined;
-		path.push(number);
-		for (const blocker of byNumber.get(number)?.header.blocked_by ?? []) {
-			const cycle = visit(blocker);
-			if (cycle !== undefined) return cycle;
-		}
-		path.pop();
-		cleared.add(number);
-		return undefined;
-	};
-	for (const number of byNumber.keys()) {
-		const cycle = visit(number);
-		if (cycle !== undefined) return cycle;
-	}
-	return undefined;
 }
 
 // The name becomes a folder or file under `.vago-goals/`, so a name that
@@ -552,12 +395,6 @@ function checkBody(label: string, body: string): void {
 	if (body.trim() === "") throw new Error(`The body for ${label} is empty`);
 }
 
-// Ticket files and logs number Tickets with at least two digits, so a folder
-// listing shows up to 99 Tickets in number order.
-function twoDigits(number: number): string {
-	return String(number).padStart(2, "0");
-}
-
 async function existingGoalFile(root: string, goal: string): Promise<string> {
 	const goalFile = join(goalFolder(root, goal), "goal.md");
 	if (!(await Bun.file(goalFile).exists())) {
@@ -572,80 +409,8 @@ function goalFolder(root: string, goal: string): string {
 }
 
 function ticketFile(ticket: Ticket): string {
-	return join(
-		goalFolder(ticket.root, ticket.goal),
-		"tickets",
-		`${ticket.name}.md`,
+	return ticketFilePath(
+		join(goalFolder(ticket.root, ticket.goal), "tickets"),
+		ticket.name,
 	);
-}
-
-// Splits the `+++` header off `text`, the text of `file`, and parses it.
-// Returns undefined when `text` doesn't start with a header.
-function splitHeader(
-	file: string,
-	text: string,
-): { toml: unknown; body: string } | undefined {
-	const end = text.indexOf(headerEnd);
-	if (!text.startsWith(headerStart) || end === -1) return undefined;
-	let toml: unknown;
-	try {
-		// smol-toml, not Bun.TOML: Bun parses datetimes into Temporal values
-		// that smol-toml's stringify can't write back, and headers round-trip.
-		toml = parse(text.slice(headerStart.length, end + 1));
-	} catch (error) {
-		throw new Error(`${file} has a header that isn't valid TOML: ${error}`);
-	}
-	return { toml, body: text.slice(end + headerEnd.length) };
-}
-
-async function readTicketFile(
-	file: string,
-): Promise<{ header: Header; body: string }> {
-	const split = splitHeader(file, await Bun.file(file).text());
-	if (split === undefined) throw new Error(`${file} has no +++ header`);
-	const checked = Header.safeParse(split.toml);
-	if (!checked.success) {
-		throw new Error(`${file}: ${z.prettifyError(checked.error)}`);
-	}
-	return { header: checked.data, body: split.body };
-}
-
-async function readGoalFile(
-	file: string,
-): Promise<{ workflow: string; body: string }> {
-	const split = splitHeader(file, await Bun.file(file).text());
-	if (split === undefined) {
-		throw new Error(
-			`${file} has no +++ header naming its Workflow; start it with the lines +++, workflow = "<name>", +++`,
-		);
-	}
-	const checked = GoalHeader.safeParse(split.toml);
-	if (!checked.success) {
-		throw new Error(
-			`${file}: its header names no Workflow; add the line workflow = "<name>"`,
-		);
-	}
-	// A human editing the header by hand may leave a blank line under it.
-	return {
-		workflow: checked.data.workflow,
-		body: split.body.replace(/^\n+/, ""),
-	};
-}
-
-function headedText(header: Record<string, unknown>, body: string): string {
-	return `${headerStart}${stringify(header)}+++\n${body}`;
-}
-
-async function rewriteHeader<Change>(
-	file: string,
-	change: (header: Header) => Change,
-): Promise<Change> {
-	const { header, body } = await readTicketFile(file);
-	const changed = change(header);
-	// Rename over the Ticket so a crash leaves the old file or the new one,
-	// never half of each.
-	const temp = `${file}.tmp`;
-	await Bun.write(temp, headedText(header, body));
-	await rename(temp, file);
-	return changed;
 }

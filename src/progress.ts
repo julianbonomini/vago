@@ -6,7 +6,12 @@
 // line formats, columns and colours, and how durations and costs read.
 
 import { relative } from "node:path";
-import type { GoalState, Ticket, TicketRun, TicketStatus } from "./tickets.ts";
+import type {
+	GoalState,
+	Ticket,
+	TicketRun,
+	TicketStatus,
+} from "./tickets/tickets.ts";
 import type { WorktreeClose } from "./worktree.ts";
 
 /** Prints the line naming the worktree the Goal's Steps run in. */

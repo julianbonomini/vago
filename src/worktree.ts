@@ -9,7 +9,7 @@ import { existsSync } from "node:fs";
 import { cp, lstat, mkdir, readlink, realpath, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, relative, sep } from "node:path";
-import { goalsFolderName } from "./tickets.ts";
+import { goalsFolderName } from "./tickets/tickets.ts";
 import { vagoFolderName } from "./workflow.ts";
 
 /**

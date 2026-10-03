@@ -50,7 +50,7 @@ import smallWorkflow from "../starter/workflows/small.toml" with {
 import tryHardWorkflow from "../starter/workflows/try-hard.toml" with {
 	type: "text",
 };
-import { goalsFolderName } from "./tickets.ts";
+import { goalsFolderName } from "./tickets/tickets.ts";
 
 // Each starter file's text, by its path in the Project. A file under
 // `starter/skills/` goes under `.claude/skills/`, where Claude Code finds it;
