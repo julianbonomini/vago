@@ -24,7 +24,7 @@ Items marked _(grill)_ have design questions to settle before writing Tickets.
 - [x] figure a way to run goals in paralel, probably worktrees
 - [ ] planner skill, ships with punt. basically mimics grilling or grill-with-docs and ends up in to-tickets, (similar to mattpocock) but the result is in punt goals and tickets
 - [-] vago to re init without destroying config (vago re-init or vago update)
-- [ ] TUI - needs grilling + prototyping
+- [x] TUI - needs grilling + prototyping
   - [ ] TUI to show all goals, done and to do and in progress
 - [ ] Configurable worktree creation: a Project says what Vago copies, what it runs and which ports each worktree's services get, so Goals that run services don't fight over ports. Like a work-project worktree command that copies, sets up and assigns new ports. _(grill)_
 - [ ] A cheaper way to copy big untracked folders (`node_modules`) into a Goal's worktree, if copying everything gets slow.
@@ -33,7 +33,8 @@ Items marked _(grill)_ have design questions to settle before writing Tickets.
 - [ ] One command that runs several Goals at once.
 - [x] Refuse to run a Goal that's already running in another terminal, if the worktree Goal didn't ship it.
 - [ ] Split tickets.ts into a folder; it's past 400 lines.
-
+- [ ] create github app maybe?
+- [ ] goal on start and on end configuration steps, so workflows don't have to manually do those thigns
 
 
 ## From the Alpha map's out-of-scope list
