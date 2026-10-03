@@ -17,6 +17,13 @@ async function filesIn(dir: string): Promise<string[]> {
 	return paths.sort();
 }
 
+// The starter files init copies into `.vago/`.
+// TODO 02: init installs `skills/` into `.claude/skills/`; check them there.
+async function starterVagoFiles(): Promise<string[]> {
+	const paths = await filesIn(starter);
+	return paths.filter((path) => !path.startsWith("skills/"));
+}
+
 // The fixture Workflow's files, keyed by their path in a Project.
 async function workflowFixture(): Promise<Record<string, string>> {
 	const files: Record<string, string> = {};
@@ -52,7 +59,7 @@ function untrackedFiles(root: string): string[] {
 // Fails unless `.vago/` under `root` holds exactly the starter's files, byte
 // for byte.
 async function expectStarterIn(root: string): Promise<void> {
-	const starterFiles = await filesIn(starter);
+	const starterFiles = await starterVagoFiles();
 	expect(await filesIn(join(root, ".vago"))).toEqual(starterFiles);
 	for (const path of starterFiles) {
 		expect(await Bun.file(join(root, ".vago", path)).text()).toBe(
@@ -122,7 +129,7 @@ test("answering commit lets git see the Workflow but never the Goals", async () 
 		"Goals and Tickets in .vago-goals/ stay out of git",
 	);
 	await runVago(root, ["goal", "new", "hello", "--workflow", "small"]);
-	const starterFiles = await filesIn(starter);
+	const starterFiles = await starterVagoFiles();
 	expect(untrackedFiles(root)).toEqual([
 		".gitignore",
 		...starterFiles.map((path) => `.vago/${path}`),
