@@ -63,6 +63,27 @@ run  = 'echo "$PUNT_GOAL $PUNT_TICKET"'
 	).toBe("hello 01-say-hello\n");
 });
 
+test("a shell Step learns in PUNT_LAST_TICKET whether every other Ticket of the Goal is done", async () => {
+	const root = await makeProject({
+		".punt/workflows/test.toml": `
+[[steps]]
+id   = "last"
+type = "shell"
+run  = 'echo "$PUNT_LAST_TICKET"'
+`,
+		[`${goalDir}/goal.md`]: goalText("test"),
+		[ticketPath]: ticket,
+		[`${goalDir}/tickets/02-wave.md`]: ticket,
+	});
+
+	await runPunt(root, ["run", "hello"]);
+
+	const log = (name: string) =>
+		Bun.file(join(root, goalDir, "logs", name)).text();
+	expect(await log("01-last-1.log")).toBe("false\n");
+	expect(await log("02-last-1.log")).toBe("true\n");
+});
+
 test("each Step gets a [[runs]] entry and a log of its stdout and stderr", async () => {
 	const root = await makeProject({
 		".punt/workflows/test.toml": workflow,

@@ -108,7 +108,9 @@ punt run search
 
 1. `branch` cuts `goal/search` from `main` if it doesn't exist yet, then switches to a fresh `search/01-index` branch cut from it. It fails if the checkout has uncommitted changes.
 2. The agent Steps build and review the Ticket on that branch and commit there. `check` runs between them; when it fails, the Ticket goes on, and review reads the failure and fixes it.
-3. `merge` runs `bun run check`, squash-merges the Ticket's branch into `goal/search` as one commit, deletes the Ticket's branch, pushes `goal/search`, and creates or updates its PR to `main`. The PR description is the output of `punt goal report search`, rewritten after every Ticket.
+3. `merge` runs `bun run check`, squash-merges the Ticket's branch into `goal/search` as one commit, deletes the Ticket's branch, pushes `goal/search`, and creates or updates its PR to `main`. The PR description is the output of `punt goal report search`, rewritten after every Ticket. After the Goal's last Ticket, `merge` also labels the PR `ready-for-review` and comments on it mentioning you, the account `gh` is logged in as, so GitHub notifies you. A Goal that ends with a stuck Ticket gets neither.
+
+A shell Step gets the Goal's and Ticket's names in `$PUNT_GOAL` and `$PUNT_TICKET`, and `$PUNT_LAST_TICKET` is `true` when every other Ticket of the Goal is `done`, `false` otherwise.
 
 The Steps run in your checkout and switch its branches, so leave it alone until the run ends. When it ends, you review the Goal's PR and merge it yourself.
 

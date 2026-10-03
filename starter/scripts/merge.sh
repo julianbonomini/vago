@@ -1,7 +1,9 @@
 # Squash-merges this Ticket's branch into the Goal's branch as one commit,
 # pushes the Goal's branch and makes sure it has a PR to main, described by
-# `punt goal report`. Fails, and so leaves the Ticket stuck, when the tree is
-# dirty or the Ticket changed nothing.
+# `punt goal report`. After the Goal's last Ticket, the PR also gets the
+# ready-for-review label and a comment mentioning the human `gh` is logged in
+# as. Fails, and so leaves the Ticket stuck, when the tree is dirty or the
+# Ticket changed nothing.
 set -eu
 
 goal="goal/$PUNT_GOAL"
@@ -26,4 +28,17 @@ if gh pr view "$goal" >/dev/null 2>&1; then
 	gh pr edit "$goal" --body "$body"
 else
 	gh pr create --base main --head "$goal" --title "$PUNT_GOAL" --body "$body"
+fi
+
+if [ "$PUNT_LAST_TICKET" = true ]; then
+	gh label create ready-for-review --force --color 0e8a16 \
+		--description "Every Ticket of the Goal is done"
+	gh pr edit "$goal" --add-label ready-for-review
+	# A comment, not the body: the body is rewritten after every Ticket, and
+	# GitHub notifies a mention only when it's first posted. Posted once, so
+	# a later last merge doesn't ping the human again.
+	ping="@$(gh api user --jq .login) every Ticket of this Goal is done, it's ready for your review."
+	if ! gh pr view "$goal" --json comments --jq '.comments[].body' | grep -qxF "$ping"; then
+		gh pr comment "$goal" --body "$ping"
+	fi
 fi
