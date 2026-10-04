@@ -56,10 +56,16 @@ import { duration, money, tokenCount } from "./time-and-money.ts";
  * border and the selected Ticket's Runs under them, the selected Ticket's
  * title, blockers and text on the right, and the selected Run across the
  * bottom. The Ticket the Goal is on starts selected, the first not done or
- * else the last, and ↑↓ and j k move the selection. A Ticket starts on its
- * latest Run, and ←→ and h l move to the one before or after. A footer
- * names the keys, and `?` shows them all until `?` or Esc. Esc otherwise
- * calls `onClose`.
+ * else the last. A Ticket starts on its latest Run, and ←→ and h l move to
+ * the one before or after from any pane. One pane has the focus, the
+ * Tickets at first, its border in the accent: Tab and Shift+Tab move it on
+ * and back, and 1 to 4 put it on the Tickets, the Runs, the Ticket or the
+ * Run. ↑↓ and j k move in the focused pane: the selected Ticket or Run, or
+ * the Ticket's text or the Run by a line. Space, PgUp and PgDn page the
+ * Ticket's text when it has the focus and the Run otherwise. `t` gives the
+ * Ticket the whole screen and `r` the Run, with the focus, which stays on it
+ * until Esc. A footer names the keys, and `?` shows them all until `?` or
+ * Esc. Esc otherwise closes the whole screen, then calls `onClose`.
  */
 export function GoalView(props: {
 	root: string;
@@ -93,7 +99,11 @@ export function GoalView(props: {
 			: runs.length - 1;
 	};
 	const [helpShown, setHelpShown] = createSignal(false);
-	// The shown Run's scrollbox, which `G` scrolls to its bottom.
+	const [focus, setFocus] = createSignal<GoalViewPane>("tickets");
+	const [fullScreen, setFullScreen] = createSignal<"ticket" | "run">();
+	// The scrollboxes of the Ticket's text and the shown Run, which the keys
+	// scroll.
+	let ticketBox: ScrollBoxRenderable | undefined;
 	let runBox: ScrollBoxRenderable | undefined;
 	// Clamped, not wrapped, so holding a key stops at the end of the list.
 	const clamp = (index: number, length: number) =>
@@ -111,14 +121,43 @@ export function GoalView(props: {
 			index: clamp(index, selected.runs.length),
 		});
 	};
+	// One line, or one Ticket or Run, back for -1 and on for 1.
+	const moveInFocus = (step: number) => {
+		const pane = focus();
+		if (pane === "tickets") select(selectedIndex() + step);
+		else if (pane === "runs") selectRun(runIndex() + step);
+		else (pane === "ticket" ? ticketBox : runBox)?.scrollBy(step);
+	};
+	// The lists have nothing to page, so from them the Run pages.
+	const page = (pages: number) =>
+		(focus() === "ticket" ? ticketBox : runBox)?.scrollBy(pages, "viewport");
+	const openFullScreen = (pane: "ticket" | "run") => {
+		setFullScreen(pane);
+		setFocus(pane);
+	};
 	useKeyboard((key) => {
+		// The pane 1 to 4 name, undefined for any other key.
+		const numbered = paneOrder[Number(key.name) - 1];
 		if (key.name === "?") setHelpShown(!helpShown());
 		else if (key.name === "escape" && helpShown()) setHelpShown(false);
+		else if (key.name === "escape" && fullScreen() !== undefined)
+			setFullScreen(undefined);
 		else if (key.name === "escape") props.onClose();
 		else if (helpShown()) return;
-		else if (key.name === "up" || key.name === "k") select(selectedIndex() - 1);
-		else if (key.name === "down" || key.name === "j")
-			select(selectedIndex() + 1);
+		// The whole screen keeps the focus on the one pane it shows.
+		else if (fullScreen() !== undefined && (key.name === "tab" || numbered))
+			return;
+		else if (key.name === "tab") {
+			const step = key.shift ? paneOrder.length - 1 : 1;
+			const next = (paneOrder.indexOf(focus()) + step) % paneOrder.length;
+			setFocus(paneOrder[next] ?? "tickets");
+		} else if (numbered !== undefined) setFocus(numbered);
+		else if (key.name === "t") openFullScreen("ticket");
+		else if (key.name === "r") openFullScreen("run");
+		else if (key.name === "up" || key.name === "k") moveInFocus(-1);
+		else if (key.name === "down" || key.name === "j") moveInFocus(1);
+		else if (key.name === "space" || key.name === "pagedown") page(1);
+		else if (key.name === "pageup") page(-1);
 		else if (key.name === "left" || key.name === "h") selectRun(runIndex() - 1);
 		else if (key.name === "right" || key.name === "l")
 			selectRun(runIndex() + 1);
@@ -157,12 +196,26 @@ export function GoalView(props: {
 					</text>
 				</box>
 			</Show>
-			<box flexDirection="row" height={topRows()} flexShrink={0}>
-				<box flexDirection="column" width={ticketsWidth()} flexShrink={0}>
+			{/* A pane off the whole screen is hidden, not dropped, so it keeps
+			    its scroll and its Run's log. */}
+			<box
+				flexDirection="row"
+				visible={fullScreen() !== "run"}
+				height={fullScreen() === "ticket" ? undefined : topRows()}
+				flexGrow={fullScreen() === "ticket" ? 1 : 0}
+				flexShrink={0}
+			>
+				<box
+					flexDirection="column"
+					visible={fullScreen() === undefined}
+					width={ticketsWidth()}
+					flexShrink={0}
+				>
 					<TicketsPane
 						tickets={props.row.tickets}
 						selected={selectedIndex()}
 						width={ticketsWidth()}
+						focused={focus() === "tickets"}
 					/>
 					<RunsPane
 						ticket={ticket()}
@@ -170,27 +223,38 @@ export function GoalView(props: {
 						standing={props.row.standing}
 						width={ticketsWidth()}
 						height={runsRows()}
+						focused={focus() === "runs"}
 					/>
 				</box>
 				<Show when={ticket()}>
 					{(ticket: () => GoalTicket) => (
 						<TicketPane
 							ticket={ticket()}
-							width={terminal().width - ticketsWidth()}
+							width={
+								terminal().width -
+								(fullScreen() === "ticket" ? 0 : ticketsWidth())
+							}
+							focused={focus() === "ticket"}
+							scrollRef={(box) => {
+								ticketBox = box;
+							}}
 						/>
 					)}
 				</Show>
 			</box>
-			<RunPane
-				root={props.root}
-				ticket={ticket()}
-				selected={runIndex()}
-				standing={props.row.standing}
-				width={terminal().width}
-				scrollRef={(box) => {
-					runBox = box;
-				}}
-			/>
+			<box flexGrow={1} visible={fullScreen() !== "ticket"}>
+				<RunPane
+					root={props.root}
+					ticket={ticket()}
+					selected={runIndex()}
+					standing={props.row.standing}
+					width={terminal().width}
+					focused={focus() === "run"}
+					scrollRef={(box) => {
+						runBox = box;
+					}}
+				/>
+			</box>
 			<box flexShrink={0} paddingLeft={1} paddingRight={1}>
 				<KeyFooter
 					keys={footerKeys(symbol.upDown, symbol.leftRight)}
@@ -204,11 +268,17 @@ export function GoalView(props: {
 	);
 }
 
+// The panes the focus moves through, in the order of Tab and of 1 to 4.
+type GoalViewPane = "tickets" | "runs" | "ticket" | "run";
+const paneOrder: GoalViewPane[] = ["tickets", "runs", "ticket", "run"];
+
 // `q` and Ctrl-C belong to `tui.tsx`, which quits on them on every screen.
 // `upDown` and `leftRight` name the arrow keys.
 const footerKeys = (upDown: string, leftRight: string): FooterKey[] => [
-	{ keys: upDown, label: "Ticket", use: 5 },
+	{ keys: upDown, label: "Move", use: 5 },
 	{ keys: leftRight, label: "Run", use: 4 },
+	{ keys: "Tab", label: "Pane", use: 3 },
+	{ keys: "t r", label: "Full screen", use: 2 },
 	{ keys: "G", label: "Follow", use: 2 },
 	{ keys: "Esc", label: "Goals", use: 3 },
 	{ keys: "?", label: "Help", use: 2 },
@@ -216,11 +286,16 @@ const footerKeys = (upDown: string, leftRight: string): FooterKey[] => [
 ];
 
 const helpKeys = (upDown: string, leftRight: string): HelpKey[] => [
-	{ keys: `${upDown} j k`, meaning: "select the Ticket above, below" },
+	{ keys: `${upDown} j k`, meaning: "move in the focused pane" },
 	{ keys: `${leftRight} h l`, meaning: "select the Run before, after" },
+	{ keys: "Tab", meaning: "focus the next pane, Shift the previous" },
+	{ keys: "1 2 3 4", meaning: "focus the Tickets, Runs, Ticket, Run" },
+	{ keys: "Space PgDn", meaning: "page the focused Ticket, else the Run" },
+	{ keys: "PgUp", meaning: "page back" },
+	{ keys: "t r", meaning: "Ticket, Run full screen" },
 	{ keys: "G", meaning: "follow the live Run again" },
 	{ keys: "wheel", meaning: "scroll the pane under the pointer" },
-	{ keys: "Esc", meaning: "back to the Goals" },
+	{ keys: "Esc", meaning: "close full screen, then go to the Goals" },
 	{ keys: "? Esc", meaning: "show, hide these keys" },
 	{ keys: "q Ctrl-C", meaning: "quit" },
 ];
@@ -313,11 +388,12 @@ const ticketRowId = (number: string) => `ticket-row-${number}`;
 // Every Ticket of the Goal, one row each, `width` columns wide with its
 // border and as tall as its parent leaves it: its symbol, number, state word
 // and title, the `selected`th in the selection's colours and scrolled into
-// view.
+// view, its border in the accent when `focused`.
 function TicketsPane(props: {
 	tickets: GoalTicket[];
 	selected: number;
 	width: number;
+	focused: boolean;
 }): JSX.Element {
 	const { color, symbol, border, selection } = theme();
 	let list: ScrollBoxRenderable | undefined;
@@ -330,7 +406,7 @@ function TicketsPane(props: {
 		<box
 			border
 			customBorderChars={border}
-			borderColor={color.border}
+			borderColor={props.focused ? color.accent : color.border}
 			title=" Tickets "
 			bottomTitle={` ${props.selected + 1}/${props.tickets.length} `}
 			bottomTitleAlignment="right"
@@ -394,8 +470,14 @@ function TicketsPane(props: {
 // The selected Ticket, `width` columns wide with its border: its title,
 // the Tickets it comes after, its Workflow's Steps marked, or why the
 // Workflow can't be read, and its text wrapped to the pane, scrolled by the
-// wheel. Its Runs' totals sit on its border.
-function TicketPane(props: { ticket: GoalTicket; width: number }): JSX.Element {
+// wheel and in `scrollRef`'s scrollbox. Its Runs' totals sit on its border,
+// in the accent when `focused`.
+function TicketPane(props: {
+	ticket: GoalTicket;
+	width: number;
+	focused: boolean;
+	scrollRef: (box: ScrollBoxRenderable) => void;
+}): JSX.Element {
 	const { color, symbol, border, dimText } = theme();
 	const inner = () => props.width - paneEdges;
 	const totals = () =>
@@ -408,7 +490,7 @@ function TicketPane(props: { ticket: GoalTicket; width: number }): JSX.Element {
 		<box
 			border
 			customBorderChars={border}
-			borderColor={color.border}
+			borderColor={props.focused ? color.accent : color.border}
 			title={` Ticket ${props.ticket.number} `}
 			bottomTitle={` ${totals()} `}
 			bottomTitleAlignment="right"
@@ -464,7 +546,11 @@ function TicketPane(props: { ticket: GoalTicket; width: number }): JSX.Element {
 				</For>
 			</Show>
 			<box height={1} flexShrink={0} />
-			<scrollbox flexGrow={1} verticalScrollbarOptions={{ visible: false }}>
+			<scrollbox
+				ref={props.scrollRef}
+				flexGrow={1}
+				verticalScrollbarOptions={{ visible: false }}
+			>
 				<For
 					each={props.ticket.description.flatMap((paragraph) =>
 						wrapText(paragraph, inner()),
@@ -515,14 +601,15 @@ const runRowId = (index: number) => `run-row-${index}`;
 const positionWidth = 3;
 
 // The Runs of `ticket`, `width` columns wide and `height` rows tall with its
-// border, one `RunLine` each led by its position. The `selected`th is bold
-// and scrolled into view.
+// border, one `RunLine` each led by its position, the border in the accent
+// when `focused`. The `selected`th is bold and scrolled into view.
 function RunsPane(props: {
 	ticket: GoalTicket | undefined;
 	selected: number;
 	standing: GoalStanding;
 	width: number;
 	height: number;
+	focused: boolean;
 }): JSX.Element {
 	const { color, border, dimText } = theme();
 	let list: ScrollBoxRenderable | undefined;
@@ -534,7 +621,7 @@ function RunsPane(props: {
 		<box
 			border
 			customBorderChars={border}
-			borderColor={color.border}
+			borderColor={props.focused ? color.accent : color.border}
 			title={
 				props.ticket === undefined
 					? " Runs "
@@ -649,14 +736,15 @@ function liveRunLog(
 // scrolled by the wheel and, as it grows, read again. An open Run is live
 // while its Goal's `standing` is running, and lost otherwise. An open Run
 // opens at its bottom and follows what it adds until scrolled up, and
-// `scrollRef` gets each Run's scrollbox, to follow again by scrolling it to
-// its bottom.
+// `scrollRef` gets each Run's scrollbox, to scroll it and to follow again by
+// scrolling it to its bottom. The border is in the accent when `focused`.
 function RunPane(props: {
 	root: string;
 	ticket: GoalTicket | undefined;
 	selected: number;
 	standing: GoalStanding;
 	width: number;
+	focused: boolean;
 	scrollRef: (box: ScrollBoxRenderable) => void;
 }): JSX.Element {
 	const { color, symbol, border, dimText } = theme();
@@ -698,7 +786,7 @@ function RunPane(props: {
 		<box
 			border
 			customBorderChars={border}
-			borderColor={color.border}
+			borderColor={props.focused ? color.accent : color.border}
 			title={title()}
 			bottomTitle={numbers()}
 			bottomTitleAlignment="right"

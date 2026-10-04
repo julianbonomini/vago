@@ -231,7 +231,7 @@ test("↑↓ change the Ticket pane to that Ticket, its text read as paragraphs"
 test("the footer names the Goal view's keys, and ? shows them all", async () => {
 	const { view, frame } = await openFirstGoal(await runningGoal());
 	expect(frame.trimEnd().split("\n").at(-1)).toMatch(
-		/^ ↑↓ Ticket {3}←→ Run {3}G Follow {3}Esc Goals {3}\? Help {3}q Quit *$/,
+		/^ ↑↓ Move {3}←→ Run {3}Tab Pane {3}t r Full screen {3}G Follow {3}Esc Goals {3}\? Help {3}q Quit *$/,
 	);
 
 	view.mockInput.pressKey("?");
@@ -801,4 +801,170 @@ test("at 80 columns the lost hint shows whole", async () => {
 	const { frame } = await openFirstGoal(root, { width: 80, height: 24 });
 
 	expect(frame).toContain("the next records its open Run as lost.");
+});
+
+// The Goal view of Goal `long`, whose stuck Ticket 01 has 40 paragraphs of
+// text and two Runs, the latest a 60-line `check` log, before a ready
+// Ticket 02.
+async function openLongTicket(): Promise<TestRendererSetup> {
+	const paragraphs = Array.from(
+		{ length: 40 },
+		(_, index) => `para ${index + 1}`,
+	);
+	const root = await makeProject({
+		".vago/workflows/small.toml": workflowOf("branch", "check"),
+		".vago-goals/long/goal.md": goalText("small"),
+		".vago-goals/long/tickets/01-long.md": ticketText("stuck", {
+			runs: [runOf("branch", 0, 1), runOf("check", 1, 2, "exit 1")],
+			body: `# Long\n\n${paragraphs.join("\n\n")}\n`,
+		}),
+		".vago-goals/long/tickets/02-short.md": titled("ready", "Short"),
+		".vago-goals/long/logs/check-2.log": numberedLines(1, 60),
+	});
+	const { view } = await openFirstGoal(root);
+	await frameWith(view, "│ line 1 ");
+	return view;
+}
+
+const panes = ["Tickets", "Runs of Ticket 01", "Ticket 01", "Run 2 · 01 check"];
+
+// The panes whose title is in the accent with the border around it, which
+// share one span only when they share a colour.
+function accented(view: TestRendererSetup): string[] {
+	const accent = RGBA.fromHex("#ff8a3d");
+	const spans = view.captureSpans().lines.flatMap((line) => line.spans);
+	return panes.filter((title) =>
+		spans.some(
+			(span) => span.text.includes(`─ ${title} ─`) && span.fg.equals(accent),
+		),
+	);
+}
+
+// Renders frames until `check` passes on the view, and fails with the last
+// frame after about three seconds.
+async function until(
+	view: TestRendererSetup,
+	check: () => boolean,
+): Promise<void> {
+	for (let tries = 0; ; tries++) {
+		await view.renderOnce();
+		if (check()) return;
+		if (tries === 300)
+			throw new Error(`No frame passes:\n${view.captureCharFrame()}`);
+		await Bun.sleep(10);
+	}
+}
+
+test("Tab, Shift+Tab and 1-4 move focus, and only the focused pane is in the accent", async () => {
+	const view = await openLongTicket();
+	const focusIs = (title: string) =>
+		until(view, () => accented(view).join() === title);
+	await focusIs("Tickets");
+
+	view.mockInput.pressTab();
+	await focusIs("Runs of Ticket 01");
+	view.mockInput.pressTab();
+	view.mockInput.pressTab();
+	await focusIs("Run 2 · 01 check");
+	view.mockInput.pressTab();
+	await focusIs("Tickets");
+	view.mockInput.pressTab({ shift: true });
+	await focusIs("Run 2 · 01 check");
+
+	view.mockInput.pressKey("3");
+	await focusIs("Ticket 01");
+	view.mockInput.pressKey("2");
+	await focusIs("Runs of Ticket 01");
+	view.mockInput.pressKey("4");
+	await focusIs("Run 2 · 01 check");
+	view.mockInput.pressKey("1");
+	await focusIs("Tickets");
+});
+
+test("↑↓ in the Runs pane move the Run", async () => {
+	const view = await openLongTicket();
+
+	view.mockInput.pressKey("2");
+	view.mockInput.pressArrow("up");
+	await frameWith(view, "─ Run 1 · 01 branch ─");
+	view.mockInput.pressArrow("down");
+	await frameWith(view, "─ Run 2 · 01 check ─");
+});
+
+test("↑↓ scroll the Ticket's text when the Ticket pane has focus", async () => {
+	const view = await openLongTicket();
+
+	view.mockInput.pressKey("3");
+	for (let press = 0; press < 3; press++) view.mockInput.pressArrow("down");
+	const scrolled = await frameWithout(view, "│ para 1 ");
+	expect(scrolled).toContain("│ para 3 ");
+	expect(scrolled).toContain(" 1/2 ");
+
+	view.mockInput.pressArrow("up");
+	await frameWith(view, "│ para 2 ");
+});
+
+test("↑↓ scroll the Run when the Run pane has focus", async () => {
+	const view = await openLongTicket();
+
+	view.mockInput.pressKey("4");
+	for (let press = 0; press < 3; press++) view.mockInput.pressArrow("down");
+	const scrolled = await frameWithout(view, "│ line 1 ");
+	expect(scrolled).toContain("│ line 4 ");
+	expect(scrolled).toContain(" 1/2 ");
+	expect(scrolled).toContain("─ Run 2 · 01 check ─");
+
+	view.mockInput.pressArrow("up");
+	await frameWith(view, "│ line 3 ");
+});
+
+test("Space, PgDn and PgUp page the Run from the Tickets and Runs panes", async () => {
+	const view = await openLongTicket();
+
+	view.mockInput.pressKey(" ");
+	const paged = await frameWithout(view, "│ line 1 ");
+	expect(paged).toContain("│ para 1 ");
+
+	view.mockInput.pressKey("2");
+	view.mockInput.pressKey("\u001b[5~");
+	await frameWith(view, "│ line 1 ");
+	view.mockInput.pressKey("\u001b[6~");
+	await frameWithout(view, "│ line 1 ");
+});
+
+test("t gives the Ticket the whole screen, which scrolls and keeps the focus, and Esc closes it", async () => {
+	const view = await openLongTicket();
+
+	view.mockInput.pressKey("t");
+	const full = await frameWithout(view, "─ Tickets ─");
+	expect(full).not.toContain("─ Run 2 · 01 check ─");
+	expect(full).toContain("─ Ticket 01 ─");
+	expect(full).toContain("│ para 10 ");
+
+	view.mockInput.pressTab();
+	view.mockInput.pressKey("1");
+	view.mockInput.pressArrow("down");
+	const scrolled = await frameWithout(view, "│ para 1 ");
+	expect(scrolled).toContain("─ Ticket 01 ─");
+
+	view.mockInput.pressEscape();
+	const closed = await frameWith(view, "─ Tickets ─");
+	expect(closed).toContain("─ Run 2 · 01 check ─");
+	view.mockInput.pressEscape();
+	await frameWith(view, "─ Goals ─");
+});
+
+test("r gives the Run the whole screen, which scrolls, and Esc closes it", async () => {
+	const view = await openLongTicket();
+
+	view.mockInput.pressKey("r");
+	const full = await frameWithout(view, "─ Tickets ─");
+	expect(full).not.toContain("─ Ticket 01 ─");
+	expect(full).toContain("│ line 20 ");
+
+	view.mockInput.pressArrow("down");
+	await frameWithout(view, "│ line 1 ");
+
+	view.mockInput.pressEscape();
+	await frameWith(view, "─ Tickets ─");
 });
