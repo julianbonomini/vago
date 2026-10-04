@@ -291,6 +291,15 @@ export async function readTicketBody(ticket: Ticket): Promise<string> {
 }
 
 /**
+ * What the log at `log`, a `TicketRun`'s, holds so far: "" when its Run
+ * hasn't written it yet.
+ */
+export async function readRunLog(log: string): Promise<string> {
+	const file = Bun.file(log);
+	return (await file.exists()) ? file.text() : "";
+}
+
+/**
  * Whether `ticket` is its Goal's last: every other Ticket of the Goal is
  * `done`. Read from the files each time, so a Ticket added mid-run counts.
  */

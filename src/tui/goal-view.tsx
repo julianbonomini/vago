@@ -1,6 +1,7 @@
-// The Goal view: one Goal's header, its Tickets and the selected Ticket's
-// text, opened from the Project view. Hides the panes' layout, which Ticket
-// is selected and how the keys move it.
+// The Goal view: one Goal's header, its Tickets, the selected Ticket's text
+// and Runs, and the selected Run, opened from the Project view. Hides the
+// panes' layout, which Ticket and Run are selected and how the keys move
+// them.
 
 import {
 	type ColorInput,
@@ -8,9 +9,21 @@ import {
 	TextAttributes,
 } from "@opentui/core";
 import { type JSX, useKeyboard, useTerminalDimensions } from "@opentui/solid";
-import { createEffect, createSignal, For, Show } from "solid-js";
-import { type GoalRow, ticketTotal } from "./goal-rows.ts";
-import type { GoalTicket, GoalTicketStep } from "./goal-tickets.ts";
+import {
+	createEffect,
+	createResource,
+	createSignal,
+	For,
+	Show,
+} from "solid-js";
+import { readRunLog } from "../tickets/tickets.ts";
+import { type GoalRow, type GoalStanding, ticketTotal } from "./goal-rows.ts";
+import type {
+	GoalTicket,
+	GoalTicketRun,
+	GoalTicketStep,
+} from "./goal-tickets.ts";
+import { RunLine } from "./run-line.tsx";
 import {
 	type FooterKey,
 	type HelpKey,
@@ -18,18 +31,26 @@ import {
 	KeyHelp,
 } from "./screen-keys.tsx";
 import { fitText, wrapText } from "./text-fit.ts";
-import { goalColor, stepMarkLook, theme, ticketMarkStyle } from "./theme.ts";
+import {
+	goalColor,
+	runMarkLook,
+	stepMarkLook,
+	theme,
+	ticketMarkStyle,
+} from "./theme.ts";
 import { TicketBar } from "./ticket-bar.tsx";
 import { duration, money, tokenCount } from "./time-and-money.ts";
 
 /**
  * The Goal view of the Goal `row` shows, the `position`th of `count` Goals
  * in the Project list: a header box with the Goal's progress and numbers,
- * its Tickets on the left with `n/N` on their border, and the selected
- * Ticket's title, blockers and text on the right. The Ticket the Goal is on
- * starts selected, the first not done or else the last, and ↑↓ and j k move
- * the selection. A footer names the keys, and `?` shows them all until `?`
- * or Esc. Esc otherwise calls `onClose`.
+ * its Tickets on the left with `n/N` on their border and the selected
+ * Ticket's Runs under them, the selected Ticket's title, blockers and text
+ * on the right, and the selected Run across the bottom. The Ticket the Goal
+ * is on starts selected, the first not done or else the last, and ↑↓ and
+ * j k move the selection. A Ticket starts on its latest Run, and ←→ and h l
+ * move to the one before or after. A footer names the keys, and `?` shows
+ * them all until `?` or Esc. Esc otherwise calls `onClose`.
  */
 export function GoalView(props: {
 	row: GoalRow;
@@ -47,12 +68,36 @@ export function GoalView(props: {
 		const current = tickets.findIndex(({ mark }) => mark !== "done");
 		return current === -1 ? tickets.length - 1 : current;
 	};
+	const ticket = () => props.row.tickets[selectedIndex()];
+	// The Run picked on Ticket `ticket`; another Ticket starts on its latest.
+	const [chosenRun, setChosenRun] = createSignal<{
+		ticket: string;
+		index: number;
+	}>();
+	// -1 for a Ticket with no Runs.
+	const runIndex = () => {
+		const runs = ticket()?.runs ?? [];
+		const chosen = chosenRun();
+		return chosen !== undefined && chosen.ticket === ticket()?.number
+			? Math.min(chosen.index, runs.length - 1)
+			: runs.length - 1;
+	};
 	const [helpShown, setHelpShown] = createSignal(false);
 	// Clamped, not wrapped, so holding a key stops at the end of the list.
+	const clamp = (index: number, length: number) =>
+		Math.max(0, Math.min(length - 1, index));
 	const select = (index: number) => {
 		const tickets = props.row.tickets;
-		const ticket = tickets[Math.max(0, Math.min(tickets.length - 1, index))];
+		const ticket = tickets[clamp(index, tickets.length)];
 		if (ticket !== undefined) setChosen(ticket.number);
+	};
+	const selectRun = (index: number) => {
+		const selected = ticket();
+		if (selected === undefined || selected.runs.length === 0) return;
+		setChosenRun({
+			ticket: selected.number,
+			index: clamp(index, selected.runs.length),
+		});
 	};
 	useKeyboard((key) => {
 		if (key.name === "?") setHelpShown(!helpShown());
@@ -62,8 +107,20 @@ export function GoalView(props: {
 		else if (key.name === "up" || key.name === "k") select(selectedIndex() - 1);
 		else if (key.name === "down" || key.name === "j")
 			select(selectedIndex() + 1);
+		else if (key.name === "left" || key.name === "h") selectRun(runIndex() - 1);
+		else if (key.name === "right" || key.name === "l")
+			selectRun(runIndex() + 1);
 	});
 	const ticketsWidth = () => Math.floor(terminal().width * ticketsShare);
+	const topRows = () =>
+		Math.round((terminal().height - headerRows - 1) * topShare);
+	// Enough rows for every Run, between 3 and 8, and at most a third of the
+	// top's, so the Tickets keep the most.
+	const runsRows = () =>
+		Math.max(
+			3,
+			Math.min((ticket()?.runs.length ?? 0) + 2, 8, Math.floor(topRows() / 3)),
+		);
 	return (
 		<box flexDirection="column" flexGrow={1}>
 			<GoalHeader
@@ -73,13 +130,22 @@ export function GoalView(props: {
 				width={terminal().width}
 				height={terminal().height}
 			/>
-			<box flexDirection="row" flexGrow={1}>
-				<TicketsPane
-					tickets={props.row.tickets}
-					selected={selectedIndex()}
-					width={ticketsWidth()}
-				/>
-				<Show when={props.row.tickets[selectedIndex()]}>
+			<box flexDirection="row" height={topRows()} flexShrink={0}>
+				<box flexDirection="column" width={ticketsWidth()} flexShrink={0}>
+					<TicketsPane
+						tickets={props.row.tickets}
+						selected={selectedIndex()}
+						width={ticketsWidth()}
+					/>
+					<RunsPane
+						ticket={ticket()}
+						selected={runIndex()}
+						standing={props.row.standing}
+						width={ticketsWidth()}
+						height={runsRows()}
+					/>
+				</box>
+				<Show when={ticket()}>
 					{(ticket: () => GoalTicket) => (
 						<TicketPane
 							ticket={ticket()}
@@ -88,39 +154,51 @@ export function GoalView(props: {
 					)}
 				</Show>
 			</box>
+			<RunPane
+				ticket={ticket()}
+				selected={runIndex()}
+				standing={props.row.standing}
+			/>
 			<box flexShrink={0} paddingLeft={1} paddingRight={1}>
 				<KeyFooter
-					keys={footerKeys(symbol.upDown)}
+					keys={footerKeys(symbol.upDown, symbol.leftRight)}
 					width={terminal().width - 2}
 				/>
 			</box>
 			<Show when={helpShown()}>
-				<KeyHelp keys={helpKeys(symbol.upDown)} />
+				<KeyHelp keys={helpKeys(symbol.upDown, symbol.leftRight)} />
 			</Show>
 		</box>
 	);
 }
 
 // `q` and Ctrl-C belong to `tui.tsx`, which quits on them on every screen.
-// `upDown` names the arrow keys.
-const footerKeys = (upDown: string): FooterKey[] => [
-	{ keys: upDown, label: "Ticket", use: 4 },
+// `upDown` and `leftRight` name the arrow keys.
+const footerKeys = (upDown: string, leftRight: string): FooterKey[] => [
+	{ keys: upDown, label: "Ticket", use: 5 },
+	{ keys: leftRight, label: "Run", use: 4 },
 	{ keys: "Esc", label: "Goals", use: 3 },
 	{ keys: "?", label: "Help", use: 2 },
 	{ keys: "q", label: "Quit", use: 1 },
 ];
 
-const helpKeys = (upDown: string): HelpKey[] => [
+const helpKeys = (upDown: string, leftRight: string): HelpKey[] => [
 	{ keys: `${upDown} j k`, meaning: "select the Ticket above, below" },
+	{ keys: `${leftRight} h l`, meaning: "select the Run before, after" },
 	{ keys: "wheel", meaning: "scroll the pane under the pointer" },
 	{ keys: "Esc", meaning: "back to the Goals" },
 	{ keys: "? Esc", meaning: "show, hide these keys" },
 	{ keys: "q Ctrl-C", meaning: "quit" },
 ];
 
-// The share of the screen's width the Tickets pane takes; the Ticket pane
-// takes the rest.
+// The share of the screen's width the Tickets and Runs panes take; the
+// Ticket pane takes the rest.
 const ticketsShare = 0.4;
+// The share of the rows under the header and over the footer that the
+// Tickets, Runs and Ticket panes take; the Run pane takes the rest.
+const topShare = 0.62;
+// The header box's rows: its border and two lines.
+const headerRows = 4;
 // A box's border and padding, on both sides.
 const paneEdges = 4;
 
@@ -220,8 +298,9 @@ function fitSpans(spans: StyledSpan[], width: number): StyledSpan[] {
 const ticketRowId = (number: string) => `ticket-row-${number}`;
 
 // Every Ticket of the Goal, one row each, `width` columns wide with its
-// border: its symbol, number, state word and title, the `selected`th in the
-// selection's colours and scrolled into view.
+// border and as tall as its parent leaves it: its symbol, number, state word
+// and title, the `selected`th in the selection's colours and scrolled into
+// view.
 function TicketsPane(props: {
 	tickets: GoalTicket[];
 	selected: number;
@@ -244,8 +323,7 @@ function TicketsPane(props: {
 			bottomTitleAlignment="right"
 			paddingLeft={1}
 			paddingRight={1}
-			width={props.width}
-			flexShrink={0}
+			flexGrow={1}
 		>
 			<scrollbox
 				ref={(box: ScrollBoxRenderable) => {
@@ -309,7 +387,7 @@ function TicketPane(props: { ticket: GoalTicket; width: number }): JSX.Element {
 	const inner = () => props.width - paneEdges;
 	const totals = () =>
 		[
-			`${props.ticket.runCount} ${props.ticket.runCount === 1 ? "Run" : "Runs"}`,
+			`${props.ticket.runs.length} ${props.ticket.runs.length === 1 ? "Run" : "Runs"}`,
 			duration(props.ticket.runsMs),
 			money(props.ticket.costUsd),
 		].join(` ${symbol.sep} `);
@@ -413,4 +491,162 @@ function stepLines(steps: GoalTicketStep[], width: number): GoalTicketStep[][] {
 	}
 	if (line.length > 0) lines.push(line);
 	return lines;
+}
+
+// The id of Run `index`'s row, which the Runs pane scrolls to.
+const runRowId = (index: number) => `run-row-${index}`;
+
+// The width of a Run row's position, with the space after it.
+const positionWidth = 3;
+
+// The Runs of `ticket`, `width` columns wide and `height` rows tall with its
+// border, one `RunLine` each led by its position. The `selected`th is bold
+// and scrolled into view.
+function RunsPane(props: {
+	ticket: GoalTicket | undefined;
+	selected: number;
+	standing: GoalStanding;
+	width: number;
+	height: number;
+}): JSX.Element {
+	const { color, border, dimText } = theme();
+	let list: ScrollBoxRenderable | undefined;
+	const showSelected = () =>
+		list?.scrollChildIntoView(runRowId(props.selected));
+	createEffect(showSelected);
+	const runs = () => props.ticket?.runs ?? [];
+	return (
+		<box
+			border
+			customBorderChars={border}
+			borderColor={color.border}
+			title={
+				props.ticket === undefined
+					? " Runs "
+					: ` Runs of Ticket ${props.ticket.number} `
+			}
+			paddingLeft={1}
+			paddingRight={1}
+			height={props.height}
+			flexShrink={0}
+		>
+			<Show
+				when={runs().length > 0}
+				fallback={
+					<text {...dimText} flexShrink={0} wrapMode="none">
+						{fitText("No Run yet.", props.width - paneEdges)}
+					</text>
+				}
+			>
+				<scrollbox
+					ref={(box: ScrollBoxRenderable) => {
+						list = box;
+					}}
+					flexGrow={1}
+					verticalScrollbarOptions={{ visible: false }}
+				>
+					<For each={runs()}>
+						{(run, index) => (
+							// A row has no place until it is first laid out, which
+							// its box, unlike a text, reports, so the selected Run is
+							// scrolled to again then.
+							<box
+								id={runRowId(index())}
+								flexShrink={0}
+								onSizeChange={() => {
+									if (index() === props.selected) showSelected();
+								}}
+							>
+								<RunLine
+									lead={`${index() + 1}`.padEnd(positionWidth)}
+									run={run}
+									standing={props.standing}
+									width={props.width - paneEdges}
+									bold={index() === props.selected}
+								/>
+							</box>
+						)}
+					</For>
+				</scrollbox>
+			</Show>
+		</box>
+	);
+}
+
+// The `selected`th Run of `ticket` across the screen, titled with its
+// position, Ticket and Step, its outcome, duration and, for an agent Step,
+// cost on its border. A shell Step's Run shows its log, scrolled by the
+// wheel.
+function RunPane(props: {
+	ticket: GoalTicket | undefined;
+	selected: number;
+	standing: GoalStanding;
+}): JSX.Element {
+	const { color, symbol, border, dimText } = theme();
+	const run = () => props.ticket?.runs[props.selected];
+	// Read again each time the Goal is, so a growing log shows what it adds.
+	// The path comes back with the text, so another Run's log never shows
+	// under this one's title while this one is read.
+	const [log] = createResource(run, async ({ log }: GoalTicketRun) => ({
+		log,
+		text: Bun.stripANSI(await readRunLog(log)).trimEnd(),
+	}));
+	const title = () => {
+		const shown = run();
+		return shown === undefined
+			? " Run "
+			: ` Run ${props.selected + 1} ${symbol.sep} ${props.ticket?.number} ${shown.step} `;
+	};
+	const numbers = () => {
+		const shown = run();
+		if (shown === undefined) return "";
+		return ` ${[
+			runMarkLook(shown.outcome, props.standing).text,
+			duration(shown.durationMs),
+			...(shown.costUsd === undefined ? [] : [money(shown.costUsd)]),
+		].join(` ${symbol.sep} `)} `;
+	};
+	return (
+		<box
+			border
+			customBorderChars={border}
+			borderColor={color.border}
+			title={title()}
+			bottomTitle={numbers()}
+			bottomTitleAlignment="right"
+			paddingLeft={1}
+			paddingRight={1}
+			flexGrow={1}
+		>
+			<Show
+				when={run()}
+				fallback={
+					<text {...dimText} flexShrink={0}>
+						No Run yet.
+					</text>
+				}
+			>
+				{(shown: () => GoalTicketRun) => (
+					<Show
+						when={shown().stepType === "shell"}
+						fallback={
+							// TODO 05: the agent's activity, condensed by its Harness.
+							<text {...dimText} flexShrink={0}>
+								An agent Run's activity shows here soon.
+							</text>
+						}
+					>
+						<scrollbox
+							flexGrow={1}
+							verticalScrollbarOptions={{ visible: false }}
+						>
+							<text fg={color.fg} wrapMode="word">
+								{log.latest?.log === shown().log ? log.latest.text : ""}
+							</text>
+						</scrollbox>
+					</Show>
+				)}
+			</Show>
+		</box>
+	);
 }

@@ -3,19 +3,14 @@
 // Hides the slots' sizes, which never depend on the Goal shown, so nothing
 // moves as the selection does.
 
-import type { ColorInput } from "@opentui/core";
 import type { JSX } from "@opentui/solid";
 import { For, Show } from "solid-js";
-import {
-	type GoalRow,
-	type GoalRowRun,
-	type GoalStanding,
-	ticketTotal,
-} from "./goal-rows.ts";
+import { type GoalRow, ticketTotal } from "./goal-rows.ts";
+import { RunLine, runLineFieldsWidth } from "./run-line.tsx";
 import { fitText, wrapText } from "./text-fit.ts";
 import { theme } from "./theme.ts";
 import { TicketBar } from "./ticket-bar.tsx";
-import { clock, duration, money } from "./time-and-money.ts";
+import { clock, duration } from "./time-and-money.ts";
 
 /**
  * The preview of the Goal `row` shows, `width` columns wide and as tall as
@@ -87,6 +82,9 @@ export function GoalPreview(props: {
 						<For each={props.row.latestRuns}>
 							{(run) => (
 								<RunLine
+									lead={`${clock(run.started)} ${run.ticketNumber}`.padEnd(
+										startWidth,
+									)}
 									run={run}
 									standing={props.row.standing}
 									width={runsColumn()}
@@ -127,69 +125,7 @@ const boxEdges = 4;
 const columnGap = 3;
 // The least the description column keeps before the Runs column narrows.
 const descriptionMin = 24;
-// The widths of a Run line's fields, each with the space after it.
+// The width of a Run line's leading field, when it started and its Ticket,
+// with the space after it.
 const startWidth = 9;
-const stepWidth = 13;
-const outcomeWidth = 12;
-const durationWidth = 8;
-// The four fields and room for a cost like `$12.34`.
-const runWidth = startWidth + stepWidth + outcomeWidth + durationWidth + 7;
-
-// One Run in `width` columns: when it started and its Ticket, its Step, its
-// outcome, how long it took and, for an agent Step, what it cost. A narrow
-// column cuts the fields on the right first.
-function RunLine(props: {
-	run: GoalRowRun;
-	standing: GoalStanding;
-	width: number;
-}): JSX.Element {
-	const { color, dimSpan } = theme();
-	const mark = () => runMark(props.run.outcome, props.standing);
-	const fields = () => {
-		let left = props.width;
-		const take = (text: string, width: number) => {
-			const cells = Math.min(width, left);
-			left -= cells;
-			return fitText(text, cells);
-		};
-		const cost =
-			props.run.costUsd === undefined ? "" : money(props.run.costUsd);
-		return {
-			start: take(
-				`${clock(props.run.started)} ${props.run.ticketNumber}`,
-				startWidth,
-			),
-			step: take(props.run.step, stepWidth),
-			outcome: take(mark().text, outcomeWidth),
-			rest: take(
-				`${duration(props.run.durationMs).padEnd(durationWidth)}${cost}`,
-				left,
-			),
-		};
-	};
-	return (
-		<text fg={color.fg} flexShrink={0} wrapMode="none">
-			<span style={dimSpan}>{fields().start}</span>
-			{fields().step}
-			<span style={{ fg: mark().fg }}>{fields().outcome}</span>
-			<span style={dimSpan}>{fields().rest}</span>
-		</text>
-	);
-}
-
-// A Run's outcome with its symbol and colour. An open Run is live while its
-// Goal runs, and lost otherwise, as is one the next `vago run` ended `lost`.
-function runMark(
-	outcome: string | undefined,
-	standing: GoalStanding,
-): { text: string; fg: ColorInput } {
-	const { color, symbol } = theme();
-	if (outcome === undefined && standing === "running") {
-		return { text: `${symbol.running} live`, fg: color.accent };
-	}
-	if (outcome === undefined || outcome === "lost") {
-		return { text: `${symbol.lost} lost`, fg: color.warn };
-	}
-	if (outcome === "ok") return { text: `${symbol.done} ok`, fg: color.ok };
-	return { text: `${symbol.stuck} ${outcome}`, fg: color.bad };
-}
+const runWidth = startWidth + runLineFieldsWidth;

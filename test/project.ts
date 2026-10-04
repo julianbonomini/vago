@@ -85,12 +85,15 @@ export type FixtureRun = {
 	outcome?: string;
 	costUsd?: number;
 	tokens?: { input: number; output: number };
+	/** Makes the Run an agent Step's, on Claude Code, logging `.jsonl`. */
+	model?: string;
 };
 
 /**
  * A Ticket file with status `status` in a `+++` header, then `body`, a short
  * one by default, going through `workflow` when given and the Goal's
- * otherwise. Each run gets a log path Vago never reads in these tests.
+ * otherwise. Run N of step `s` logs to `logs/s-N.log`, or `.jsonl` for an
+ * agent Step's, in the Goal's folder.
  */
 export function ticketText(
 	status: "ready" | "running" | "done" | "stuck",
@@ -120,7 +123,11 @@ export function ticketText(
 				`tokens = { input = ${run.tokens.input}, output = ${run.tokens.output} }`,
 			);
 		}
-		lines.push(`log = "logs/${run.step}-${index + 1}.log"`);
+		if (run.model !== undefined) {
+			lines.push('harness = "claude-code"', `model = "${run.model}"`);
+		}
+		const extension = run.model === undefined ? "log" : "jsonl";
+		lines.push(`log = "logs/${run.step}-${index + 1}.${extension}"`);
 	}
 	return `+++\n${lines.join("\n")}\n+++\n\n${options.body ?? "# A Ticket\n"}`;
 }

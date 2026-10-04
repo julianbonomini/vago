@@ -1,7 +1,7 @@
 // What the Goal view knows of each Ticket of a Goal: the mark its symbol and
 // colour come from, the state word before its title, its blockers, its
-// Workflow's Steps marked from its latest pass, its Runs' totals and its text
-// as paragraphs. Hides the rules behind each.
+// Workflow's Steps marked from its latest pass, its Runs and their totals,
+// and its text as paragraphs. Hides the rules behind each.
 
 import {
 	type GoalState,
@@ -49,14 +49,30 @@ export type GoalTicket = {
 	 * Project; undefined when it can.
 	 */
 	workflowProblem: string | undefined;
-	runCount: number;
-	/**
-	 * Every Run's duration added up, an open one's to when it was read, or to
-	 * its start when the Ticket is lost, as the Goal's clock stops then too.
-	 */
+	/** In the order they ran, so Run N is `runs[N - 1]`. */
+	runs: GoalTicketRun[];
+	/** Every Run's `durationMs` added up. */
 	runsMs: number;
 	/** Every Run's cost added up, 0 with none. */
 	costUsd: number;
+};
+
+/** One Run of a Ticket as the Runs pane lists it and the Run pane shows it. */
+export type GoalTicketRun = {
+	step: string;
+	/** The type of the Step the Run ran, which says what its log holds. */
+	stepType: "agent" | "shell";
+	/** As spelled in the header, like `ok` or `exit 1`; absent while open. */
+	outcome?: string;
+	/**
+	 * To the Run's end; an open one's to when it was read, or to its start
+	 * when the Ticket is lost, as the Goal's clock stops then too.
+	 */
+	durationMs: number;
+	/** Absent for a shell Step, and for an agent Step's until it ends. */
+	costUsd?: number;
+	/** Absolute path of the Run's log, for `readRunLog`. */
+	log: string;
 };
 
 /**
@@ -108,6 +124,19 @@ export function goalTickets(
 		);
 		const lost = markAndWord.mark === "lost";
 		const workflow = workflows.get(ticket.workflow);
+		const runs = ticket.runs.map(
+			(run): GoalTicketRun => ({
+				step: run.step,
+				// Only an agent Step's Run names its model.
+				stepType: run.model === undefined ? "shell" : "agent",
+				outcome: run.outcome,
+				durationMs:
+					(run.ended ?? (lost ? run.started : now)).getTime() -
+					run.started.getTime(),
+				costUsd: run.costUsd,
+				log: run.log,
+			}),
+		);
 		return {
 			number: ticketNumberText(ticket.ticket.number),
 			title: ticket.title,
@@ -116,15 +145,9 @@ export function goalTickets(
 			description: joinParagraphs(ticket.description),
 			steps: markSteps(workflow?.stepIds ?? [], ticket.runs, lost),
 			workflowProblem: workflow?.problem,
-			runCount: ticket.runs.length,
-			runsMs: ticket.runs.reduce(
-				(sum, run) =>
-					sum +
-					(run.ended ?? (lost ? run.started : now)).getTime() -
-					run.started.getTime(),
-				0,
-			),
-			costUsd: ticket.runs.reduce((sum, run) => sum + (run.costUsd ?? 0), 0),
+			runs,
+			runsMs: runs.reduce((sum, run) => sum + run.durationMs, 0),
+			costUsd: runs.reduce((sum, run) => sum + (run.costUsd ?? 0), 0),
 		};
 	});
 }

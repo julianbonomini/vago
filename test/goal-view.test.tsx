@@ -220,7 +220,7 @@ test("↑↓ change the Ticket pane to that Ticket, its text read as paragraphs"
 test("the footer names the Goal view's keys, and ? shows them all", async () => {
 	const { view, frame } = await openFirstGoal(await runningGoal());
 	expect(frame.trimEnd().split("\n").at(-1)).toMatch(
-		/^ ↑↓ Ticket {3}Esc Goals {3}\? Help {3}q Quit *$/,
+		/^ ↑↓ Ticket {3}←→ Run {3}Esc Goals {3}\? Help {3}q Quit *$/,
 	);
 
 	view.mockInput.pressKey("?");
@@ -296,7 +296,12 @@ const runOf = (
 // Ticket is `ticket`, held by a live `vago run` when `claimed`.
 async function openTicket(
 	ticket: string,
-	options: { claimed?: boolean; size?: { width: number; height: number } } = {},
+	options: {
+		claimed?: boolean;
+		size?: { width: number; height: number };
+		/** More files of the Project, keyed by path relative to its root. */
+		files?: Record<string, string>;
+	} = {},
 ): Promise<{ view: TestRendererSetup; frame: string }> {
 	const root = await makeProject({
 		".vago/workflows/small.toml": workflowOf(
@@ -308,6 +313,7 @@ async function openTicket(
 		".vago/workflows/design.toml": workflowOf("branch", "design", "review"),
 		".vago-goals/marks/goal.md": goalText("small"),
 		".vago-goals/marks/tickets/01-only.md": ticket,
+		...options.files,
 	});
 	if (options.claimed === true) await heldLock(root, "marks");
 	return openFirstGoal(root, options.size);
@@ -413,4 +419,106 @@ test("a Ticket whose Workflow can't be read says why in place of its Steps", asy
 	);
 
 	expect(frame).toContain('No Workflow "gone" in .vago/workflows/');
+});
+
+test("the Runs pane lists the selected Ticket's Runs and follows ↑↓", async () => {
+	const { view, frame } = await openFirstGoal(await stuckGoal());
+	expect(frame).toContain("─ Runs of Ticket 02 ─");
+	expect(frame).toMatch(/│ 1 {2}check +✗ exit 1 +31m 0s +\$0\.50 +│/);
+
+	view.mockInput.pressArrow("up");
+	const first = await frameWith(view, "─ Runs of Ticket 01 ─");
+	expect(first).toMatch(/│ 1 {2}implement +✓ ok +30m 0s +\$1\.25 +│/);
+	expect(first).not.toContain("exit 1");
+});
+
+// Goal `many` whose only Ticket, done, ran its Step `step-N` N times over,
+// N from 1 to `count`, each a minute long.
+function manyRunsGoal(count: number): Promise<string> {
+	return makeProject({
+		".vago-goals/many/goal.md": goalText("small"),
+		".vago-goals/many/tickets/01-only.md": ticketText("done", {
+			runs: Array.from({ length: count }, (_, index) =>
+				runOf(`step-${index + 1}`, index, index + 1),
+			),
+		}),
+	});
+}
+
+test("←→ pick the Run, the Runs pane scrolls to it and the Run pane shows it", async () => {
+	const { view } = await openFirstGoal(await manyRunsGoal(12));
+	const frame = await frameWith(view, "│ 12 step-12 ");
+	expect(frame).toContain("─ Run 12 · 01 step-12 ─");
+	expect(frame).not.toMatch(/│ 1 {2}step-1 /);
+	expect(isBold(spanOf(view, "step-12"))).toBe(true);
+	expect(isBold(spanOf(view, "step-11"))).toBe(false);
+
+	for (let press = 0; press < 11; press++) view.mockInput.pressArrow("left");
+	const first = await frameWith(view, "─ Run 1 · 01 step-1 ─");
+	expect(first).toMatch(/│ 1 {2}step-1 /);
+	expect(first).not.toMatch(/│ 12 step-12 /);
+
+	view.mockInput.pressArrow("left");
+	view.mockInput.pressArrow("right");
+	expect(await frameWith(view, "─ Run 2 · 01 step-2 ─")).toMatch(
+		/│ 2 {2}step-2 /,
+	);
+});
+
+test("a failed shell Run shows its log, and its border its outcome and time", async () => {
+	const { view } = await openTicket(
+		ticketText("stuck", { runs: [runOf("check", 5, 6, "exit 1")] }),
+		{
+			files: {
+				".vago-goals/marks/logs/check-1.log":
+					"$ bun run check\n\u001b[31merror\u001b[0m TS2322: Type 'string' is not assignable.\n  src/tickets.ts:88:3\nFound 1 error.\n",
+			},
+		},
+	);
+
+	const frame = await frameWith(view, "│ $ bun run check ");
+	expect(frame).toContain("─ Run 1 · 01 check ─");
+	expect(frame).toContain("│ error TS2322: Type 'string' is not assignable. ");
+	expect(frame).toContain("│   src/tickets.ts:88:3 ");
+	expect(frame).toContain("│ Found 1 error. ");
+	expect(frame).toMatch(/─ ✗ exit 1 · 1m 0s ─+┘/);
+});
+
+test("a shell log longer than the Run pane scrolls with the wheel", async () => {
+	const root = await manyRunsGoal(1);
+	const lines = Array.from({ length: 60 }, (_, index) => `line ${index + 1}`);
+	await Bun.write(
+		`${root}/.vago-goals/many/logs/step-1-1.log`,
+		`${lines.join("\n")}\n`,
+	);
+	const { view } = await openFirstGoal(root);
+	const frame = await frameWith(view, "│ line 1 ");
+	expect(frame).not.toContain("│ line 60 ");
+
+	const bottom = frame.split("\n").length - 4;
+	for (let turn = 0; turn < 60; turn++) {
+		await view.mockMouse.scroll(10, bottom, "down");
+	}
+	expect(await frameWith(view, "│ line 60 ")).not.toContain("│ line 1 ");
+});
+
+test("an agent Run's border has its cost", async () => {
+	const root = await makeProject({
+		".vago-goals/agent/goal.md": goalText("small"),
+		".vago-goals/agent/tickets/01-only.md": ticketText("done", {
+			runs: [{ ...runOf("review", 0, 9), costUsd: 0.83, model: "opus" }],
+		}),
+	});
+
+	const { frame } = await openFirstGoal(root);
+
+	expect(frame).toContain("─ Run 1 · 01 review ─");
+	expect(frame).toMatch(/─ ✓ ok · 9m 0s · \$0\.83 ─+┘/);
+});
+
+test("a Ticket with no Runs says so in both Run panes", async () => {
+	const { frame } = await openTicket(ticketText("ready"));
+
+	expect(frame).toContain("─ Runs of Ticket 01 ─");
+	expect(frame.split("No Run yet.").length - 1).toBe(2);
 });

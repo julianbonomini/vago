@@ -31,8 +31,8 @@ export type ThemeColors = {
  * waiting on a blocker, `pending` a Step not run yet in a Ticket's pass,
  * `bar` one cell of a progress bar, `solidBar` one cell of the heavier bar a
  * roomy Goal view's header draws, `sep` the mark between items on a line,
- * `cut` the end of a text cut short, and `upDown` the arrow keys as a footer
- * names them.
+ * `cut` the end of a text cut short, and `upDown` and `leftRight` the arrow
+ * keys as a footer names them.
  */
 export type ThemeSymbols = {
 	done: string;
@@ -48,6 +48,7 @@ export type ThemeSymbols = {
 	sep: string;
 	cut: string;
 	upDown: string;
+	leftRight: string;
 };
 
 /** How the selected row of a list is drawn. */
@@ -172,6 +173,27 @@ export function stepMarkLook(mark: GoalTicketStepMark): {
 	}
 }
 
+/**
+ * A Run's outcome with its symbol and colour: `✓ ok` ok, `✗ exit 1` and the
+ * like bad, and `? lost` warn. An open Run, its `outcome` undefined, is
+ * `● live` accent while its Goal's `standing` is running, and lost
+ * otherwise, as is one the next `vago run` ended `lost`.
+ */
+export function runMarkLook(
+	outcome: string | undefined,
+	standing: GoalStanding,
+): { text: string; fg: ColorInput } {
+	const { color, symbol } = theme();
+	if (outcome === undefined && standing === "running") {
+		return { text: `${symbol.running} live`, fg: color.accent };
+	}
+	if (outcome === undefined || outcome === "lost") {
+		return { text: `${symbol.lost} lost`, fg: color.warn };
+	}
+	if (outcome === "ok") return { text: `${symbol.done} ok`, fg: color.ok };
+	return { text: `${symbol.stuck} ${outcome}`, fg: color.bad };
+}
+
 // One orange accent on near-black, as the human picked in the prototype.
 const palette: ThemeColors = {
 	bg: "#0c0c0c",
@@ -217,6 +239,7 @@ const glyphs: ThemeSymbols = {
 	sep: "·",
 	cut: "…",
 	upDown: "↑↓",
+	leftRight: "←→",
 };
 
 const asciiGlyphs: ThemeSymbols = {
@@ -233,6 +256,7 @@ const asciiGlyphs: ThemeSymbols = {
 	sep: "|",
 	cut: "~",
 	upDown: "Up Dn",
+	leftRight: "Lt Rt",
 };
 
 const lines: BorderCharacters = {
