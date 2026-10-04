@@ -89,13 +89,22 @@ export type FixtureRun = {
 
 /**
  * A Ticket file with status `status` in a `+++` header, then `body`, a short
- * one by default. Each run gets a log path Vago never reads in these tests.
+ * one by default, going through `workflow` when given and the Goal's
+ * otherwise. Each run gets a log path Vago never reads in these tests.
  */
 export function ticketText(
 	status: "ready" | "running" | "done" | "stuck",
-	options: { runs?: FixtureRun[]; blockedBy?: number[]; body?: string } = {},
+	options: {
+		runs?: FixtureRun[];
+		blockedBy?: number[];
+		workflow?: string;
+		body?: string;
+	} = {},
 ): string {
 	const lines = [`status = "${status}"`];
+	if (options.workflow !== undefined) {
+		lines.push(`workflow = "${options.workflow}"`);
+	}
 	if (options.blockedBy !== undefined) {
 		lines.push(`blocked_by = [${options.blockedBy.join(", ")}]`);
 	}

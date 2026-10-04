@@ -160,41 +160,16 @@ export async function loadWorkflow(
 	root: string,
 	name: string,
 ): Promise<Workflow> {
+	const { path, checked } = await readWorkflowFile(root, name);
 	const vago = join(root, vagoFolderName);
-	const folder = join(vago, "workflows");
-	// node:fs because Bun.file can't tell whether a directory exists.
-	const names = existsSync(folder)
-		? (await readdir(folder))
-				.filter((fileName) => fileName.endsWith(".toml"))
-				.map((fileName) => fileName.slice(0, -".toml".length))
-				.sort()
-		: [];
-	// Looked up before any path is built, so a name like `../x` never reaches
-	// the filesystem.
-	if (!names.includes(name)) {
-		const held = names.length > 0 ? names.join(", ") : "no Workflows";
-		throw new Error(`No Workflow "${name}" in ${folder}/: it holds ${held}`);
-	}
-	const path = join(folder, `${name}.toml`);
-	const file = Bun.file(path);
-	let toml: unknown;
-	try {
-		toml = Bun.TOML.parse(await file.text());
-	} catch (error) {
-		throw new Error(`${path} is not valid TOML: ${error}`);
-	}
-	const checked = WorkflowFile.safeParse(toml);
-	if (!checked.success) {
-		throw new Error(`${path}: ${z.prettifyError(checked.error)}`);
-	}
 	const workflowIncludes = await readIncludes(
 		root,
 		path,
-		checked.data.include ?? {},
+		checked.include ?? {},
 		"the Workflow",
 	);
 	const steps: Step[] = [];
-	for (const step of checked.data.steps) {
+	for (const step of checked.steps) {
 		if (steps.some(({ id }) => id === step.id)) {
 			throw new Error(`${path}: two steps have id "${step.id}"`);
 		}
@@ -211,8 +186,8 @@ export async function loadWorkflow(
 			);
 			continue;
 		}
-		const harness = step.harness ?? checked.data.harness;
-		const model = step.model ?? checked.data.model;
+		const harness = step.harness ?? checked.harness;
+		const model = step.model ?? checked.model;
 		if (harness === undefined || model === undefined) {
 			throw new Error(
 				`${path}: agent step "${step.id}" needs a harness and a model`,
@@ -251,11 +226,9 @@ export async function loadWorkflow(
 				promptTemplate,
 				harness,
 				model,
-				args: Object.freeze(step.args ?? checked.data.args ?? []),
+				args: Object.freeze(step.args ?? checked.args ?? []),
 				idleTimeoutMs:
-					step.idle_timeout ??
-					checked.data.idle_timeout ??
-					defaultIdleTimeoutMs,
+					step.idle_timeout ?? checked.idle_timeout ?? defaultIdleTimeoutMs,
 				includes: Object.freeze(includes),
 				when,
 			}),
@@ -264,6 +237,57 @@ export async function loadWorkflow(
 	// Frozen, with the prompts' text inside, so a Goal runs every Ticket with
 	// the Workflow it started with even if an agent edits `.vago/`.
 	return Object.freeze({ steps: Object.freeze(steps) });
+}
+
+/**
+ * The `id` of each Step of Workflow `name` of the Project at `root`, in the
+ * order they run, read from its TOML alone, so it costs one small file read
+ * and no prompt or include file is opened or checked. Throws what
+ * `loadWorkflow` throws for a missing Workflow, bad TOML or a schema it
+ * doesn't take.
+ */
+export async function readWorkflowStepIds(
+	root: string,
+	name: string,
+): Promise<string[]> {
+	const { checked } = await readWorkflowFile(root, name);
+	return checked.steps.map(({ id }) => id);
+}
+
+// The path of Workflow `name`'s TOML and its content checked against the
+// schema, with what `loadWorkflow` throws for a missing Workflow, bad TOML or
+// a schema it doesn't take.
+async function readWorkflowFile(
+	root: string,
+	name: string,
+): Promise<{ path: string; checked: z.infer<typeof WorkflowFile> }> {
+	const folder = join(root, vagoFolderName, "workflows");
+	// node:fs because Bun.file can't tell whether a directory exists.
+	const names = existsSync(folder)
+		? (await readdir(folder))
+				.filter((fileName) => fileName.endsWith(".toml"))
+				.map((fileName) => fileName.slice(0, -".toml".length))
+				.sort()
+		: [];
+	// Looked up before any path is built, so a name like `../x` never reaches
+	// the filesystem.
+	if (!names.includes(name)) {
+		const held = names.length > 0 ? names.join(", ") : "no Workflows";
+		throw new Error(`No Workflow "${name}" in ${folder}/: it holds ${held}`);
+	}
+	const path = join(folder, `${name}.toml`);
+	const file = Bun.file(path);
+	let toml: unknown;
+	try {
+		toml = Bun.TOML.parse(await file.text());
+	} catch (error) {
+		throw new Error(`${path} is not valid TOML: ${error}`);
+	}
+	const checked = WorkflowFile.safeParse(toml);
+	if (!checked.success) {
+		throw new Error(`${path}: ${z.prettifyError(checked.error)}`);
+	}
+	return { path, checked: checked.data };
 }
 
 // Returns each slot's name and its file's text, in the order `slots` lists

@@ -11,7 +11,7 @@ import {
 } from "@opentui/core";
 import type { TicketStatus } from "../tickets/tickets.ts";
 import type { GoalStanding } from "./goal-rows.ts";
-import type { GoalTicketMark } from "./goal-tickets.ts";
+import type { GoalTicketMark, GoalTicketStepMark } from "./goal-tickets.ts";
 
 /** The colour tokens. */
 export type ThemeColors = {
@@ -28,10 +28,11 @@ export type ThemeColors = {
 /**
  * The symbols. The keys for the six Goal standings are the standing words,
  * so `symbol[standing]` is a standing's symbol. `blocked` is a ready Ticket
- * waiting on a blocker, `bar` one cell of a progress bar, `solidBar` one
- * cell of the heavier bar a roomy Goal view's header draws, `sep` the mark
- * between items on a line, `cut` the end of a text cut short, and `upDown`
- * the arrow keys as a footer names them.
+ * waiting on a blocker, `pending` a Step not run yet in a Ticket's pass,
+ * `bar` one cell of a progress bar, `solidBar` one cell of the heavier bar a
+ * roomy Goal view's header draws, `sep` the mark between items on a line,
+ * `cut` the end of a text cut short, and `upDown` the arrow keys as a footer
+ * names them.
  */
 export type ThemeSymbols = {
 	done: string;
@@ -41,6 +42,7 @@ export type ThemeSymbols = {
 	lost: string;
 	broken: string;
 	blocked: string;
+	pending: string;
 	bar: string;
 	solidBar: string;
 	sep: string;
@@ -144,6 +146,32 @@ export function ticketMarkStyle(mark: GoalTicketMark): {
 		: { fg: goalColor(mark), dim: false };
 }
 
+/**
+ * The symbol and span style of a Step's mark in the Ticket pane: done `✓`
+ * ok, current `●` accent, failed `✗` bad, lost `?` warn, pending `·` dim.
+ */
+export function stepMarkLook(mark: GoalTicketStepMark): {
+	symbol: string;
+	style: { fg: ColorInput; dim: boolean };
+} {
+	const { color, symbol, dimSpan } = theme();
+	switch (mark) {
+		case "done":
+			return { symbol: symbol.done, style: { fg: color.ok, dim: false } };
+		case "current":
+			return {
+				symbol: symbol.running,
+				style: { fg: color.accent, dim: false },
+			};
+		case "failed":
+			return { symbol: symbol.stuck, style: { fg: color.bad, dim: false } };
+		case "lost":
+			return { symbol: symbol.lost, style: { fg: color.warn, dim: false } };
+		case "pending":
+			return { symbol: symbol.pending, style: dimSpan };
+	}
+}
+
 // One orange accent on near-black, as the human picked in the prototype.
 const palette: ThemeColors = {
 	bg: "#0c0c0c",
@@ -183,6 +211,7 @@ const glyphs: ThemeSymbols = {
 	lost: "?",
 	broken: "!",
 	blocked: "◌",
+	pending: "·",
 	bar: "━",
 	solidBar: "█",
 	sep: "·",
@@ -198,6 +227,7 @@ const asciiGlyphs: ThemeSymbols = {
 	lost: "?",
 	broken: "!",
 	blocked: "-",
+	pending: ".",
 	bar: "=",
 	solidBar: "#",
 	sep: "|",

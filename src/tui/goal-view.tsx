@@ -10,7 +10,7 @@ import {
 import { type JSX, useKeyboard, useTerminalDimensions } from "@opentui/solid";
 import { createEffect, createSignal, For, Show } from "solid-js";
 import { type GoalRow, ticketTotal } from "./goal-rows.ts";
-import type { GoalTicket } from "./goal-tickets.ts";
+import type { GoalTicket, GoalTicketStep } from "./goal-tickets.ts";
 import {
 	type FooterKey,
 	type HelpKey,
@@ -18,7 +18,7 @@ import {
 	KeyHelp,
 } from "./screen-keys.tsx";
 import { fitText, wrapText } from "./text-fit.ts";
-import { goalColor, theme, ticketMarkStyle } from "./theme.ts";
+import { goalColor, stepMarkLook, theme, ticketMarkStyle } from "./theme.ts";
 import { TicketBar } from "./ticket-bar.tsx";
 import { duration, money, tokenCount } from "./time-and-money.ts";
 
@@ -301,17 +301,26 @@ function TicketsPane(props: {
 }
 
 // The selected Ticket, `width` columns wide with its border: its title,
-// the Tickets it comes after, and its text wrapped to the pane, scrolled by
-// the wheel.
+// the Tickets it comes after, its Workflow's Steps marked, or why the
+// Workflow can't be read, and its text wrapped to the pane, scrolled by the
+// wheel. Its Runs' totals sit on its border.
 function TicketPane(props: { ticket: GoalTicket; width: number }): JSX.Element {
-	const { color, border, dimText } = theme();
+	const { color, symbol, border, dimText } = theme();
 	const inner = () => props.width - paneEdges;
+	const totals = () =>
+		[
+			`${props.ticket.runCount} ${props.ticket.runCount === 1 ? "Run" : "Runs"}`,
+			duration(props.ticket.runsMs),
+			money(props.ticket.costUsd),
+		].join(` ${symbol.sep} `);
 	return (
 		<box
 			border
 			customBorderChars={border}
 			borderColor={color.border}
 			title={` Ticket ${props.ticket.number} `}
+			bottomTitle={` ${totals()} `}
+			bottomTitleAlignment="right"
 			paddingLeft={1}
 			paddingRight={1}
 			flexGrow={1}
@@ -334,6 +343,34 @@ function TicketPane(props: { ticket: GoalTicket; width: number }): JSX.Element {
 				</text>
 			</Show>
 			<box height={1} flexShrink={0} />
+			<For each={stepLines(props.ticket.steps, inner())}>
+				{(line) => (
+					<text fg={color.fg} flexShrink={0} wrapMode="none">
+						<For each={line}>
+							{(step, index) => {
+								const look = stepMarkLook(step.mark);
+								return (
+									<>
+										<Show when={index() > 0}>{stepGap}</Show>
+										<span style={look.style}>{look.symbol}</span>
+										<span style={{ fg: color.fg }}>{` ${step.id}`}</span>
+									</>
+								);
+							}}
+						</For>
+					</text>
+				)}
+			</For>
+			<Show when={props.ticket.workflowProblem !== undefined}>
+				<For each={wrapText(props.ticket.workflowProblem ?? "", inner())}>
+					{(line) => (
+						<text {...dimText} flexShrink={0} wrapMode="none">
+							{line}
+						</text>
+					)}
+				</For>
+			</Show>
+			<box height={1} flexShrink={0} />
 			<scrollbox flexGrow={1} verticalScrollbarOptions={{ visible: false }}>
 				<For
 					each={props.ticket.description.flatMap((paragraph) =>
@@ -349,4 +386,31 @@ function TicketPane(props: { ticket: GoalTicket; width: number }): JSX.Element {
 			</scrollbox>
 		</box>
 	);
+}
+
+// The space between two marked Steps on a line.
+const stepGap = "  ";
+
+// `steps` broken into lines of at most `width` columns between Steps, each
+// Step its mark, a space and its id. A Step wider than `width` gets a line
+// of its own, cut by the pane.
+function stepLines(steps: GoalTicketStep[], width: number): GoalTicketStep[][] {
+	const lines: GoalTicketStep[][] = [];
+	let line: GoalTicketStep[] = [];
+	let lineWidth = 0;
+	for (const step of steps) {
+		const stepWidth = 2 + Bun.stringWidth(step.id);
+		const joined =
+			line.length === 0 ? stepWidth : lineWidth + stepGap.length + stepWidth;
+		if (line.length > 0 && joined > width) {
+			lines.push(line);
+			line = [];
+			lineWidth = stepWidth;
+		} else {
+			lineWidth = joined;
+		}
+		line.push(step);
+	}
+	if (line.length > 0) lines.push(line);
+	return lines;
 }

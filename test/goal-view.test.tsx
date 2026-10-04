@@ -131,6 +131,7 @@ const titled = (
 // waiting on it and Ticket 04 ready.
 async function runningGoal(): Promise<string> {
 	const root = await makeProject({
+		".vago/workflows/small.toml": workflowOf("implement", "review"),
 		".vago-goals/run/goal.md": goalText("small"),
 		".vago-goals/run/tickets/01-first.md": titled("done", "First"),
 		".vago-goals/run/tickets/02-second.md": titled("running", "Second", {
@@ -202,11 +203,12 @@ test("↑↓ change the Ticket pane to that Ticket, its text read as paragraphs"
 	const lines = third.split("\n");
 	const title = lines.findIndex((line) => line.includes("│ Third "));
 	expect(lines[title + 1]).toContain("│ after 02 ");
-	expect(lines[title + 3]).toContain(
+	expect(lines[title + 3]).toContain("│ · implement  · review ");
+	expect(lines[title + 5]).toContain(
 		"│ The first paragraph is hard-wrapped here. ",
 	);
-	expect(lines[title + 4]).toMatch(/│ +│$/);
-	expect(lines[title + 5]).toContain("│ A second one. ");
+	expect(lines[title + 6]).toMatch(/│ +│$/);
+	expect(lines[title + 7]).toContain("│ A second one. ");
 	expect(third).toContain(" 3/4 ");
 
 	view.mockInput.pressKey("k");
@@ -267,4 +269,148 @@ test("under NO_COLOR a blocked Ticket's mark and state word stay dim", async () 
 	} finally {
 		delete process.env.NO_COLOR;
 	}
+});
+
+// A Workflow of shell Steps named `ids`, in that order.
+const workflowOf = (...ids: string[]) =>
+	ids
+		.map((id) => `[[steps]]\nid = "${id}"\ntype = "shell"\nrun = "true"\n`)
+		.join("\n");
+
+// A Run of `step` from minute `from` to minute `to` past 10:00, open without
+// `to`.
+const runOf = (
+	step: string,
+	from: number,
+	to?: number,
+	outcome = "ok",
+): FixtureRun => ({
+	step,
+	started: new Date(Date.UTC(2026, 9, 1, 10, from)),
+	...(to === undefined
+		? {}
+		: { ended: new Date(Date.UTC(2026, 9, 1, 10, to)), outcome }),
+});
+
+// The Goal view of Goal `marks`, going through Workflow `small`, whose only
+// Ticket is `ticket`, held by a live `vago run` when `claimed`.
+async function openTicket(
+	ticket: string,
+	options: { claimed?: boolean; size?: { width: number; height: number } } = {},
+): Promise<{ view: TestRendererSetup; frame: string }> {
+	const root = await makeProject({
+		".vago/workflows/small.toml": workflowOf(
+			"branch",
+			"implement",
+			"check",
+			"merge",
+		),
+		".vago/workflows/design.toml": workflowOf("branch", "design", "review"),
+		".vago-goals/marks/goal.md": goalText("small"),
+		".vago-goals/marks/tickets/01-only.md": ticket,
+	});
+	if (options.claimed === true) await heldLock(root, "marks");
+	return openFirstGoal(root, options.size);
+}
+
+test("a done Ticket's Steps are all done, and its border has its totals", async () => {
+	const { frame } = await openTicket(
+		ticketText("done", {
+			runs: [
+				{ ...runOf("branch", 0, 1), costUsd: 0 },
+				{ ...runOf("implement", 1, 21), costUsd: 4.5 },
+				runOf("check", 21, 22),
+				{ ...runOf("merge", 22, 23), costUsd: 0.09 },
+			],
+		}),
+	);
+
+	expect(frame).toContain("│ ✓ branch  ✓ implement  ✓ check  ✓ merge ");
+	expect(frame).toContain(" 4 Runs · 23m 0s · $4.59 ─");
+});
+
+test("a running Ticket's open Step is current and the Steps after it pending", async () => {
+	const { frame } = await openTicket(
+		ticketText("running", {
+			runs: [runOf("branch", 0, 1), runOf("implement", 1)],
+		}),
+		{ claimed: true },
+	);
+
+	expect(frame).toContain("│ ✓ branch  ● implement  · check  · merge ");
+	expect(frame).toMatch(/ 2 Runs · \d+[dhm] \d+[hms] · \$0\.00 ─/);
+});
+
+test("a stuck Ticket's failed Step is marked failed", async () => {
+	const { frame } = await openTicket(
+		ticketText("stuck", {
+			runs: [
+				runOf("branch", 0, 1),
+				runOf("implement", 1, 5),
+				runOf("check", 5, 6, "exit 1"),
+			],
+		}),
+	);
+
+	expect(frame).toContain("│ ✓ branch  ✓ implement  ✗ check  · merge ");
+});
+
+test("a lost Goal's open Step is marked lost", async () => {
+	const { frame } = await openTicket(
+		ticketText("running", {
+			runs: [runOf("branch", 0, 1), runOf("implement", 1)],
+		}),
+	);
+
+	expect(frame).toContain("│ ✓ branch  ? implement  · check  · merge ");
+	expect(frame).toContain(" 2 Runs · 1m 0s · $0.00 ─");
+});
+
+test("a Ticket that started over is marked from its last pass only", async () => {
+	const { frame } = await openTicket(
+		ticketText("running", {
+			runs: [
+				runOf("branch", 0, 1),
+				runOf("implement", 1, 5),
+				runOf("check", 5, 6, "permission-denied"),
+				runOf("branch", 7, 8),
+				runOf("implement", 8),
+			],
+		}),
+		{ claimed: true },
+	);
+
+	expect(frame).toContain("│ ✓ branch  ● implement  · check  · merge ");
+	expect(frame).toContain(" 5 Runs ");
+});
+
+test("a Ticket with its own Workflow shows that Workflow's Steps", async () => {
+	const { frame } = await openTicket(
+		ticketText("ready", { workflow: "design" }),
+	);
+
+	expect(frame).toContain("│ · branch  · design  · review ");
+	expect(frame).toContain(" 0 Runs · 0s · $0.00 ─");
+});
+
+test("the Steps line wraps when the Ticket pane is narrow", async () => {
+	const { frame } = await openTicket(ticketText("ready"), {
+		size: { width: 50, height: 24 },
+	});
+
+	const lines = frame.split("\n");
+	const first = lines.findIndex((line) =>
+		line.includes("· branch  · implement"),
+	);
+	expect(lines[first]).not.toContain("check");
+	expect(lines[first + 1]).toContain("│ · check  · merge ");
+});
+
+test("a Ticket whose Workflow can't be read says why in place of its Steps", async () => {
+	const { frame } = await openTicket(
+		ticketText("ready", { workflow: "gone" }),
+		{ size: { width: 160, height: 30 } },
+	);
+
+	expect(frame).toContain('No Workflow "gone" in .vago/workflows/');
 });

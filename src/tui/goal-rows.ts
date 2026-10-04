@@ -13,7 +13,12 @@ import {
 	type TicketStatus,
 	ticketNumberText,
 } from "../tickets/tickets.ts";
-import { type GoalTicket, goalTickets } from "./goal-tickets.ts";
+import { readWorkflowStepIds } from "../workflow.ts";
+import {
+	type GoalTicket,
+	type GoalWorkflowSteps,
+	goalTickets,
+} from "./goal-tickets.ts";
 import { joinParagraphs } from "./text-fit.ts";
 
 /**
@@ -107,14 +112,23 @@ export async function readGoalRows(
 			try {
 				state = await readGoal(root, goal);
 			} catch (error) {
-				const message = (error instanceof Error ? error.message : `${error}`)
-					.replaceAll(`${root}${sep}`, "")
-					.trim();
-				return { row: brokenRow(goal, message), last: undefined };
+				return {
+					row: brokenRow(goal, projectMessage(error, root)),
+					last: undefined,
+				};
 			}
 			const claimed = await isGoalClaimed(root, goal);
 			const last = lastActivity(state);
-			return { row: goalRow(goal, state, claimed, now, last), last };
+			const tickets = goalTickets(
+				state,
+				claimed,
+				await readWorkflows(root, state),
+				now,
+			);
+			return {
+				row: goalRow(goal, state, claimed, tickets, now, last),
+				last,
+			};
 		}),
 	);
 	// A Goal with no activity sorts after the rest of its standing, and the
@@ -127,6 +141,34 @@ export async function readGoalRows(
 			(a.row.goal < b.row.goal ? -1 : 1),
 	);
 	return read.map(({ row }) => row);
+}
+
+// The Steps of each Workflow the Goal's Tickets go through, by name.
+async function readWorkflows(
+	root: string,
+	state: GoalState,
+): Promise<Map<string, GoalWorkflowSteps>> {
+	const names = [...new Set(state.tickets.map(({ workflow }) => workflow))];
+	return new Map(
+		await Promise.all(
+			names.map(async (name): Promise<[string, GoalWorkflowSteps]> => {
+				try {
+					const stepIds = await readWorkflowStepIds(root, name);
+					return [name, { stepIds, problem: undefined }];
+				} catch (error) {
+					return [name, { stepIds: [], problem: projectMessage(error, root) }];
+				}
+			}),
+		),
+	);
+}
+
+// What `error` says, its paths relative to the Project at `root`, so it
+// fits the screen.
+function projectMessage(error: unknown, root: string): string {
+	return (error instanceof Error ? error.message : `${error}`)
+		.replaceAll(`${root}${sep}`, "")
+		.trim();
 }
 
 /** The header line's counts of the Goals of a Project and their spend. */
@@ -184,6 +226,7 @@ function goalRow(
 	goal: string,
 	state: GoalState,
 	claimed: boolean,
+	tickets: GoalTicket[],
 	now: Date,
 	last: Date | undefined,
 ): GoalRow {
@@ -217,7 +260,7 @@ function goalRow(
 		workflow: state.workflow,
 		sinceLastActivityMs:
 			last === undefined ? undefined : now.getTime() - last.getTime(),
-		tickets: goalTickets(state, claimed),
+		tickets,
 		latestRuns: state.tickets
 			.flatMap(({ ticket, runs }) =>
 				runs.map((run) => ({
