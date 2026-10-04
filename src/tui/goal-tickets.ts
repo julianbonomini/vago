@@ -60,8 +60,11 @@ export type GoalTicket = {
 /** One Run of a Ticket as the Runs pane lists it and the Run pane shows it. */
 export type GoalTicketRun = {
 	step: string;
-	/** The type of the Step the Run ran, which says what its log holds. */
-	stepType: "agent" | "shell";
+	/**
+	 * The Harness an agent Step's Run ran on, whose stream its log holds;
+	 * absent for a shell Step's, whose log is text.
+	 */
+	harness?: string;
 	/** As spelled in the header, like `ok` or `exit 1`; absent while open. */
 	outcome?: string;
 	/**
@@ -127,8 +130,7 @@ export function goalTickets(
 		const runs = ticket.runs.map(
 			(run): GoalTicketRun => ({
 				step: run.step,
-				// Only an agent Step's Run names its model.
-				stepType: run.model === undefined ? "shell" : "agent",
+				harness: run.harness,
 				outcome: run.outcome,
 				durationMs:
 					(run.ended ?? (lost ? run.started : now)).getTime() -

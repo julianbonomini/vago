@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { TextAttributes } from "@opentui/core";
+import { join } from "node:path";
+import { RGBA, TextAttributes } from "@opentui/core";
 import type { TestRendererSetup } from "@opentui/core/testing";
 import {
 	type FixtureRun,
@@ -93,6 +94,15 @@ function spanOf(view: TestRendererSetup, text: string) {
 		if (span !== undefined) return span;
 	}
 	throw new Error(`No span is ${text}`);
+}
+
+// The first span whose text holds `text`.
+function spanWith(view: TestRendererSetup, text: string) {
+	for (const line of view.captureSpans().lines) {
+		const span = line.spans.find((span) => span.text.includes(text));
+		if (span !== undefined) return span;
+	}
+	throw new Error(`No span holds ${text}`);
 }
 
 const isBold = (span: { attributes: number }) =>
@@ -514,6 +524,125 @@ test("an agent Run's border has its cost", async () => {
 
 	expect(frame).toContain("─ Run 1 · 01 review ─");
 	expect(frame).toMatch(/─ ✓ ok · 9m 0s · \$0\.83 ─+┘/);
+});
+
+// The Goal view of Goal `agent`, `size`, whose only Ticket's one implement
+// Run ended `outcome` and logged the recorded Claude Code stream `fixture`,
+// rewritten by `edit` with the Project's root.
+async function openAgentRun(
+	fixture: string,
+	options: {
+		outcome?: string;
+		size?: { width: number; height: number };
+		edit?: (log: string, root: string) => string;
+	} = {},
+): Promise<{ view: TestRendererSetup; frame: string }> {
+	const root = await makeProject({
+		".vago-goals/agent/goal.md": goalText("small"),
+		".vago-goals/agent/tickets/01-only.md": ticketText("done", {
+			runs: [
+				{
+					...runOf("implement", 0, 9, options.outcome),
+					costUsd: 0.09,
+					model: "opus",
+				},
+			],
+		}),
+	});
+	const log = await Bun.file(join(import.meta.dir, "fixtures", fixture)).text();
+	await Bun.write(
+		`${root}/.vago-goals/agent/logs/implement-1.jsonl`,
+		options.edit?.(log, root) ?? log,
+	);
+	return openFirstGoal(root, options.size);
+}
+
+test("a finished agent Run shows its start, its tool lines under its prose and its end", async () => {
+	const { view } = await openAgentRun("claude-code-parallel-calls.jsonl", {
+		size: { width: 120, height: 60 },
+	});
+
+	const frame = await frameWith(view, "Run finished");
+	const lines = frame.split("\n");
+	const row = (text: string) => lines.findIndex((line) => line.includes(text));
+	expect(frame).toContain("│ ── Session started · claude-sonnet-5-5 ── ");
+	expect(frame).toContain("│     Read 3 files greet.ts, notes.md, bye.ts ");
+	expect(frame).toContain("│     Execute ×4 Force-push main ");
+	expect(frame).toContain("│       ✗ Exit code 128 ");
+	expect(frame).toContain("│  ⁘ Read and line counts all succeeded ");
+	expect(frame).toContain(
+		"│  ✓ Run finished   14s   8 turns   104.2k tokens   $0.09 ",
+	);
+	// A blank line around the divider and the prose.
+	expect(lines[row("Session started") + 1]).toMatch(/^│ +│/);
+	expect(lines[row("⁘ Read and line") - 1]).toMatch(/^│ +│/);
+	expect(isBold(spanOf(view, "Execute ×4"))).toBe(true);
+	expect(isBold(spanOf(view, "✓ Run finished"))).toBe(true);
+	// The prose and the end stand out on a lighter background.
+	const raised = RGBA.fromHex("#1b1b1b");
+	expect(spanWith(view, "Read and line counts").bg.equals(raised)).toBe(true);
+	expect(spanOf(view, "✓ Run finished").bg.equals(raised)).toBe(true);
+	expect(spanWith(view, "Session started").bg.equals(raised)).toBe(false);
+});
+
+test("one tool call shows its size, with paths in the main checkout relative to the Project", async () => {
+	const { view } = await openAgentRun("claude-code-tool-calls.jsonl", {
+		size: { width: 120, height: 160 },
+		edit: (log, root) =>
+			log.replaceAll(
+				"/home/user/.vago/worktrees/project-1a2b3c4d/hello/greet.ts",
+				`${root}/greet.ts`,
+			),
+	});
+
+	const frame = await frameWith(view, "Edit greet.ts");
+	expect(frame).toContain("│     Read greet.ts (3 lines) ");
+	expect(frame).toContain("│     Edit greet.ts (+1 −1) ");
+	expect(frame).toContain("│     Write bye.ts (3 lines) ");
+	expect(frame).toContain("│     Execute cat missing.txt ");
+	expect(frame).not.toContain("/greet.ts");
+});
+
+test("a failed agent Run's end says how it ended", async () => {
+	const { view } = await openAgentRun("claude-code-max-turns.jsonl", {
+		outcome: "error_max_turns",
+	});
+
+	expect(await frameWith(view, "Run ended")).toContain(
+		"│  ✗ Run ended: error_max_turns   3s   2 turns   22.9k tokens   $0.01 ",
+	);
+});
+
+test("a refused tool call shows the tool and why", async () => {
+	const { view } = await openAgentRun("claude-code-safety-check.jsonl", {
+		outcome: "permission-denied",
+	});
+
+	expect(await frameWith(view, "Denied")).toContain(
+		"│       ✗ Denied Bash: This shell -c script runs rm and could not be checked ",
+	);
+});
+
+test("a prose message past 40 lines is cut, its headings bold", async () => {
+	const { view } = await openAgentRun("claude-code-long-prose.jsonl", {
+		size: { width: 160, height: 240 },
+	});
+
+	const frame = await frameWith(view, "more lines");
+	expect(frame).toContain("│  ⁘ 1. Concerns ");
+	expect(frame).toContain(
+		"│    Design A: the spelling and the total as functions on their owners ",
+	);
+	expect(frame).toContain("│    … 102 more lines ");
+	expect(
+		isBold(
+			spanOf(
+				view,
+				"Design A: the spelling and the total as functions on their owners",
+			),
+		),
+	).toBe(true);
+	expect(isBold(spanOf(view, "1. Concerns"))).toBe(false);
 });
 
 test("a Ticket with no Runs says so in both Run panes", async () => {

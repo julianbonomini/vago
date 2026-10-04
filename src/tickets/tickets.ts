@@ -70,7 +70,12 @@ export type TicketRun = {
 	outcome?: string;
 	/** Absolute path of the Run's log. */
 	log: string;
-	/** The model an agent Step ran on. Absent for a shell Step. */
+	/**
+	 * The Harness an agent Step ran on, whose stream the log holds. Absent
+	 * for a shell Step, whose log is text.
+	 */
+	harness?: string;
+	/** The model an agent Step ran on. Absent like `harness`. */
 	model?: string;
 	/** What the Harness reported the Run used. Absent like `costUsd`. */
 	tokens?: { input: number; output: number };
@@ -205,6 +210,7 @@ export async function readGoal(root: string, goal: string): Promise<GoalState> {
 			ended: run.ended,
 			outcome: run.outcome,
 			log: runLogPath(ticket, run.log),
+			harness: run.harness,
 			model: run.model,
 			tokens: run.tokens,
 			costUsd: run.cost_usd,

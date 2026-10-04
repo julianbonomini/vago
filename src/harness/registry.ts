@@ -39,21 +39,34 @@ export type RunActivity = {
 export type RunActivityItem =
 	| { kind: "session-start"; model: string }
 	| { kind: "prose"; lines: RunProseLine[] }
-	/** Consecutive calls of one verb, folded into one item. */
-	| { kind: "tool-calls"; verb: string; calls: RunToolCall[] }
+	| RunToolCalls
 	/** A tool call's result that failed; results that didn't are left out. */
 	| { kind: "failed-result"; firstLine: string }
 	| { kind: "denied"; tool: string; reason: string }
-	| {
-			kind: "session-end";
-			/** The Harness's word for how the session failed; absent when it finished. */
-			failure?: string;
-			durationMs?: number;
-			turns?: number;
-			/** Input, cached input included, and output. */
-			tokens?: number;
-			costUsd?: number;
-	  };
+	| RunSessionEnd;
+
+/**
+ * Consecutive calls of one verb, folded into one item. `files` says each
+ * call's subject is a file's path.
+ */
+export type RunToolCalls = {
+	kind: "tool-calls";
+	verb: string;
+	files: boolean;
+	calls: RunToolCall[];
+};
+
+/** How the session ended, with the numbers it reported. */
+export type RunSessionEnd = {
+	kind: "session-end";
+	/** The Harness's word for how the session failed; absent when it finished. */
+	failure?: string;
+	durationMs?: number;
+	turns?: number;
+	/** Input, cached input included, and output. */
+	tokens?: number;
+	costUsd?: number;
+};
 
 /**
  * One line of the agent's prose, its Markdown emphasis and code marks
@@ -62,9 +75,10 @@ export type RunActivityItem =
 export type RunProseLine = { text: string; heading: boolean };
 
 /**
- * What a tool call worked on, such as a path relative to the session's
- * folder or a command's description, and its size when the call has one,
- * such as "120 lines" or "+3 −1".
+ * What a tool call worked on, such as a file's path, relative to the Project
+ * when it is in the Project or the Goal's worktree, or a command's
+ * description, and its size when the call has one, such as "120 lines" or
+ * "+3 −1".
  */
 export type RunToolCall = { subject: string; size?: string };
 
@@ -86,11 +100,12 @@ export type Harness = {
 	 */
 	readLine(line: string, command: readonly string[]): HarnessSessionReport;
 	/**
-	 * The activity of the session that streamed `lines`, the stream so far.
-	 * Works on a session still running: a line that isn't a whole event it
-	 * knows, such as one half written, gives nothing.
+	 * The activity of the session that streamed `lines`, the stream so far,
+	 * in a Goal of the Project at `root`. Works on a session still running:
+	 * a line that isn't a whole event it knows, such as one half written,
+	 * gives nothing.
 	 */
-	runActivity(lines: readonly string[]): RunActivity;
+	runActivity(lines: readonly string[], root: string): RunActivity;
 	/** The shell command the human runs to resume session `sessionId`. */
 	resumeHint(sessionId: string): string;
 };

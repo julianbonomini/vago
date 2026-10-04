@@ -23,6 +23,10 @@ export type ThemeColors = {
 	ok: ColorInput;
 	bad: ColorInput;
 	warn: ColorInput;
+	/** Behind a block that stands out, a step lighter than the screen. */
+	raised: ColorInput;
+	/** Text brighter than `fg`, for what the human reads first. */
+	bright: ColorInput;
 };
 
 /**
@@ -31,8 +35,10 @@ export type ThemeColors = {
  * waiting on a blocker, `pending` a Step not run yet in a Ticket's pass,
  * `bar` one cell of a progress bar, `solidBar` one cell of the heavier bar a
  * roomy Goal view's header draws, `sep` the mark between items on a line,
- * `cut` the end of a text cut short, and `upDown` and `leftRight` the arrow
- * keys as a footer names them.
+ * `cut` the end of a text cut short, `prose` the mark before the agent's
+ * prose, `times` the mark of a count, like `×5`, `rule` one cell of a
+ * divider, and `upDown` and `leftRight` the arrow keys as a footer names
+ * them.
  */
 export type ThemeSymbols = {
 	done: string;
@@ -47,6 +53,9 @@ export type ThemeSymbols = {
 	solidBar: string;
 	sep: string;
 	cut: string;
+	prose: string;
+	times: string;
+	rule: string;
 	upDown: string;
 	leftRight: string;
 };
@@ -204,6 +213,8 @@ const palette: ThemeColors = {
 	ok: "#8fae8b",
 	bad: "#e5736b",
 	warn: "#e0b357",
+	raised: "#1b1b1b",
+	bright: "#f0f0f0",
 };
 
 // Secondary text, which takes no token of its own.
@@ -223,6 +234,8 @@ const noPalette: ThemeColors = {
 	ok: terminalForeground,
 	bad: terminalForeground,
 	warn: terminalForeground,
+	raised: terminalBackground,
+	bright: terminalForeground,
 };
 
 const glyphs: ThemeSymbols = {
@@ -238,6 +251,9 @@ const glyphs: ThemeSymbols = {
 	solidBar: "█",
 	sep: "·",
 	cut: "…",
+	prose: "⁘",
+	times: "×",
+	rule: "─",
 	upDown: "↑↓",
 	leftRight: "←→",
 };
@@ -255,6 +271,9 @@ const asciiGlyphs: ThemeSymbols = {
 	solidBar: "#",
 	sep: "|",
 	cut: "~",
+	prose: ">",
+	times: "x",
+	rule: "-",
 	upDown: "Up Dn",
 	leftRight: "Lt Rt",
 };

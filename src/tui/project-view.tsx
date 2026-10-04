@@ -194,6 +194,7 @@ export function ProjectView(props: { root: string }): JSX.Element {
 			<Show when={openedRow()}>
 				{(row: () => GoalRow) => (
 					<GoalView
+						root={props.root}
 						row={row()}
 						position={selectedIndex() + 1}
 						count={(rows() ?? []).length}

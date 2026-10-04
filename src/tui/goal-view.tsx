@@ -16,6 +16,11 @@ import {
 	For,
 	Show,
 } from "solid-js";
+import {
+	findHarness,
+	knownHarness,
+	type RunActivity,
+} from "../harness/registry.ts";
 import { readRunLog } from "../tickets/tickets.ts";
 import { type GoalRow, type GoalStanding, ticketTotal } from "./goal-rows.ts";
 import type {
@@ -23,6 +28,7 @@ import type {
 	GoalTicketRun,
 	GoalTicketStep,
 } from "./goal-tickets.ts";
+import { RunActivityLines } from "./run-activity.tsx";
 import { RunLine } from "./run-line.tsx";
 import {
 	type FooterKey,
@@ -30,7 +36,7 @@ import {
 	KeyFooter,
 	KeyHelp,
 } from "./screen-keys.tsx";
-import { fitText, wrapText } from "./text-fit.ts";
+import { fitSpans, fitText, wrapText } from "./text-fit.ts";
 import {
 	goalColor,
 	runMarkLook,
@@ -42,17 +48,19 @@ import { TicketBar } from "./ticket-bar.tsx";
 import { duration, money, tokenCount } from "./time-and-money.ts";
 
 /**
- * The Goal view of the Goal `row` shows, the `position`th of `count` Goals
- * in the Project list: a header box with the Goal's progress and numbers,
- * its Tickets on the left with `n/N` on their border and the selected
- * Ticket's Runs under them, the selected Ticket's title, blockers and text
- * on the right, and the selected Run across the bottom. The Ticket the Goal
- * is on starts selected, the first not done or else the last, and ↑↓ and
- * j k move the selection. A Ticket starts on its latest Run, and ←→ and h l
- * move to the one before or after. A footer names the keys, and `?` shows
- * them all until `?` or Esc. Esc otherwise calls `onClose`.
+ * The Goal view of the Goal `row` shows, of the Project at `root`, the
+ * `position`th of `count` Goals in the Project list: a header box with the
+ * Goal's progress and numbers, its Tickets on the left with `n/N` on their
+ * border and the selected Ticket's Runs under them, the selected Ticket's
+ * title, blockers and text on the right, and the selected Run across the
+ * bottom. The Ticket the Goal is on starts selected, the first not done or
+ * else the last, and ↑↓ and j k move the selection. A Ticket starts on its
+ * latest Run, and ←→ and h l move to the one before or after. A footer
+ * names the keys, and `?` shows them all until `?` or Esc. Esc otherwise
+ * calls `onClose`.
  */
 export function GoalView(props: {
+	root: string;
 	row: GoalRow;
 	position: number;
 	count: number;
@@ -155,9 +163,11 @@ export function GoalView(props: {
 				</Show>
 			</box>
 			<RunPane
+				root={props.root}
 				ticket={ticket()}
 				selected={runIndex()}
 				standing={props.row.standing}
+				width={terminal().width}
 			/>
 			<box flexShrink={0} paddingLeft={1} paddingRight={1}>
 				<KeyFooter
@@ -271,27 +281,6 @@ function GoalHeader(props: {
 			</text>
 		</box>
 	);
-}
-
-type StyledSpan = {
-	text: string;
-	style: { fg: ColorInput; bold?: boolean; dim?: boolean };
-};
-
-// `spans` cut to `width` columns in all: the span that crosses the edge is
-// cut with the theme's mark, and those past it dropped.
-function fitSpans(spans: StyledSpan[], width: number): StyledSpan[] {
-	let left = width;
-	const fitted: StyledSpan[] = [];
-	for (const span of spans) {
-		if (left <= 0) break;
-		const spanWidth = Bun.stringWidth(span.text);
-		fitted.push(
-			spanWidth <= left ? span : { ...span, text: fitText(span.text, left) },
-		);
-		left -= spanWidth;
-	}
-	return fitted;
 }
 
 // The id of Ticket `number`'s row, which the Tickets pane scrolls to.
@@ -573,14 +562,18 @@ function RunsPane(props: {
 	);
 }
 
-// The `selected`th Run of `ticket` across the screen, titled with its
-// position, Ticket and Step, its outcome, duration and, for an agent Step,
-// cost on its border. A shell Step's Run shows its log, scrolled by the
-// wheel.
+// The `selected`th Run of `ticket` across the screen, `width` columns wide
+// with its border, titled with its position, Ticket and Step, its outcome,
+// duration and, for an agent Step, cost on its border. An agent Step's Run
+// shows its activity as its Harness reads its log, with paths relative to
+// the Project at `root`, and a shell Step's Run its log as text, both
+// scrolled by the wheel.
 function RunPane(props: {
+	root: string;
 	ticket: GoalTicket | undefined;
 	selected: number;
 	standing: GoalStanding;
+	width: number;
 }): JSX.Element {
 	const { color, symbol, border, dimText } = theme();
 	const run = () => props.ticket?.runs[props.selected];
@@ -589,8 +582,18 @@ function RunPane(props: {
 	// under this one's title while this one is read.
 	const [log] = createResource(run, async ({ log }: GoalTicketRun) => ({
 		log,
-		text: Bun.stripANSI(await readRunLog(log)).trimEnd(),
+		text: await readRunLog(log),
 	}));
+	const shownLog = () => {
+		const read = log.latest;
+		return read !== undefined && read.log === run()?.log ? read.text : "";
+	};
+	// A log whose Harness this build doesn't know shows as text.
+	const activity = () => {
+		const harness = run()?.harness;
+		if (harness === undefined || !knownHarness(harness)) return undefined;
+		return findHarness(harness).runActivity(shownLog().split("\n"), props.root);
+	};
 	const title = () => {
 		const shown = run();
 		return shown === undefined
@@ -626,26 +629,23 @@ function RunPane(props: {
 					</text>
 				}
 			>
-				{(shown: () => GoalTicketRun) => (
+				<scrollbox flexGrow={1} verticalScrollbarOptions={{ visible: false }}>
 					<Show
-						when={shown().stepType === "shell"}
+						when={activity()}
 						fallback={
-							// TODO 05: the agent's activity, condensed by its Harness.
-							<text {...dimText} flexShrink={0}>
-								An agent Run's activity shows here soon.
+							<text fg={color.fg} wrapMode="word">
+								{Bun.stripANSI(shownLog()).trimEnd()}
 							</text>
 						}
 					>
-						<scrollbox
-							flexGrow={1}
-							verticalScrollbarOptions={{ visible: false }}
-						>
-							<text fg={color.fg} wrapMode="word">
-								{log.latest?.log === shown().log ? log.latest.text : ""}
-							</text>
-						</scrollbox>
+						{(shown: () => RunActivity) => (
+							<RunActivityLines
+								items={shown().items}
+								width={props.width - paneEdges}
+							/>
+						)}
 					</Show>
-				)}
+				</scrollbox>
 			</Show>
 		</box>
 	);

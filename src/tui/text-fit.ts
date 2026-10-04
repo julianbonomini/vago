@@ -1,9 +1,10 @@
-// Fitting text to a column of the terminal by display width, cut to one line
-// or wrapped to many, so CJK and emoji, which take two cells, keep columns
-// aligned, and hard-wrapped Markdown joined into paragraphs to be wrapped
-// again. Hides the grapheme splitting, the width measure and which lines
-// start a paragraph.
+// Fitting text to a column of the terminal by display width, cut to one
+// line, styled or not, or wrapped to many, so CJK and emoji, which take two
+// cells, keep columns aligned, and hard-wrapped Markdown joined into
+// paragraphs to be wrapped again. Hides the grapheme splitting, the width
+// measure and which lines start a paragraph.
 
+import type { ColorInput } from "@opentui/core";
 import { theme } from "./theme.ts";
 
 const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
@@ -28,6 +29,30 @@ export function fitText(text: string, width: number): string {
 	}
 	// A wide character that didn't fit before the mark leaves one cell over.
 	return `${cut}${theme().symbol.cut}${" ".repeat(width - 1 - cutWidth)}`;
+}
+
+/** A run of text in one style, as a `<span>` draws it. */
+export type StyledSpan = {
+	text: string;
+	style: { fg: ColorInput; bold?: boolean; dim?: boolean };
+};
+
+/**
+ * `spans` cut to `width` columns in all: the span that crosses the edge is
+ * cut with the theme's `cut` symbol, and those past it dropped.
+ */
+export function fitSpans(spans: StyledSpan[], width: number): StyledSpan[] {
+	let left = width;
+	const fitted: StyledSpan[] = [];
+	for (const span of spans) {
+		if (left <= 0) break;
+		const spanWidth = Bun.stringWidth(span.text);
+		fitted.push(
+			spanWidth <= left ? span : { ...span, text: fitText(span.text, left) },
+		);
+		left -= spanWidth;
+	}
+	return fitted;
 }
 
 /**

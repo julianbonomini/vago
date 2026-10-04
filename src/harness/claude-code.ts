@@ -155,10 +155,11 @@ export const claudeCode: Harness = {
 			tokens: sessionTokens(result.data.usage),
 		};
 	},
-	runActivity(lines) {
+	runActivity(lines, root) {
 		const items: RunActivityItem[] = [];
-		// The session's folder, which paths in tool calls are shown relative to.
-		let folder = "";
+		// The session's folder, the Goal's worktree, which mirrors the Project:
+		// paths under it or `root` are shown relative to the Project.
+		let folder = root;
 		let ended = false;
 		// Calls waiting for their result, by tool_use_id. A Read's size comes
 		// with its result.
@@ -194,8 +195,8 @@ export const claudeCode: Harness = {
 					}
 					const use = ToolUseBlock.safeParse(block);
 					if (use.success) {
-						const { verb, call } = toolCall(use.data, folder);
-						addCall(items, verb, call);
+						const { verb, files, call } = toolCall(use.data, [folder, root]);
+						addCall(items, verb, files ?? false, call);
 						waiting.set(use.data.id, { tool: use.data.name, call });
 					}
 				}
@@ -268,14 +269,15 @@ function parseJson(line: string): unknown {
 	}
 }
 
-// The verb a call shows by, and what it worked on, in Claude Code's words
-// for the tools a Vago agent uses; any other tool shows by its name.
+// The verb a call shows by, whether it works on one file, and what it
+// worked on, in Claude Code's words for the tools a Vago agent uses; any
+// other tool shows by its name.
 function toolCall(
 	use: z.infer<typeof ToolUseBlock>,
-	folder: string,
-): { verb: string; call: RunToolCall } {
+	folders: string[],
+): { verb: string; files?: boolean; call: RunToolCall } {
 	const { input } = use;
-	const path = relativePath(input.file_path ?? "", folder);
+	const path = relativePath(input.file_path ?? "", folders);
 	switch (use.name) {
 		case "Bash":
 			return {
@@ -283,10 +285,11 @@ function toolCall(
 				call: { subject: input.description ?? firstLine(input.command ?? "") },
 			};
 		case "Read":
-			return { verb: "Read", call: { subject: path } };
+			return { verb: "Read", files: true, call: { subject: path } };
 		case "Edit":
 			return {
 				verb: "Edit",
+				files: true,
 				call: {
 					subject: path,
 					size: `+${lineCount(input.new_string ?? "")} −${lineCount(input.old_string ?? "")}`,
@@ -295,6 +298,7 @@ function toolCall(
 		case "Write":
 			return {
 				verb: "Write",
+				files: true,
 				call: {
 					subject: path,
 					size: `${lineCount(input.content ?? "")} lines`,
@@ -323,19 +327,21 @@ function toolCall(
 
 // Folds a call into the item before it when that item holds calls of the
 // same verb, so a run of reads or commands takes one line.
-function addCall(items: RunActivityItem[], verb: string, call: RunToolCall) {
+function addCall(
+	items: RunActivityItem[],
+	verb: string,
+	files: boolean,
+	call: RunToolCall,
+) {
 	const last = items.at(-1);
 	if (last?.kind === "tool-calls" && last.verb === verb) last.calls.push(call);
-	else items.push({ kind: "tool-calls", verb, calls: [call] });
+	else items.push({ kind: "tool-calls", verb, files, calls: [call] });
 }
 
-// Inside a Goal's worktree the session's folder mirrors the Project, so a
-// path under it reads as a path in the Project.
-function relativePath(path: string, folder: string): string {
-	if (folder !== "" && path.startsWith(`${folder}/`)) {
-		return path.slice(folder.length + 1);
-	}
-	return path;
+// `path` relative to the first of `folders` it is under, or as it is.
+function relativePath(path: string, folders: string[]): string {
+	const folder = folders.find((folder) => path.startsWith(`${folder}/`));
+	return folder === undefined ? path : path.slice(folder.length + 1);
 }
 
 function resultText(content: z.infer<typeof ResultContent>): string {

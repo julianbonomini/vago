@@ -10,15 +10,23 @@ async function fixtureLines(name: string): Promise<string[]> {
 	return text.split("\n");
 }
 
+// The Project the recorded sessions' Goals belong to.
+const root = "/home/user/project";
+
 async function activityOf(name: string): Promise<RunActivity> {
-	return findHarness("claude-code").runActivity(await fixtureLines(name));
+	return findHarness("claude-code").runActivity(await fixtureLines(name), root);
 }
 
 test("a session gives its start, the tools it called, its prose and its end", async () => {
 	expect(await activityOf("claude-code-skill.jsonl")).toEqual({
 		items: [
 			{ kind: "session-start", model: "claude-haiku-4-5-20251001" },
-			{ kind: "tool-calls", verb: "Skill", calls: [{ subject: "say-hi" }] },
+			{
+				kind: "tool-calls",
+				verb: "Skill",
+				files: false,
+				calls: [{ subject: "say-hi" }],
+			},
 			{ kind: "prose", lines: [{ text: "hi there", heading: false }] },
 			{
 				kind: "session-end",
@@ -37,55 +45,118 @@ test("each tool call shows by a short verb, with paths relative to the worktree"
 	const calls = items.filter((item) => item.kind === "tool-calls");
 
 	expect(calls).toEqual([
-		{ kind: "tool-calls", verb: "ToolSearch", calls: [{ subject: "" }] },
-		{ kind: "tool-calls", verb: "TaskCreate", calls: [{ subject: "" }] },
-		{ kind: "tool-calls", verb: "Find", calls: [{ subject: "*.ts" }] },
-		{ kind: "tool-calls", verb: "Search", calls: [{ subject: "greet" }] },
+		{
+			kind: "tool-calls",
+			verb: "ToolSearch",
+			files: false,
+			calls: [{ subject: "" }],
+		},
+		{
+			kind: "tool-calls",
+			verb: "TaskCreate",
+			files: false,
+			calls: [{ subject: "" }],
+		},
+		{
+			kind: "tool-calls",
+			verb: "Find",
+			files: false,
+			calls: [{ subject: "*.ts" }],
+		},
+		{
+			kind: "tool-calls",
+			verb: "Search",
+			files: false,
+			calls: [{ subject: "greet" }],
+		},
 		{
 			kind: "tool-calls",
 			verb: "Read",
+			files: true,
 			calls: [{ subject: "greet.ts", size: "3 lines" }],
 		},
 		{
 			kind: "tool-calls",
 			verb: "Read",
+			files: true,
 			calls: [{ subject: "notes.md", size: "3 lines" }],
 		},
 		{
 			kind: "tool-calls",
 			verb: "Edit",
+			files: true,
 			calls: [{ subject: "greet.ts", size: "+1 −1" }],
 		},
 		{
 			kind: "tool-calls",
 			verb: "Write",
+			files: true,
 			calls: [{ subject: "bye.ts", size: "3 lines" }],
 		},
 		{
 			kind: "tool-calls",
 			verb: "Execute",
+			files: false,
 			calls: [{ subject: "List the files" }],
 		},
 		// A Bash call with no description shows by its command.
 		{
 			kind: "tool-calls",
 			verb: "Execute",
+			files: false,
 			calls: [{ subject: "cat missing.txt" }],
 		},
 		{
 			kind: "tool-calls",
 			verb: "Execute",
+			files: false,
 			calls: [{ subject: "Show changes" }],
 		},
-		{ kind: "tool-calls", verb: "ToolSearch", calls: [{ subject: "" }] },
+		{
+			kind: "tool-calls",
+			verb: "ToolSearch",
+			files: false,
+			calls: [{ subject: "" }],
+		},
 		{
 			kind: "tool-calls",
 			verb: "Fetch",
+			files: false,
 			calls: [{ subject: "https://example.com" }],
 		},
 		// The subagent's own Read is part of this call, not a call of its own.
-		{ kind: "tool-calls", verb: "Agent", calls: [{ subject: "Count lines" }] },
+		{
+			kind: "tool-calls",
+			verb: "Agent",
+			files: false,
+			calls: [{ subject: "Count lines" }],
+		},
 	]);
+});
+
+test("a path in the Project's main checkout shows relative to the Project too", async () => {
+	const lines = await fixtureLines("claude-code-tool-calls.jsonl");
+	const inCheckout = lines.map((line) =>
+		line.replaceAll(
+			"/home/user/.vago/worktrees/project-1a2b3c4d/hello/greet.ts",
+			`${root}/greet.ts`,
+		),
+	);
+
+	const { items } = findHarness("claude-code").runActivity(inCheckout, root);
+
+	expect(items).toContainEqual({
+		kind: "tool-calls",
+		verb: "Read",
+		files: true,
+		calls: [{ subject: "greet.ts", size: "3 lines" }],
+	});
+	expect(items).toContainEqual({
+		kind: "tool-calls",
+		verb: "Edit",
+		files: true,
+		calls: [{ subject: "greet.ts", size: "+1 −1" }],
+	});
 });
 
 test("thinking, hooks, rate limits, task events and user text give nothing", async () => {
@@ -109,6 +180,7 @@ test("a failed result follows its call with its first line, and a successful one
 	expect(items[failed - 1]).toEqual({
 		kind: "tool-calls",
 		verb: "Execute",
+		files: false,
 		calls: [{ subject: "cat missing.txt" }],
 	});
 	expect(items.filter((item) => item.kind === "failed-result")).toEqual([
@@ -139,6 +211,7 @@ test("consecutive calls of one verb fold into one item", async () => {
 			{
 				kind: "tool-calls",
 				verb: "Read",
+				files: true,
 				calls: [
 					{ subject: "greet.ts", size: "3 lines" },
 					{ subject: "notes.md", size: "3 lines" },
@@ -148,6 +221,7 @@ test("consecutive calls of one verb fold into one item", async () => {
 			{
 				kind: "tool-calls",
 				verb: "Execute",
+				files: false,
 				calls: [
 					{ subject: "Count greet lines" },
 					{ subject: "Count notes lines" },
@@ -184,6 +258,7 @@ test("a refused call shows the tool and the reason, and not its result", async (
 		{
 			kind: "tool-calls",
 			verb: "Execute",
+			files: false,
 			calls: [
 				{ subject: "Retry skip-worktree experiment under bash in temp dir" },
 			],
@@ -226,10 +301,11 @@ test("a stream with no end yet is the activity of an open Run", async () => {
 	const harness = findHarness("claude-code");
 
 	// Cut after the three Bash calls, before their results: a tool runs.
-	const running = harness.runActivity(lines.slice(0, 17));
+	const running = harness.runActivity(lines.slice(0, 17), root);
 	expect(running.items.at(-1)).toEqual({
 		kind: "tool-calls",
 		verb: "Execute",
+		files: false,
 		calls: [
 			{ subject: "Count greet lines" },
 			{ subject: "Count notes lines" },
@@ -239,10 +315,10 @@ test("a stream with no end yet is the activity of an open Run", async () => {
 	expect(running.working).toBe(false);
 
 	// Cut after their results, half way through the next line: the agent's turn.
-	const thinking = harness.runActivity([
-		...lines.slice(0, 20),
-		(lines[20] ?? "").slice(0, 40),
-	]);
+	const thinking = harness.runActivity(
+		[...lines.slice(0, 20), (lines[20] ?? "").slice(0, 40)],
+		root,
+	);
 	expect(thinking.items.some((item) => item.kind === "session-end")).toBe(
 		false,
 	);
