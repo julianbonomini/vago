@@ -67,6 +67,7 @@ export type GoalTicketRun = {
 	harness?: string;
 	/** As spelled in the header, like `ok` or `exit 1`; absent while open. */
 	outcome?: string;
+	started: Date;
 	/**
 	 * To the Run's end; an open one's to when it was read, or to its start
 	 * when the Ticket is lost, as the Goal's clock stops then too.
@@ -132,6 +133,7 @@ export function goalTickets(
 				step: run.step,
 				harness: run.harness,
 				outcome: run.outcome,
+				started: run.started,
 				durationMs:
 					(run.ended ?? (lost ? run.started : now)).getTime() -
 					run.started.getTime(),

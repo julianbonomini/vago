@@ -6,6 +6,8 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import {
+	goalText,
+	heldLock,
 	makeProject,
 	oneStep,
 	projectWithGoals,
@@ -235,5 +237,48 @@ test("vago started in a Goal's worktree shows the main checkout's Goals", async 
 	);
 	expect(rowOf(frame, " alpha ")).not.toBe(-1);
 	expect(rowOf(frame, " beta ")).not.toBe(-1);
+	tui.kill("SIGKILL");
+});
+
+// A Project whose one Goal, `live`, has its only Ticket on an open `check`
+// Run that has logged one line, and that Run's log.
+async function goalOnOpenRun(): Promise<{ root: string; log: string }> {
+	const root = await makeProject({
+		".vago-goals/live/goal.md": goalText("w"),
+		".vago-goals/live/tickets/01-only.md": ticketText("running", {
+			runs: [{ step: "check", started: new Date() }],
+		}),
+		".vago-goals/live/logs/check-1.log": "first line\n",
+	});
+	return { root, log: join(root, ".vago-goals/live/logs/check-1.log") };
+}
+
+test("an open Goal shows what its open Run's log adds in the next frame", async () => {
+	const { root, log } = await goalOnOpenRun();
+	await heldLock(root, "live");
+	const tui = openVago(root);
+	await tui.screen.frameWhere((lines) => rowOf(lines, " 1/1 ") !== -1);
+	tui.press("\r");
+	await tui.screen.frameWhere((lines) => rowOf(lines, "│ first line") !== -1);
+
+	await Bun.write(log, "first line\nsecond line\n");
+
+	await tui.screen.frameWhere((lines) => rowOf(lines, "│ second line") !== -1);
+	expect(tui.screen.scrolls()).toBe(0);
+	tui.kill("SIGKILL");
+});
+
+test("with nothing changing the Goal view writes nothing", async () => {
+	// No `vago run` holds the Goal, so its open Run is lost and no clock runs.
+	const { root } = await goalOnOpenRun();
+	const tui = openVago(root);
+	await tui.screen.frameWhere((lines) => rowOf(lines, " 1/1 ") !== -1);
+	tui.press("\r");
+	await tui.screen.frameWhere((lines) => rowOf(lines, "│ first line") !== -1);
+	const drawn = tui.screen.printed().length;
+
+	await Bun.sleep(2500);
+
+	expect(tui.screen.printed().length).toBe(drawn);
 	tui.kill("SIGKILL");
 });

@@ -11,9 +11,11 @@ import {
 import { type JSX, useKeyboard, useTerminalDimensions } from "@opentui/solid";
 import {
 	createEffect,
-	createResource,
+	createMemo,
 	createSignal,
 	For,
+	on,
+	onCleanup,
 	Show,
 } from "solid-js";
 import {
@@ -66,7 +68,7 @@ export function GoalView(props: {
 	count: number;
 	onClose: () => void;
 }): JSX.Element {
-	const { symbol } = theme();
+	const { color, symbol } = theme();
 	const terminal = useTerminalDimensions();
 	const [chosen, setChosen] = createSignal<string>();
 	const selectedIndex = () => {
@@ -91,6 +93,8 @@ export function GoalView(props: {
 			: runs.length - 1;
 	};
 	const [helpShown, setHelpShown] = createSignal(false);
+	// The shown Run's scrollbox, which `G` scrolls to its bottom.
+	let runBox: ScrollBoxRenderable | undefined;
 	// Clamped, not wrapped, so holding a key stops at the end of the list.
 	const clamp = (index: number, length: number) =>
 		Math.max(0, Math.min(length - 1, index));
@@ -118,10 +122,15 @@ export function GoalView(props: {
 		else if (key.name === "left" || key.name === "h") selectRun(runIndex() - 1);
 		else if (key.name === "right" || key.name === "l")
 			selectRun(runIndex() + 1);
+		else if (key.name === "g" && key.shift)
+			runBox?.scrollTo(runBox.scrollHeight);
 	});
+	const lost = () => props.row.standing === "lost";
 	const ticketsWidth = () => Math.floor(terminal().width * ticketsShare);
 	const topRows = () =>
-		Math.round((terminal().height - headerRows - 1) * topShare);
+		Math.round(
+			(terminal().height - headerRows - (lost() ? 1 : 0) - 1) * topShare,
+		);
 	// Enough rows for every Run, between 3 and 8, and at most a third of the
 	// top's, so the Tickets keep the most.
 	const runsRows = () =>
@@ -138,6 +147,16 @@ export function GoalView(props: {
 				width={terminal().width}
 				height={terminal().height}
 			/>
+			<Show when={lost()}>
+				<box flexShrink={0} paddingLeft={1} paddingRight={1}>
+					<text fg={color.warn} flexShrink={0} wrapMode="none">
+						{fitText(
+							`${symbol.lost} No vago run process runs this Goal; the next records its open Run as lost.`,
+							terminal().width - 2,
+						)}
+					</text>
+				</box>
+			</Show>
 			<box flexDirection="row" height={topRows()} flexShrink={0}>
 				<box flexDirection="column" width={ticketsWidth()} flexShrink={0}>
 					<TicketsPane
@@ -168,6 +187,9 @@ export function GoalView(props: {
 				selected={runIndex()}
 				standing={props.row.standing}
 				width={terminal().width}
+				scrollRef={(box) => {
+					runBox = box;
+				}}
 			/>
 			<box flexShrink={0} paddingLeft={1} paddingRight={1}>
 				<KeyFooter
@@ -187,6 +209,7 @@ export function GoalView(props: {
 const footerKeys = (upDown: string, leftRight: string): FooterKey[] => [
 	{ keys: upDown, label: "Ticket", use: 5 },
 	{ keys: leftRight, label: "Run", use: 4 },
+	{ keys: "G", label: "Follow", use: 2 },
 	{ keys: "Esc", label: "Goals", use: 3 },
 	{ keys: "?", label: "Help", use: 2 },
 	{ keys: "q", label: "Quit", use: 1 },
@@ -195,6 +218,7 @@ const footerKeys = (upDown: string, leftRight: string): FooterKey[] => [
 const helpKeys = (upDown: string, leftRight: string): HelpKey[] => [
 	{ keys: `${upDown} j k`, meaning: "select the Ticket above, below" },
 	{ keys: `${leftRight} h l`, meaning: "select the Run before, after" },
+	{ keys: "G", meaning: "follow the live Run again" },
 	{ keys: "wheel", meaning: "scroll the pane under the pointer" },
 	{ keys: "Esc", meaning: "back to the Goals" },
 	{ keys: "? Esc", meaning: "show, hide these keys" },
@@ -415,11 +439,13 @@ function TicketPane(props: { ticket: GoalTicket; width: number }): JSX.Element {
 					<text fg={color.fg} flexShrink={0} wrapMode="none">
 						<For each={line}>
 							{(step, index) => {
-								const look = stepMarkLook(step.mark);
+								// A function, so a Step whose mark changes in place is
+								// drawn again.
+								const look = () => stepMarkLook(step.mark);
 								return (
 									<>
 										<Show when={index() > 0}>{stepGap}</Show>
-										<span style={look.style}>{look.symbol}</span>
+										<span style={look().style}>{look().symbol}</span>
 										<span style={{ fg: color.fg }}>{` ${step.id}`}</span>
 									</>
 								);
@@ -562,38 +588,89 @@ function RunsPane(props: {
 	);
 }
 
+// How often the shown Run's log is read again: what it adds shows within
+// this.
+const refreshMs = 1000;
+
+// The log of the Run `run` gives, as read so far.
+type ShownLog = {
+	/** The log's path, which tells one Run's log from another's. */
+	log: string;
+	text: string;
+	/** The bytes of the log `text` holds, to skip on the next read. */
+	end: number;
+	lastWritten: Date | undefined;
+};
+
+// The log of the Run `run` gives, undefined until the first read of it ends,
+// so another Run's log never shows under this one's title. Read again every
+// `refreshMs` for as long as the calling component lives, each read taking
+// only what the log added since the last.
+function liveRunLog(
+	run: () => GoalTicketRun | undefined,
+): () => ShownLog | undefined {
+	const [shown, setShown] = createSignal<ShownLog>();
+	let reading = false;
+	const read = async () => {
+		const log = run()?.log;
+		if (log === undefined || reading) return;
+		reading = true;
+		try {
+			const last = shown();
+			const before = last?.log === log ? last : undefined;
+			const piece = await readRunLog(log, before?.end ?? 0);
+			if (before !== undefined && piece.added === "") return;
+			setShown({
+				log,
+				text: (before?.text ?? "") + piece.added,
+				end: piece.end,
+				lastWritten: piece.lastWritten,
+			});
+		} finally {
+			reading = false;
+		}
+		// Another Run picked during the read is read now, not a refresh later.
+		if (run()?.log !== log) read();
+	};
+	createEffect(on(() => run()?.log, read));
+	const timer = setInterval(read, refreshMs);
+	onCleanup(() => clearInterval(timer));
+	return () => {
+		const last = shown();
+		return last?.log === run()?.log ? last : undefined;
+	};
+}
+
 // The `selected`th Run of `ticket` across the screen, `width` columns wide
 // with its border, titled with its position, Ticket and Step, its outcome,
 // duration and, for an agent Step, cost on its border. An agent Step's Run
 // shows its activity as its Harness reads its log, with paths relative to
 // the Project at `root`, and a shell Step's Run its log as text, both
-// scrolled by the wheel.
+// scrolled by the wheel and, as it grows, read again. An open Run is live
+// while its Goal's `standing` is running, and lost otherwise. An open Run
+// opens at its bottom and follows what it adds until scrolled up, and
+// `scrollRef` gets each Run's scrollbox, to follow again by scrolling it to
+// its bottom.
 function RunPane(props: {
 	root: string;
 	ticket: GoalTicket | undefined;
 	selected: number;
 	standing: GoalStanding;
 	width: number;
+	scrollRef: (box: ScrollBoxRenderable) => void;
 }): JSX.Element {
 	const { color, symbol, border, dimText } = theme();
 	const run = () => props.ticket?.runs[props.selected];
-	// Read again each time the Goal is, so a growing log shows what it adds.
-	// The path comes back with the text, so another Run's log never shows
-	// under this one's title while this one is read.
-	const [log] = createResource(run, async ({ log }: GoalTicketRun) => ({
-		log,
-		text: await readRunLog(log),
-	}));
-	const shownLog = () => {
-		const read = log.latest;
-		return read !== undefined && read.log === run()?.log ? read.text : "";
-	};
+	const log = liveRunLog(run);
+	const shownLog = () => log()?.text ?? "";
+	const live = () =>
+		run()?.outcome === undefined && props.standing === "running";
 	// A log whose Harness this build doesn't know shows as text.
-	const activity = () => {
+	const activity = createMemo(() => {
 		const harness = run()?.harness;
 		if (harness === undefined || !knownHarness(harness)) return undefined;
 		return findHarness(harness).runActivity(shownLog().split("\n"), props.root);
-	};
+	});
 	const title = () => {
 		const shown = run();
 		return shown === undefined
@@ -603,8 +680,16 @@ function RunPane(props: {
 	const numbers = () => {
 		const shown = run();
 		if (shown === undefined) return "";
+		const mark = runMarkLook(shown.outcome, props.standing).text;
+		if (live()) return ` ${mark} ${duration(shown.durationMs)} `;
+		// A lost Run's clock runs to when it was last heard from.
+		if (shown.outcome === undefined) {
+			const heard = log()?.lastWritten ?? shown.started;
+			const after = Math.max(0, heard.getTime() - shown.started.getTime());
+			return ` ${mark} after ${duration(after)} `;
+		}
 		return ` ${[
-			runMarkLook(shown.outcome, props.standing).text,
+			mark,
 			duration(shown.durationMs),
 			...(shown.costUsd === undefined ? [] : [money(shown.costUsd)]),
 		].join(` ${symbol.sep} `)} `;
@@ -622,14 +707,22 @@ function RunPane(props: {
 			flexGrow={1}
 		>
 			<Show
-				when={run()}
+				when={run()?.log}
+				keyed
 				fallback={
 					<text {...dimText} flexShrink={0}>
 						No Run yet.
 					</text>
 				}
 			>
-				<scrollbox flexGrow={1} verticalScrollbarOptions={{ visible: false }}>
+				{/* One scrollbox per Run, so each opens at its own top or bottom. */}
+				<scrollbox
+					ref={props.scrollRef}
+					flexGrow={1}
+					stickyScroll={run()?.outcome === undefined}
+					stickyStart="bottom"
+					verticalScrollbarOptions={{ visible: false }}
+				>
 					<Show
 						when={activity()}
 						fallback={
@@ -640,7 +733,8 @@ function RunPane(props: {
 					>
 						{(shown: () => RunActivity) => (
 							<RunActivityLines
-								items={shown().items}
+								activity={shown()}
+								live={live()}
 								width={props.width - paneEdges}
 							/>
 						)}

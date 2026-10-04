@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { utimes } from "node:fs/promises";
 import { join } from "node:path";
 import { RGBA, TextAttributes } from "@opentui/core";
 import type { TestRendererSetup } from "@opentui/core/testing";
@@ -230,7 +231,7 @@ test("↑↓ change the Ticket pane to that Ticket, its text read as paragraphs"
 test("the footer names the Goal view's keys, and ? shows them all", async () => {
 	const { view, frame } = await openFirstGoal(await runningGoal());
 	expect(frame.trimEnd().split("\n").at(-1)).toMatch(
-		/^ ↑↓ Ticket {3}←→ Run {3}Esc Goals {3}\? Help {3}q Quit *$/,
+		/^ ↑↓ Ticket {3}←→ Run {3}G Follow {3}Esc Goals {3}\? Help {3}q Quit *$/,
 	);
 
 	view.mockInput.pressKey("?");
@@ -312,7 +313,7 @@ async function openTicket(
 		/** More files of the Project, keyed by path relative to its root. */
 		files?: Record<string, string>;
 	} = {},
-): Promise<{ view: TestRendererSetup; frame: string }> {
+): Promise<{ view: TestRendererSetup; frame: string; root: string }> {
 	const root = await makeProject({
 		".vago/workflows/small.toml": workflowOf(
 			"branch",
@@ -326,7 +327,7 @@ async function openTicket(
 		...options.files,
 	});
 	if (options.claimed === true) await heldLock(root, "marks");
-	return openFirstGoal(root, options.size);
+	return { ...(await openFirstGoal(root, options.size)), root };
 }
 
 test("a done Ticket's Steps are all done, and its border has its totals", async () => {
@@ -650,4 +651,154 @@ test("a Ticket with no Runs says so in both Run panes", async () => {
 
 	expect(frame).toContain("─ Runs of Ticket 01 ─");
 	expect(frame.split("No Run yet.").length - 1).toBe(2);
+});
+
+// Lines `line <from>` to `line <to>`, each ended.
+const numberedLines = (from: number, to: number) =>
+	Array.from(
+		{ length: to - from + 1 },
+		(_, index) => `line ${from + index}\n`,
+	).join("");
+
+// The Goal view of Goal `marks`, held by a live `vago run`, whose only
+// Ticket is on its `check` Step, an open shell Run that has logged `line 1`
+// to `line 60`, and the path of that log.
+async function openLiveShellRun(): Promise<{
+	view: TestRendererSetup;
+	frame: string;
+	log: string;
+}> {
+	const { view, root } = await openTicket(
+		ticketText("running", { runs: [runOf("branch", 0, 1), runOf("check", 1)] }),
+		{
+			claimed: true,
+			files: { ".vago-goals/marks/logs/check-2.log": numberedLines(1, 60) },
+		},
+	);
+	const frame = await frameWith(view, "│ line 60 ");
+	return { view, frame, log: `${root}/.vago-goals/marks/logs/check-2.log` };
+}
+
+// Appends `text` to the file at `path`.
+async function append(path: string, text: string): Promise<void> {
+	await Bun.write(path, (await Bun.file(path).text()) + text);
+}
+
+test("a live Run's log shows what it adds without a key, staying at the bottom", async () => {
+	const { view, frame, log } = await openLiveShellRun();
+	expect(frame).not.toContain("│ line 1 ");
+	expect(frame).toMatch(/─ ● live \d[^·]*─+┘/);
+
+	await append(log, numberedLines(61, 62));
+
+	const grown = await frameWith(view, "│ line 62 ");
+	expect(grown).not.toContain("│ line 2 ");
+});
+
+test("scrolling a live Run up holds it while lines arrive, and G follows again", async () => {
+	const { view, frame, log } = await openLiveShellRun();
+	const bottom = frame.split("\n").length - 4;
+	for (let turn = 0; turn < 10; turn++) {
+		await view.mockMouse.scroll(10, bottom, "up");
+	}
+	const held = await frameWithout(view, "│ line 60 ");
+
+	await append(log, numberedLines(61, 61));
+	await Bun.sleep(1500);
+	await view.renderOnce();
+	expect(view.captureCharFrame()).toBe(held);
+
+	view.mockInput.pressKey("G");
+	await frameWith(view, "│ line 61 ");
+});
+
+test("a Run starting and ending changes the Tickets, the Runs and the Steps", async () => {
+	const { view, root } = await openTicket(
+		ticketText("running", { runs: [runOf("branch", 0, 1)] }),
+		{ claimed: true },
+	);
+	const ticket = `${root}/.vago-goals/marks/tickets/01-only.md`;
+
+	await Bun.write(
+		ticket,
+		ticketText("running", {
+			runs: [runOf("branch", 0, 1), runOf("implement", 1)],
+		}),
+	);
+	const started = await frameWith(view, "│ ✓ branch  ● implement  · check ");
+	expect(started).toContain("● 01 implement");
+	expect(started).toContain("─ Run 2 · 01 implement ─");
+
+	await Bun.write(
+		ticket,
+		ticketText("running", {
+			runs: [runOf("branch", 0, 1), runOf("implement", 1, 4)],
+		}),
+	);
+	const ended = await frameWith(view, "│ ✓ branch  ✓ implement  · check ");
+	expect(ended).toMatch(/─ ✓ ok · 3m 0s ─+┘/);
+});
+
+test("an open agent Run shows working while the agent has the turn", async () => {
+	const { view, root } = await openTicket(
+		ticketText("running", {
+			runs: [{ ...runOf("branch", 0), model: "opus" }],
+		}),
+		{ claimed: true },
+	);
+	const lines = (
+		await Bun.file(
+			join(import.meta.dir, "fixtures", "claude-code-parallel-calls.jsonl"),
+		).text()
+	).split("\n");
+	const log = `${root}/.vago-goals/marks/logs/branch-1.jsonl`;
+
+	// After the three Bash calls, before their results: a tool runs.
+	await Bun.write(log, `${lines.slice(0, 17).join("\n")}\n`);
+	const running = await frameWith(view, "Execute ×3");
+	expect(running).not.toContain("working");
+
+	// After their results: the agent's turn.
+	await Bun.write(log, `${lines.slice(0, 20).join("\n")}\n`);
+	await frameWith(view, "│  ⁘ working ");
+});
+
+test("a lost Goal marks its Ticket, Step and open Run lost and says what to do", async () => {
+	const root = await makeProject({
+		".vago/workflows/small.toml": workflowOf("branch", "check", "merge"),
+		".vago-goals/lost/goal.md": goalText("small"),
+		".vago-goals/lost/tickets/01-only.md": ticketText("running", {
+			runs: [runOf("branch", 0, 1), runOf("check", 1)],
+		}),
+		".vago-goals/lost/logs/check-2.log": numberedLines(1, 3),
+	});
+	// The Run was last heard from 12 seconds after it started.
+	const heard = new Date(Date.UTC(2026, 9, 1, 10, 1, 12));
+	await utimes(`${root}/.vago-goals/lost/logs/check-2.log`, heard, heard);
+
+	const { view } = await openFirstGoal(root);
+
+	const frame = await frameWith(view, "│ line 3 ");
+	const lines = frame.split("\n");
+	expect(lines[0]).toContain("Goal 1/1 · ? lost");
+	expect(lines[4]).toContain(
+		" ? No vago run process runs this Goal; the next records its open Run as lost.",
+	);
+	expect(frame).toContain("│ ? 01 lost  A Ticket ");
+	expect(frame).toContain("│ ✓ branch  ? check  · merge ");
+	expect(frame).toMatch(/─ \? lost after 12s ─+┘/);
+	expect(frame).not.toContain("working");
+});
+
+test("at 80 columns the lost hint shows whole", async () => {
+	const root = await makeProject({
+		".vago-goals/lost/goal.md": goalText("small"),
+		".vago-goals/lost/tickets/01-only.md": ticketText("running", {
+			runs: [runOf("check", 1)],
+		}),
+	});
+
+	const { frame } = await openFirstGoal(root, { width: 80, height: 24 });
+
+	expect(frame).toContain("the next records its open Run as lost.");
 });

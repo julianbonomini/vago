@@ -8,6 +8,7 @@ import { TextAttributes } from "@opentui/core";
 import type { JSX } from "@opentui/solid";
 import { For, Show } from "solid-js";
 import type {
+	RunActivity,
 	RunActivityItem,
 	RunProseLine,
 	RunSessionEnd,
@@ -18,18 +19,28 @@ import { theme } from "./theme.ts";
 import { duration, money, tokenCount } from "./time-and-money.ts";
 
 /**
- * `items`, a Run's activity, `width` columns wide, one after another in the
- * order they happened. Only the first 40 lines of a prose message show,
- * then how many more it has.
+ * `activity`, a Run's, `width` columns wide, its items one after another in
+ * the order they happened. Only the first 40 lines of a prose message show,
+ * then how many more it has. While the Run is `live`, open with a `vago run`
+ * running it, a trailing `working` line shows the agent has the turn.
  */
 export function RunActivityLines(props: {
-	items: RunActivityItem[];
+	activity: RunActivity;
+	live: boolean;
 	width: number;
 }): JSX.Element {
+	const { color, symbol } = theme();
 	return (
-		<For each={props.items}>
-			{(item) => <ActivityItem item={item} width={props.width} />}
-		</For>
+		<>
+			<For each={props.activity.items}>
+				{(item) => <ActivityItem item={item} width={props.width} />}
+			</For>
+			<Show when={props.live && props.activity.working}>
+				<text fg={color.accent} flexShrink={0} wrapMode="none">
+					{fitText(` ${symbol.prose} working`, props.width)}
+				</text>
+			</Show>
+		</>
 	);
 }
 

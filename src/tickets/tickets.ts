@@ -296,13 +296,48 @@ export async function readTicketBody(ticket: Ticket): Promise<string> {
 	return (await readTicketFile(ticketFile(ticket))).body;
 }
 
+/** What `readRunLog` read of a Run's log. */
+export type RunLogRead = {
+	/** The text past the bytes skipped, up to the last whole character. */
+	added: string;
+	/** The bytes read up to now, to skip on the next read. */
+	end: number;
+	/** When the log was last written; undefined while there is none. */
+	lastWritten: Date | undefined;
+};
+
 /**
- * What the log at `log`, a `TicketRun`'s, holds so far: "" when its Run
- * hasn't written it yet.
+ * What the log at `log`, a `TicketRun`'s, holds past its first `from`
+ * bytes, so a growing log is read a piece at a time: `added` is "" when its
+ * Run hasn't written it yet or has written nothing since. A character cut
+ * by a write in progress is left for the next read.
  */
-export async function readRunLog(log: string): Promise<string> {
+export async function readRunLog(log: string, from = 0): Promise<RunLogRead> {
 	const file = Bun.file(log);
-	return (await file.exists()) ? file.text() : "";
+	if (!(await file.exists())) {
+		return { added: "", end: from, lastWritten: undefined };
+	}
+	const bytes = await file.slice(from).bytes();
+	const whole = wholeCharacters(bytes);
+	return {
+		added: new TextDecoder().decode(bytes.subarray(0, whole)),
+		end: from + whole,
+		lastWritten: new Date(file.lastModified),
+	};
+}
+
+// How many of `bytes`, UTF-8, end on a whole character: all of them, unless
+// the last character's bytes aren't all there yet.
+function wholeCharacters(bytes: Uint8Array): number {
+	// A character takes at most four bytes, the first not 10xxxxxx.
+	for (let start = bytes.length - 1; start >= bytes.length - 4; start--) {
+		const byte = bytes[start];
+		if (byte === undefined) return bytes.length;
+		if ((byte & 0xc0) === 0x80) continue;
+		const length = byte >= 0xf0 ? 4 : byte >= 0xe0 ? 3 : byte >= 0xc0 ? 2 : 1;
+		return start + length <= bytes.length ? bytes.length : start;
+	}
+	return bytes.length;
 }
 
 /**
