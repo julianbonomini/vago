@@ -1,15 +1,18 @@
 // How an agent Run's activity reads in the Run pane: the session's start as
 // a divider, the agent's prose in blocks of its own with its tool calls
 // indented under it and failures further in, and the session's end as a
-// block of its numbers. Hides the indents, the blocks' look and where a long
-// message is cut.
+// block of its numbers; and which of its items are edits, and how an edit's
+// diff reads. Hides the indents, the blocks' look, where a long message is
+// cut and how a running call's clock ticks.
 
 import { TextAttributes } from "@opentui/core";
 import type { JSX } from "@opentui/solid";
-import { For, Show } from "solid-js";
+import { createSignal, For, onCleanup, Show } from "solid-js";
 import type {
 	RunActivity,
 	RunActivityItem,
+	RunBackgroundTask,
+	RunDiffLine,
 	RunProseLine,
 	RunSessionEnd,
 	RunToolCalls,
@@ -20,20 +23,35 @@ import { duration, money, tokenCount } from "./time-and-money.ts";
 
 /**
  * `activity`, a Run's, `width` columns wide, its items one after another in
- * the order they happened. Only the first 40 lines of a prose message show,
- * then how many more it has. While the Run is `live`, open with a `vago run`
- * running it, a trailing `working` line shows the agent has the turn.
+ * the order they happened, each with the id `activityItemId` gives it, the
+ * `selected`th in the selection's colours. Only the first 40 lines of a
+ * prose message show, then how many more it has. While the Run is `live`,
+ * open with a `vago run` running it, a trailing `working` line shows the
+ * agent has the turn, and a call still running shows how long it has run,
+ * every second.
  */
 export function RunActivityLines(props: {
 	activity: RunActivity;
 	live: boolean;
+	selected?: number;
 	width: number;
 }): JSX.Element {
 	const { color, symbol } = theme();
+	const [now, setNow] = createSignal(new Date());
+	const timer = setInterval(() => setNow(new Date()), clockMs);
+	onCleanup(() => clearInterval(timer));
 	return (
 		<>
 			<For each={props.activity.items}>
-				{(item) => <ActivityItem item={item} width={props.width} />}
+				{(item, index) => (
+					<ActivityItem
+						id={activityItemId(index())}
+						item={item}
+						selected={index() === props.selected}
+						now={props.live ? now() : undefined}
+						width={props.width}
+					/>
+				)}
 			</For>
 			<Show when={props.live && props.activity.working}>
 				<text fg={color.accent} flexShrink={0} wrapMode="none">
@@ -43,6 +61,84 @@ export function RunActivityLines(props: {
 		</>
 	);
 }
+
+/** The id of the `index`th item of a Run's activity, to scroll it into view. */
+export function activityItemId(index: number): string {
+	return `activity-item-${index}`;
+}
+
+/**
+ * The indexes of `activity`'s edits, the items whose calls changed files and
+ * carry their diff, in order.
+ */
+export function editIndexes(activity: RunActivity): number[] {
+	return activity.items.flatMap((item, index) =>
+		item.kind === "tool-calls" && item.calls.some((call) => call.diff)
+			? [index]
+			: [],
+	);
+}
+
+/**
+ * The diff of each file the edit `item` changed, `width` columns wide: the
+ * file's path and size in bold, then its hunks' headers dim, and its lines
+ * kept, added in the ok colour and removed in the bad one, each led by its
+ * ` `, `+` or `-`.
+ */
+export function RunDiffLines(props: {
+	item: RunToolCalls;
+	width: number;
+}): JSX.Element {
+	const { color, dimText } = theme();
+	const lineColor = { kept: color.fg, added: color.ok, removed: color.bad };
+	const lead = { kept: " ", added: "+", removed: "-" };
+	return (
+		<For each={props.item.calls.filter((call) => call.diff)}>
+			{(call, index) => (
+				<>
+					<text
+						fg={color.fg}
+						attributes={TextAttributes.BOLD}
+						marginTop={index() === 0 ? 0 : 1}
+						flexShrink={0}
+						wrapMode="none"
+					>
+						{fitText(
+							call.size === undefined
+								? call.subject
+								: `${call.subject} (${call.size})`,
+							props.width,
+						)}
+					</text>
+					<For each={call.diff}>
+						{(line: RunDiffLine) =>
+							line.kind === "hunk" ? (
+								<text {...dimText} flexShrink={0} wrapMode="none">
+									{fitText(line.text, props.width)}
+								</text>
+							) : (
+								<text fg={lineColor[line.kind]} flexShrink={0} wrapMode="none">
+									{fitText(
+										`${lead[line.kind]}${line.text.replaceAll("\t", tab)}`,
+										props.width,
+									)}
+								</text>
+							)
+						}
+					</For>
+				</>
+			)}
+		</For>
+	);
+}
+
+// What a tab in a diff line shows as: the terminal would move to its next
+// stop, which the line's fitting can't measure. Claude Code's own diffs
+// spell a tab so.
+const tab = "  ";
+
+// How often a running call's clock ticks.
+const clockMs = 1000;
 
 // Tool calls start past the prose's text, which starts at column 3 after
 // the block's padding and the prose mark, and failures further in, so the
@@ -59,12 +155,40 @@ const proseEdges = 4;
 // The end block's padding on both sides.
 const endEdges = 2;
 
+// One item of a Run's activity, `id` its id, in the selection's colours when
+// `selected`. Its running calls show their clock to `now` while the Run is
+// live, `now` undefined otherwise.
 function ActivityItem(props: {
+	id: string;
 	item: RunActivityItem;
+	selected: boolean;
+	now: Date | undefined;
 	width: number;
 }): JSX.Element {
-	const { color, symbol, dimText } = theme();
+	const { color, symbol, dimText, selection } = theme();
 	const { item } = props;
+	const spansLine = (spans: () => StyledSpan[]) => (
+		<text
+			id={props.id}
+			fg={color.fg}
+			bg={props.selected ? selection.bg : undefined}
+			attributes={props.selected ? selection.attributes : 0}
+			flexShrink={0}
+			wrapMode="none"
+		>
+			<For each={fitSpans(spans(), props.width)}>
+				{(span) => (
+					<span
+						style={
+							props.selected ? { ...span.style, fg: selection.fg } : span.style
+						}
+					>
+						{span.text}
+					</span>
+				)}
+			</For>
+		</text>
+	);
 	const failure = (text: string) => (
 		<text fg={color.bad} flexShrink={0} wrapMode="none">
 			{fitText(`${failureIndent}${symbol.stuck} ${text}`, props.width)}
@@ -89,13 +213,15 @@ function ActivityItem(props: {
 		case "prose":
 			return <ProseBlock lines={item.lines} width={props.width} />;
 		case "tool-calls":
-			return (
-				<text fg={color.fg} flexShrink={0} wrapMode="none">
-					<For each={fitSpans(callSpans(item), props.width)}>
-						{(span) => <span style={span.style}>{span.text}</span>}
-					</For>
-				</text>
-			);
+			return spansLine(() => callSpans(item, props.now));
+		case "background-task":
+			return spansLine(() => backgroundSpans(item));
+		case "skill-loaded":
+			return spansLine(() => [
+				{ text: callIndent, style: { fg: color.fg } },
+				{ text: "Skill", style: { fg: color.fg, bold: true } },
+				{ text: ` ${item.name} loaded`, style: { fg: color.fg } },
+			]);
 		case "failed-result":
 			return failure(item.firstLine);
 		case "denied":
@@ -174,8 +300,9 @@ function ProseBlock(props: {
 
 // One line for calls of one verb: a single call by its subject and size,
 // calls on files by how many and their names, and others by how many and
-// the last one's subject.
-function callSpans(item: RunToolCalls): StyledSpan[] {
+// the last one's subject; then, given `now`, how long the first call still
+// running has run.
+function callSpans(item: RunToolCalls, now: Date | undefined): StyledSpan[] {
 	const { color, symbol, dimSpan } = theme();
 	const { verb, calls } = item;
 	const last = calls.at(-1);
@@ -190,11 +317,41 @@ function callSpans(item: RunToolCalls): StyledSpan[] {
 			? calls.map((call) => call.subject.split("/").at(-1)).join(", ")
 			: (last?.subject ?? "");
 	const size = calls.length === 1 ? last?.size : undefined;
+	const since = calls.find((call) => call.runningSince)?.runningSince;
 	return [
 		{ text: callIndent, style: { fg: color.fg } },
 		{ text: label, style: { fg: color.fg, bold: true } },
 		{ text: ` ${subject}`, style: { fg: color.fg } },
 		...(size === undefined ? [] : [{ text: ` (${size})`, style: dimSpan }]),
+		...(since === undefined || now === undefined
+			? []
+			: [
+					{
+						text: ` ${symbol.sep} ${duration(now.getTime() - since.getTime())}`,
+						style: dimSpan,
+					},
+				]),
+	];
+}
+
+// A background command by its subject and how it stands, a failure in the
+// bad colour.
+function backgroundSpans(task: RunBackgroundTask): StyledSpan[] {
+	const { color, dimSpan } = theme();
+	const word = {
+		running: "running",
+		completed: "done",
+		failed: "failed",
+		stopped: "stopped",
+	}[task.state];
+	return [
+		{ text: callIndent, style: { fg: color.fg } },
+		{ text: "Background", style: { fg: color.fg, bold: true } },
+		{ text: ` ${task.subject}`, style: { fg: color.fg } },
+		{
+			text: ` (${word})`,
+			style: task.state === "failed" ? { fg: color.bad } : dimSpan,
+		},
 	];
 }
 

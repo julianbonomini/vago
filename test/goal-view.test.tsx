@@ -239,7 +239,7 @@ test("↑↓ change the Ticket pane to that Ticket, its text read as paragraphs"
 test("the footer names the Goal view's keys, and ? shows them all", async () => {
 	const { view, frame } = await openFirstGoal(await runningGoal());
 	expect(frame.trimEnd().split("\n").at(-1)).toMatch(
-		/^ ↑↓ Move {3}←→ Run {3}Tab Pane {3}\[ \] Goal {3}s Start {3}t r Full screen {3}G Follow {3}Esc Goals {3}\? Help {3}q Quit *$/,
+		/^ ↑↓ Move {3}←→ Run {3}Tab Pane {3}\[ \] Goal {3}s Start {3}t r Full screen {3}G Follow {3}e d Diff {3}Esc Goals {3}\? Help {3}q Quit *$/,
 	);
 
 	view.mockInput.pressKey("?");
@@ -253,6 +253,8 @@ test("the footer names the Goal view's keys, and ? shows them all", async () => 
 		"PgUp",
 		"t r",
 		"G",
+		"e E",
+		"d",
 		"[ ]",
 		"s",
 		"click",
@@ -688,6 +690,89 @@ test("a prose message past 40 lines is cut, its headings bold", async () => {
 		),
 	).toBe(true);
 	expect(isBold(spanOf(view, "1. Concerns"))).toBe(false);
+});
+
+test("a Run's edits, background task and Skill load show in its stream", async () => {
+	const { view } = await openAgentRun("claude-code-edits-and-tasks.jsonl", {
+		size: { width: 120, height: 60 },
+	});
+
+	const frame = await frameWith(view, "Run finished");
+	expect(frame).toContain("│     Edit 2 files notes.md, greet.ts ");
+	expect(frame).toContain("│     Write bye.ts (3 lines) ");
+	expect(frame).toContain("│     Background Wait a little (done) ");
+	expect(frame).toContain("│     Skill say-hi loaded ");
+	expect(isBold(spanOf(view, "Background"))).toBe(true);
+});
+
+test("e selects the latest edit, E and e move between edits, and d opens its diff and closes it again", async () => {
+	const { view } = await openAgentRun("claude-code-edits-and-tasks.jsonl", {
+		size: { width: 120, height: 60 },
+	});
+	await frameWith(view, "Run finished");
+	// The selection's background, the accent.
+	const selected = RGBA.fromHex("#ff8a3d");
+
+	view.mockInput.pressKey("e");
+	await view.renderOnce();
+	expect(spanOf(view, "Write").bg.equals(selected)).toBe(true);
+	view.mockInput.pressKey("e");
+	await view.renderOnce();
+	expect(spanOf(view, "Edit 2 files").bg.equals(selected)).toBe(true);
+	expect(spanOf(view, "Write").bg.equals(selected)).toBe(false);
+
+	view.mockInput.pressKey("d");
+	const diff = await frameWith(view, "notes.md (+1 −1)");
+	expect(diff).toContain("│ greet.ts (+1 −1) ");
+	expect(diff).toContain("│ @@ -1,3 +1,3 @@ ");
+	expect(diff).toContain("│ -two ");
+	expect(diff).toContain("│ +TWO ");
+	expect(diff).toContain("│  three ");
+	expect(diff).not.toContain("Run finished");
+
+	view.mockInput.pressKey("d");
+	const stream = await frameWith(view, "Run finished");
+	expect(stream).not.toContain("@@ -1,3 +1,3 @@");
+
+	view.mockInput.pressKey("E");
+	view.mockInput.pressKey("d");
+	expect(await frameWith(view, "│ bye.ts (3 lines) ")).toContain(
+		"│ @@ -0,0 +1,3 @@ ",
+	);
+	view.mockInput.pressEscape();
+	await frameWith(view, "Run finished");
+
+	// Moving to another edit with the diff closed keeps it closed.
+	view.mockInput.pressKey("e");
+	await view.renderOnce();
+	expect(view.captureCharFrame()).not.toContain("@@ -");
+});
+
+test("an open agent Run shows a running command's clock, and its tokens and cost so far on its border", async () => {
+	const { view, root } = await openTicket(
+		ticketText("running", {
+			runs: [{ ...runOf("branch", 0), model: "opus" }],
+		}),
+		{ claimed: true },
+	);
+	const started = new Date(Date.now() - 95_000).toISOString();
+	const lines = (
+		await Bun.file(
+			join(import.meta.dir, "fixtures", "claude-code-edits-and-tasks.jsonl"),
+		).text()
+	)
+		.replaceAll("2026-10-05T18:44:59.306Z", started)
+		.split("\n");
+
+	// Cut while the long command runs.
+	await Bun.write(
+		`${root}/.vago-goals/marks/logs/branch-1.jsonl`,
+		`${lines.slice(0, 32).join("\n")}\n`,
+	);
+
+	const frame = await frameWith(view, "Execute Count to thirty-five · 1m 3");
+	expect(frame).toMatch(/─ ● live [^·]+ · \d+\.\dk tokens · \$0\.\d\d ─+┘/);
+	expect(frame).toContain("│     Background Wait a little (done) ");
 });
 
 test("a Ticket with no Runs says so in both Run panes", async () => {
