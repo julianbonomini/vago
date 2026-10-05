@@ -44,24 +44,24 @@ vago init
 - `prompts/`, the prompt of each agent Step.
 - `scripts/branch.sh` and `scripts/merge.sh`, the git work of the `branch` and `merge` Steps.
 
-It also puts five skills into `.claude/skills/`, where Claude Code finds them:
+It also puts five skills into `.claude/skills/`, where Claude Code finds them, and the same five into `.agents/skills/`, where Codex finds them, so the starter prompts work on either Harness:
 
 - `vago-write-code`, `vago-check-red-flags` and `vago-design-module` hold the design and code rules, from John Ousterhout's *A Philosophy of Software Design*. Each starter prompt names the ones its Step runs, and you can use them in your own sessions too.
 - `vago-to-goal` and `vago-to-tickets` are for you, after a planning conversation: `/vago-to-goal` writes the conversation up as a Goal, and `/vago-to-tickets` slices that Goal into Tickets. They run only when you type their name.
 
-Before it writes anything, it asks `Commit the Workflow? [y/N]`. Answer `y` to leave `.vago/` and the skills for git, so everyone who clones the repo gets your Workflows. Any other answer adds `.vago/` and each skill's folder to `.git/info/exclude`, so they stay in your checkout. Anything else in `.claude/` stays as git saw it. Either way it adds `.vago-goals/`, where Goals and Tickets live, to `.git/info/exclude`.
+Before it writes anything, it asks `Commit the Workflow? [y/N]`. Answer `y` to leave `.vago/` and the skills for git, so everyone who clones the repo gets your Workflows. Any other answer adds `.vago/` and each skill's folder, in both places, to `.git/info/exclude`, so they stay in your checkout. Anything else in `.claude/` and `.agents/` stays as git saw it. Either way it adds `.vago-goals/`, where Goals and Tickets live, to `.git/info/exclude`.
 
-`vago init` refuses, and changes nothing, when the directory has no `.git` or a file it would write already exists in `.vago/` or `.claude/skills/`.
+`vago init` refuses, and changes nothing, when the directory has no `.git` or a file it would write already exists in `.vago/`, `.claude/skills/` or `.agents/skills/`.
 
 ### Update a Project
 
-After installing a newer `vago`, run `vago update` to bring `.vago/` and the skills to the starter it ships:
+After installing a newer `vago`, run `vago update` to bring `.vago/` and both copies of the skills to the starter it ships:
 
 ```sh
 vago update
 ```
 
-It overwrites each starter file that differs, writes any that are missing, and prints the path of every file it changed, so you see which tuned prompt it replaced. Files you added, like your own Workflow or prompt, stay as they are, and so does every Goal in `.vago-goals/`. It keeps your commit answer: if `.git/info/exclude` lists `.vago/`, the Workflow stays private and any new skill is excluded too. It asks again only when the exclude lists neither `.vago/` nor `.vago-goals/`. Run it twice and the second run prints nothing.
+It overwrites each starter file that differs, writes any that are missing, and prints the path of every file it changed, so you see which tuned prompt it replaced. Files you added, like your own Workflow, prompt or skill, stay as they are, and so does every Goal in `.vago-goals/`. It keeps your commit answer: if `.git/info/exclude` lists `.vago/`, the Workflow stays private and any new skill is excluded too. It asks again only when the exclude lists neither `.vago/` nor `.vago-goals/`. Run it twice and the second run prints nothing.
 
 ### Pick a Workflow
 

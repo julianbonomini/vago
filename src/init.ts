@@ -1,8 +1,8 @@
 // `vago init` and `vago update`: put the starter, embedded in the binary with
 // every Workflow, into a Project's `.vago/` and its `vago-` skills into
-// `.claude/skills/`, the first time or over an older starter. Hides the
-// starter's file list, where each file goes, and the lines it adds to
-// `.git/info/exclude`.
+// `.claude/skills/` and `.agents/skills/`, the first time or over an older
+// starter. Hides the starter's file list, where each file goes, and the lines
+// it adds to `.git/info/exclude`.
 
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
@@ -55,9 +55,23 @@ import tryHardWorkflow from "../starter/workflows/try-hard.toml" with {
 };
 import { goalsFolderName } from "./tickets/tickets.ts";
 
-// Each starter file's text, by its path in the Project. A file under
-// `starter/skills/` goes under `.claude/skills/`, where Claude Code finds it;
-// every other one keeps its `starter/` path under `.vago/`.
+// Each skill file's text, by its path under `starter/skills/`.
+const skillFiles: Record<string, string> = {
+	"vago-check-red-flags/SKILL.md": checkRedFlagsSkill,
+	"vago-design-module/SKILL.md": designModuleSkill,
+	"vago-design-module/aposd.md": designModuleAposd,
+	"vago-to-goal/SKILL.md": toGoalSkill,
+	"vago-to-tickets/SKILL.md": toTicketsSkill,
+	"vago-write-code/SKILL.md": writeCodeSkill,
+};
+
+// Where each Harness finds a Project's skills: Claude Code in `.claude/skills/`,
+// Codex in `.agents/skills/`. Every skill goes into both, so a starter prompt
+// that names one works on either Harness.
+const skillFolders = [".claude/skills", ".agents/skills"];
+
+// Each starter file's text, by its path in the Project. A skill goes into every
+// skill folder; every other file keeps its `starter/` path under `.vago/`.
 const starterFiles: Record<string, string> = {
 	".vago/workflows/try-hard.toml": tryHardWorkflow,
 	".vago/workflows/small.toml": smallWorkflow,
@@ -72,17 +86,20 @@ const starterFiles: Record<string, string> = {
 	".vago/prompts/goal-review.md": goalReviewPrompt,
 	".vago/scripts/branch.sh": branchScript,
 	".vago/scripts/merge.sh": mergeScript,
-	".claude/skills/vago-check-red-flags/SKILL.md": checkRedFlagsSkill,
-	".claude/skills/vago-design-module/SKILL.md": designModuleSkill,
-	".claude/skills/vago-design-module/aposd.md": designModuleAposd,
-	".claude/skills/vago-to-goal/SKILL.md": toGoalSkill,
-	".claude/skills/vago-to-tickets/SKILL.md": toTicketsSkill,
-	".claude/skills/vago-write-code/SKILL.md": writeCodeSkill,
+	...Object.fromEntries(
+		skillFolders.flatMap((folder) =>
+			Object.entries(skillFiles).map(([path, text]) => [
+				`${folder}/${path}`,
+				text,
+			]),
+		),
+	),
 };
 
 // The folders holding `starterFiles`, which `.git/info/exclude` lists when the
 // Workflow isn't committed. Each skill gets its own line, found by the
-// `SKILL.md` every skill has, so the rest of `.claude/` stays as git saw it.
+// `SKILL.md` every skill has, so the rest of `.claude/` and `.agents/` stays as
+// git saw it.
 // The trailing slash makes git match only a directory.
 const workflowExcludeLines = [
 	".vago/",
@@ -94,18 +111,19 @@ const workflowExcludeLines = [
 const goalsExcludeLine = `${goalsFolderName}/`;
 
 const commitExplanation = `Committing the Workflow in .vago/ and the vago- skills in .claude/skills/
-shares them with everyone who clones this repo. Not committing them adds .vago/
-and each vago- skill to .git/info/exclude, so they stay in this checkout.
+and .agents/skills/ shares them with everyone who clones this repo. Not
+committing them adds .vago/ and each vago- skill to .git/info/exclude, so they
+stay in this checkout.
 Goals and Tickets in ${goalsExcludeLine} stay out of git either way.`;
 
 /**
  * Asks on stdin whether the Workflow will be committed, then copies the
  * starter, every Workflow included, into `.vago/` of the Project at `root`,
- * and its `vago-` skills into `.claude/skills/`. `.git/info/exclude` gets the
- * Goals folder, and `.vago/` and each skill's folder unless the answer is
- * yes. An empty answer, or no stdin, counts as no. Throws an Error naming the
- * problem, before asking or changing anything, when a file it would write
- * already exists or `root` has no `.git` directory.
+ * and its `vago-` skills into `.claude/skills/` and `.agents/skills/`.
+ * `.git/info/exclude` gets the Goals folder, and `.vago/` and each skill's
+ * folder unless the answer is yes. An empty answer, or no stdin, counts as no.
+ * Throws an Error naming the problem, before asking or changing anything, when
+ * a file it would write already exists or `root` has no `.git` directory.
  */
 export async function initProject(root: string): Promise<void> {
 	// Every file, not only the Workflows: a Project laid out before
@@ -128,10 +146,10 @@ export async function initProject(root: string): Promise<void> {
 
 /**
  * Brings the Project at `root`, set up by `vago init`, to the starter this
- * binary ships: writes every starter file in `.vago/` and `.claude/skills/`
- * whose text differs or is missing, and prints each path it wrote, relative
- * to `root`. Files that aren't the starter's, and `.vago-goals/`, stay as they
- * are. It keeps the commit answer `.git/info/exclude` records, adding any
+ * binary ships: writes every starter file in `.vago/`, `.claude/skills/` and
+ * `.agents/skills/` whose text differs or is missing, and prints each path it
+ * wrote, relative to `root`. Files that aren't the starter's, and
+ * `.vago-goals/`, stay as they are. It keeps the commit answer `.git/info/exclude` records, adding any
  * exclude line a newer starter needs and printing `.git/info/exclude` when it
  * does; it asks, as init does, only when the exclude names neither `.vago/`
  * nor the Goals folder. Prints nothing when the Project already matches.
