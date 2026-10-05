@@ -66,6 +66,11 @@ export type AgentStep = {
 		readonly text: string;
 	}[];
 	readonly when: StepWhen;
+	/**
+	 * Whether the Goal report carries the Step's output, its session's final
+	 * answer, under the Ticket. False unless the Workflow says `goal_report`.
+	 */
+	readonly inGoalReport: boolean;
 };
 
 /** One entry of a Workflow. */
@@ -143,6 +148,7 @@ const WorkflowFile = z.strictObject({
 						idle_timeout: IdleTimeout.optional(),
 						include: IncludeSlots.optional(),
 						when: When.optional(),
+						goal_report: z.boolean().optional(),
 					}),
 				],
 				{ error: 'type must be "agent" or "shell"' },
@@ -240,6 +246,7 @@ export async function loadWorkflow(
 					step.idle_timeout ?? checked.idle_timeout ?? defaultIdleTimeoutMs,
 				includes: Object.freeze(includes),
 				when,
+				inGoalReport: step.goal_report ?? false,
 			}),
 		);
 	}

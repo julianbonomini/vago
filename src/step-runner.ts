@@ -10,10 +10,12 @@ import { printStepEnded, printStepStarted } from "./progress.ts";
 import {
 	isLastTicket,
 	readGoalBody,
+	readRunLog,
 	readTicketBody,
 	recordRunEnd,
 	recordRunStart,
 	type Ticket,
+	type TicketRun,
 } from "./tickets/tickets.ts";
 import { type AgentStep, buildPrompt, type Step } from "./workflow.ts";
 
@@ -135,6 +137,24 @@ export async function runStep(
 	await recordRunEnd(entry, spelled, ended, session);
 	printStepEnded(step.name, spelled, started, ended, session?.costUsd);
 	return { outcome, output, log: entry.log, resumeHint };
+}
+
+/**
+ * The output an agent Run gave later Steps, its session's final answer, read
+ * back from the Run's log. "" for a shell Run and for a session that ended
+ * without an answer, or whose log is gone.
+ */
+export async function readAgentRunOutput(run: TicketRun): Promise<string> {
+	if (run.harness === undefined) return "";
+	const harness = findHarness(run.harness);
+	const { added } = await readRunLog(run.log);
+	let resultText: string | undefined;
+	for (const line of added.split("\n")) {
+		// The command only tells a permission mode fallback apart, which the
+		// answer doesn't depend on.
+		resultText = harness.readLine(line, []).resultText ?? resultText;
+	}
+	return resultText ?? "";
 }
 
 // The log gets the raw stream and stderr together, so a Harness that fails

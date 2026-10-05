@@ -168,20 +168,37 @@ export function printWorktreeClose(close: WorktreeClose): void {
 
 /**
  * Prints `goal.md` without its header, as `goalBody`, and then in Markdown
- * the Workflow the Goal names and what the Goal's Runs took and cost: a
- * table with one row per Ticket and a total, and every Run in a collapsed
- * table under it. Made to be a PR description. A Run still going counts
- * toward neither total.
+ * what each Ticket's Steps put in the Goal report, collapsed by Ticket, the
+ * Workflow the Goal names and what the Goal's Runs took and cost: a table
+ * with one row per Ticket and a total, and every Run in a collapsed table
+ * under it. Made to be a PR description. `outputs` holds the output of each
+ * Run whose Step puts it in the report, by the Run's log; a Ticket shows the
+ * latest such Run of each Step that ended `ok`, and nothing when none did. A
+ * Run still going counts toward neither total.
  */
-export function printGoalReport(goalBody: string, state: GoalState): void {
-	const lines = [
-		goalBody.trimEnd(),
-		"",
-		"## Runs",
-		"",
-		`Workflow: ${state.workflow}`,
-		"",
-	];
+export function printGoalReport(
+	goalBody: string,
+	state: GoalState,
+	outputs: ReadonlyMap<string, string>,
+): void {
+	const lines = [goalBody.trimEnd(), ""];
+	const reported = state.tickets.flatMap(({ ticket, runs }) => {
+		const latest = new Map<string, string>();
+		for (const run of runs) {
+			const output = outputs.get(run.log)?.trim();
+			if (run.outcome === "ok" && output) latest.set(run.step, output);
+		}
+		return latest.size === 0
+			? []
+			: [{ name: ticket.name, texts: [...latest.values()] }];
+	});
+	if (reported.length > 0) lines.push("## Tickets", "");
+	for (const { name, texts } of reported) {
+		lines.push("<details>", `<summary>${name}</summary>`, "");
+		for (const text of texts) lines.push(text, "");
+		lines.push("</details>", "");
+	}
+	lines.push("## Runs", "", `Workflow: ${state.workflow}`, "");
 	lines.push("| Ticket | Runs | Took | Cost |", "|---|---:|---:|---:|");
 	const { tickets, total } = goalTotals(state);
 	for (const { name, totals } of tickets) {

@@ -8,6 +8,7 @@
 import { newGoal, newTicket, resetTicket, runGoal } from "./goal-runner.ts";
 import { initProject, updateProject } from "./init.ts";
 import { printGoalReport } from "./progress.ts";
+import { readAgentRunOutput } from "./step-runner.ts";
 import { readGoal, readGoalBody } from "./tickets/tickets.ts";
 import { projectRoot } from "./worktree.ts";
 
@@ -227,7 +228,13 @@ how long they took and what they cost, ready to paste into a PR description.`,
 			const goal = given.operand(goalToReport);
 			// readGoal first, since it names a missing Goal as such.
 			const state = await readGoal(root, goal);
-			printGoalReport(await readGoalBody(root, goal), state);
+			const outputs = new Map<string, string>();
+			for (const run of state.tickets.flatMap(({ runs }) => runs)) {
+				if (run.inGoalReport) {
+					outputs.set(run.log, await readAgentRunOutput(run));
+				}
+			}
+			printGoalReport(await readGoalBody(root, goal), state, outputs);
 			return 0;
 		},
 	},

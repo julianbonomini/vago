@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { makeFakeClaude } from "./fake-claude.ts";
 import { goalText, makeProject, runVago } from "./project.ts";
 
 const goalDir = ".vago-goals/hello";
@@ -88,6 +89,46 @@ Workflow: small
 | 02-wave | merge | running |  |  |
 
 </details>
+`);
+});
+
+test("goal report shows, collapsed by Ticket, the output of the Steps whose Workflow puts it in the report", async () => {
+	const agentStep = (id: string, inReport: boolean) => `
+[[steps]]
+id     = "${id}"
+type   = "agent"
+prompt = "prompts/p.md"
+${inReport ? "goal_report = true" : ""}
+`;
+	const root = await makeProject({
+		".vago/workflows/chosen.toml": `harness = "claude-code"\nmodel = "opus"\n${agentStep("choices", true)}${agentStep("implement", false)}`,
+		".vago/workflows/plain.toml": `harness = "claude-code"\nmodel = "opus"\n${agentStep("implement", false)}`,
+		".vago/prompts/p.md": "{{ticket}}\n",
+		[`${goalDir}/goal.md`]: goalText("chosen"),
+		[`${goalDir}/tickets/01-greet.md`]:
+			'+++\nstatus = "ready"\n+++\n\n# Greet\n',
+		[`${goalDir}/tickets/02-wave.md`]:
+			'+++\nstatus = "ready"\nworkflow = "plain"\n+++\n\n# Wave\n',
+	});
+	// The fixture's session answers "done" every time.
+	const claude = await makeFakeClaude();
+	expect((await runVago(root, ["run", "hello"], claude.env)).exitCode).toBe(0);
+
+	const result = await runVago(root, ["goal", "report", "hello"]);
+
+	expect(result.exitCode).toBe(0);
+	expect(result.stdout).toStartWith(`# Hello
+
+## Tickets
+
+<details>
+<summary>01-greet</summary>
+
+done
+
+</details>
+
+## Runs
 `);
 });
 

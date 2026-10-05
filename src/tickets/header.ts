@@ -18,6 +18,7 @@ const RunEntry = z.looseObject({
 	session_id: z.string().optional(),
 	tokens: z.object({ input: z.number(), output: z.number() }).optional(),
 	cost_usd: z.number().optional(),
+	goal_report: z.boolean().optional(),
 });
 
 const TicketHeader = z.looseObject({

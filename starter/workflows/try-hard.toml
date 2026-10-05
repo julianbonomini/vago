@@ -14,6 +14,10 @@
 # A Step's name is what the TUI and `vago run` show. Its id is what
 # {{steps.<id>.output}} and log file names use, and a Step without a name
 # shows its id.
+#
+# An agent Step with goal_report = true puts its output in the Goal report,
+# which `vago goal report` prints and merge.sh makes the PR's body, collapsed
+# under the Ticket.
 
 harness = "claude-code"
 model   = "claude-opus-5-5"
@@ -43,6 +47,13 @@ id     = "architecture"
 name   = "Architecture"
 type   = "agent"
 prompt = "prompts/architecture.md"
+
+[[steps]]
+id          = "design-choices"
+name        = "Design choices"
+type        = "agent"
+prompt      = "prompts/design-choices.md"
+goal_report = true
 
 [[steps]]
 id     = "implement"

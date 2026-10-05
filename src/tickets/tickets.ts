@@ -81,6 +81,8 @@ export type TicketRun = {
 	tokens?: { input: number; output: number };
 	/** What the Harness reported the Run cost. Absent for a shell Step. */
 	costUsd?: number;
+	/** Whether the Goal report carries the Run's output, as its Step said. */
+	inGoalReport: boolean;
 };
 
 /**
@@ -220,6 +222,7 @@ export async function readGoal(root: string, goal: string): Promise<GoalState> {
 			model: run.model,
 			tokens: run.tokens,
 			costUsd: run.cost_usd,
+			inGoalReport: run.goal_report === true,
 		})),
 	}));
 	const nextReady = tickets.find(
@@ -394,9 +397,10 @@ export async function setStatus(
 
 /**
  * Appends a `[[runs]]` entry for `step`, started at `started`, naming the
- * Harness and model for an agent Step. Call it before the Step starts, so a
- * crash mid-Step still leaves a trace. Returns the entry, which carries the
- * path the Run's log must be written to.
+ * Harness and model for an agent Step, and whether the Goal report carries
+ * its output. Call it before the Step starts, so a crash mid-Step still
+ * leaves a trace. Returns the entry, which carries the path the Run's log
+ * must be written to.
  */
 export async function recordRunStart(
 	ticket: Ticket,
@@ -418,6 +422,8 @@ export async function recordRunStart(
 							model: step.model,
 							started,
 							log: `${logStem}.jsonl`,
+							// Left out when false, so most entries read as before.
+							...(step.inGoalReport ? { goal_report: true } : {}),
 						}
 					: { step: step.id, started, log: `${logStem}.log` };
 			runs.push(entry);

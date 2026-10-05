@@ -10,6 +10,9 @@ import architecturePrompt from "../starter/prompts/architecture.md" with {
 	type: "text",
 };
 import designPrompt from "../starter/prompts/design.md" with { type: "text" };
+import designChoicesPrompt from "../starter/prompts/design-choices.md" with {
+	type: "text",
+};
 import goalReviewPrompt from "../starter/prompts/goal-review.md" with {
 	type: "text",
 };
@@ -61,6 +64,7 @@ const starterFiles: Record<string, string> = {
 	".vago/prompts/design.md": designPrompt,
 	".vago/prompts/product.md": productPrompt,
 	".vago/prompts/architecture.md": architecturePrompt,
+	".vago/prompts/design-choices.md": designChoicesPrompt,
 	".vago/prompts/implement.md": implementPrompt,
 	".vago/prompts/review.md": reviewPrompt,
 	".vago/prompts/small-implement.md": smallImplementPrompt,
