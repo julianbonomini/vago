@@ -23,6 +23,7 @@ import {
 	readGoalRows,
 	ticketTotal,
 } from "./goal-rows.ts";
+import { startGoal } from "./goal-start.ts";
 import { GoalView } from "./goal-view.tsx";
 import {
 	type FooterKey,
@@ -90,11 +91,16 @@ function liveGoalRows(root: string): () => GoalRow[] | undefined {
  * opens the selected Goal, unless it is broken, in the Goal view in place of
  * all this; its `[` and `]` open the Goal before and after, passing over
  * broken ones and stopping at the ends, and its Esc leaves the selection on
- * the Goal last open. Reads the Goals itself, and again every second, so
- * changes on disk show without a key; the selection stays on its Goal when
- * the rows reorder. Throws what the first read throws.
+ * the Goal last open. `s` starts the selected Goal in a `vago run` of its
+ * own, through the command `vago` (`startGoal`), and the footer says what
+ * came of it until the next key. Reads the Goals itself, and again every
+ * second, so changes on disk show without a key; the selection stays on its
+ * Goal when the rows reorder. Throws what the first read throws.
  */
-export function ProjectView(props: { root: string }): JSX.Element {
+export function ProjectView(props: {
+	root: string;
+	vago: string[];
+}): JSX.Element {
 	const { color, symbol, scrollbars, dimText } = theme();
 	const rows = liveGoalRows(props.root);
 	const [chosen, setChosen] = createSignal<string>();
@@ -113,6 +119,7 @@ export function ProjectView(props: { root: string }): JSX.Element {
 		return Math.max(0, Math.min(list.length - 1, previous));
 	}, 0);
 	const [helpShown, setHelpShown] = createSignal(false);
+	const [notice, setNotice] = createSignal<string>();
 	// The Goal open in the Goal view, which takes the whole screen; undefined
 	// on the Goals table.
 	const [opened, setOpened] = createSignal<string>();
@@ -147,8 +154,12 @@ export function ProjectView(props: { root: string }): JSX.Element {
 		if (openedRow() !== undefined) return;
 		// A broken Goal has no Tickets to show; its preview says why.
 		const row = rows()?.[selectedIndex()];
+		setNotice(undefined);
 		if (key.name === "return" && !helpShown() && row?.standing !== "broken") {
 			setOpened(row?.goal);
+		}
+		if (key.name === "s" && !helpShown() && row !== undefined) {
+			setNotice(startGoal(props.vago, props.root, row));
 		}
 		if (key.name === "?") setHelpShown(!helpShown());
 		if (key.name === "escape") setHelpShown(false);
@@ -216,6 +227,7 @@ export function ProjectView(props: { root: string }): JSX.Element {
 					{(row: () => GoalRow) => (
 						<GoalView
 							root={props.root}
+							vago={props.vago}
 							row={row()}
 							position={selectedIndex() + 1}
 							count={(rows() ?? []).length}
@@ -300,6 +312,7 @@ export function ProjectView(props: { root: string }): JSX.Element {
 					<KeyFooter
 						keys={footerKeys(symbol.upDown)}
 						width={terminal().width - 2}
+						notice={notice()}
 					/>
 				</box>
 				<Show when={helpShown()}>
@@ -315,6 +328,7 @@ export function ProjectView(props: { root: string }): JSX.Element {
 const footerKeys = (upDown: string): FooterKey[] => [
 	{ keys: upDown, label: "Goal", use: 6 },
 	{ keys: "Enter", label: "Open", use: 5 },
+	{ keys: "s", label: "Start", use: 2 },
 	{ keys: "g G", label: "First, last", use: 1 },
 	{ keys: "?", label: "Help", use: 3 },
 	{ keys: "q", label: "Quit", use: 2 },
@@ -323,6 +337,7 @@ const footerKeys = (upDown: string): FooterKey[] => [
 const helpKeys = (upDown: string): HelpKey[] => [
 	{ keys: `${upDown} j k`, meaning: "select the Goal above, below" },
 	{ keys: "Enter", meaning: "open the selected Goal" },
+	{ keys: "s", meaning: "start the selected Goal in vago run" },
 	{ keys: "g G", meaning: "select the first, the last Goal" },
 	{ keys: "click", meaning: "select the Goal clicked" },
 	{ keys: "wheel", meaning: "scroll the Goals" },

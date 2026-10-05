@@ -1,7 +1,8 @@
 // The entry to the TUI that a bare `vago` opens on a terminal: how the
 // terminal is held while it is open and given back on every way out. It
-// is read-only (ADR 0005) and drawn with OpenTUI and Solid (ADR 0006). Only
-// `cli.ts` imports this file, and only lazily, so no command loads OpenTUI.
+// reads, writes nothing and only starts Goals (ADR 0005), and is drawn with
+// OpenTUI and Solid (ADR 0006). Only `cli.ts` imports this file, and only
+// lazily, so no command loads OpenTUI.
 
 import { format } from "node:util";
 import { createCliRenderer } from "@opentui/core";
@@ -21,10 +22,11 @@ import { theme } from "./theme.ts";
  * out of the alternate screen, cursor shown, raw mode off. Holds what is
  * written to stderr and `console` meanwhile and prints it afterwards. Throws,
  * after restoring the terminal, any error the view hit. Needs stdin and
- * stdout to be terminals.
+ * stdout to be terminals. `vago` is the command that runs this same `vago`,
+ * which the TUI starts Goals with.
  */
-export async function openTui(root: string): Promise<void> {
-	return holdTerminal(() => <ProjectView root={root} />);
+export async function openTui(root: string, vago: string[]): Promise<void> {
+	return holdTerminal(() => <ProjectView root={root} vago={vago} />);
 }
 
 const consoleMethods = ["log", "info", "warn", "error", "debug"] as const;

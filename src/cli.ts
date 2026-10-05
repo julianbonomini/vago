@@ -277,6 +277,16 @@ stay in the Ticket file. It refuses a Ticket that isn't stuck.`,
 	},
 ];
 
+// The command that runs this same `vago`, for the TUI to start Goals with:
+// the compiled binary alone, or Bun with the script it runs. A compiled
+// binary's script sits in Bun's embedded `/$bunfs/`, which no other process
+// can read.
+function thisVago(): string[] {
+	return Bun.main.startsWith("/$bunfs/")
+		? [process.execPath]
+		: [process.execPath, Bun.main];
+}
+
 const helpPointer = "Run `vago --help` for what each command does.";
 
 async function main(args: string[]): Promise<number> {
@@ -286,7 +296,7 @@ async function main(args: string[]): Promise<number> {
 		// nowhere else, so no command loads OpenTUI or needs Solid's transform.
 		if (args.length === 0 && process.stdin.isTTY && process.stdout.isTTY) {
 			const { openTui } = await import("./tui/tui.tsx");
-			await openTui(await projectRoot(process.cwd()));
+			await openTui(await projectRoot(process.cwd()), thisVago());
 			return 0;
 		}
 		const shown = helpAsked ? listing(words) : undefined;

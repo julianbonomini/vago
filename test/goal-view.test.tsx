@@ -239,7 +239,7 @@ test("↑↓ change the Ticket pane to that Ticket, its text read as paragraphs"
 test("the footer names the Goal view's keys, and ? shows them all", async () => {
 	const { view, frame } = await openFirstGoal(await runningGoal());
 	expect(frame.trimEnd().split("\n").at(-1)).toMatch(
-		/^ ↑↓ Move {3}←→ Run {3}Tab Pane {3}\[ \] Goal {3}t r Full screen {3}G Follow {3}Esc Goals {3}\? Help {3}q Quit *$/,
+		/^ ↑↓ Move {3}←→ Run {3}Tab Pane {3}\[ \] Goal {3}s Start {3}t r Full screen {3}G Follow {3}Esc Goals {3}\? Help {3}q Quit *$/,
 	);
 
 	view.mockInput.pressKey("?");
@@ -254,6 +254,7 @@ test("the footer names the Goal view's keys, and ? shows them all", async () => 
 		"t r",
 		"G",
 		"[ ]",
+		"s",
 		"click",
 		"wheel",
 		"Esc",
@@ -1250,4 +1251,31 @@ test("a Runs pane too narrow for its Ticket's number is titled Runs", async () =
 	});
 
 	expect(frame).toMatch(/┌─ Runs ─+┐/);
+});
+
+test("s on a running Goal says it is running and starts nothing", async () => {
+	const root = await makeProject({
+		".vago-goals/a/goal.md": goalText("w"),
+		".vago-goals/a/tickets/01-t.md": ticketText("running", {
+			runs: [{ step: "work", started: at("10:00") }],
+		}),
+	});
+	await heldLock(root, "a");
+	const ticket = await Bun.file(
+		join(root, ".vago-goals/a/tickets/01-t.md"),
+	).text();
+	const view = await renderView(root);
+	await frameWith(view, " 1/1 ");
+	view.mockInput.pressEnter();
+	await frameWith(view, "Goal 1/1");
+
+	view.mockInput.pressKey("s");
+
+	expect(
+		await frameWith(view, "a is running; only a ready Goal starts"),
+	).toBeDefined();
+	await Bun.sleep(1000);
+	expect(
+		await Bun.file(join(root, ".vago-goals/a/tickets/01-t.md")).text(),
+	).toBe(ticket);
 });

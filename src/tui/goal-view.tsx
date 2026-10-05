@@ -25,6 +25,7 @@ import {
 } from "../harness/registry.ts";
 import { readRunLog } from "../tickets/tickets.ts";
 import { type GoalRow, ticketTotal } from "./goal-rows.ts";
+import { startGoal } from "./goal-start.ts";
 import type {
 	GoalTicket,
 	GoalTicketRun,
@@ -69,9 +70,12 @@ import { duration, money, tokenCount } from "./time-and-money.ts";
  * focuses it. A footer names the keys, and `?` shows them all until `?` or
  * Esc. Esc otherwise closes the whole screen, then calls `onClose`. `[` and
  * `]` call `onNeighbour` with -1 and 1, to open the Goal before or after.
+ * `s` starts the Goal in a `vago run` of its own, through the command `vago`
+ * (`startGoal`), and the footer says what came of it until the next key.
  */
 export function GoalView(props: {
 	root: string;
+	vago: string[];
 	row: GoalRow;
 	position: number;
 	count: number;
@@ -103,6 +107,7 @@ export function GoalView(props: {
 			: runs.length - 1;
 	};
 	const [helpShown, setHelpShown] = createSignal(false);
+	const [notice, setNotice] = createSignal<string>();
 	const [focus, setFocus] = createSignal<GoalViewPane>("tickets");
 	const [fullScreen, setFullScreen] = createSignal<"ticket" | "run">();
 	// The scrollboxes of the Ticket's text and the shown Run, which the keys
@@ -149,6 +154,7 @@ export function GoalView(props: {
 	useKeyboard((key) => {
 		// The pane 1 to 4 name, undefined for any other key.
 		const numbered = paneOrder[Number(key.name) - 1];
+		setNotice(undefined);
 		if (key.name === "?") setHelpShown(!helpShown());
 		else if (key.name === "escape" && helpShown()) setHelpShown(false);
 		else if (key.name === "escape" && fullScreen() !== undefined)
@@ -165,6 +171,8 @@ export function GoalView(props: {
 		} else if (numbered !== undefined) setFocus(numbered);
 		else if (key.name === "[") props.onNeighbour(-1);
 		else if (key.name === "]") props.onNeighbour(1);
+		else if (key.name === "s")
+			setNotice(startGoal(props.vago, props.root, props.row));
 		else if (key.name === "t") openFullScreen("ticket");
 		else if (key.name === "r") openFullScreen("run");
 		else if (key.name === "up" || key.name === "k") moveInFocus(-1);
@@ -280,6 +288,7 @@ export function GoalView(props: {
 				<KeyFooter
 					keys={footerKeys(symbol.upDown, symbol.leftRight)}
 					width={terminal().width - 2}
+					notice={notice()}
 				/>
 			</box>
 			<Show when={helpShown()}>
@@ -300,6 +309,7 @@ const footerKeys = (upDown: string, leftRight: string): FooterKey[] => [
 	{ keys: leftRight, label: "Run", use: 4 },
 	{ keys: "Tab", label: "Pane", use: 3 },
 	{ keys: "[ ]", label: "Goal", use: 2 },
+	{ keys: "s", label: "Start", use: 2 },
 	{ keys: "t r", label: "Full screen", use: 2 },
 	{ keys: "G", label: "Follow", use: 2 },
 	{ keys: "Esc", label: "Goals", use: 3 },
@@ -318,6 +328,7 @@ const helpKeys = (upDown: string, leftRight: string): HelpKey[] => [
 	{ keys: "t r", meaning: "Ticket, Run full screen" },
 	{ keys: "G", meaning: "follow the live Run again" },
 	{ keys: "[ ]", meaning: "open the Goal before, after" },
+	{ keys: "s", meaning: "start this Goal in vago run" },
 	{ keys: "click", meaning: "select the Ticket or Run, focus the pane" },
 	{ keys: "wheel", meaning: "scroll the pane under the pointer" },
 	{ keys: "Esc", meaning: "close full screen, then go to the Goals" },

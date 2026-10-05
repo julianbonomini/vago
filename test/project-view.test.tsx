@@ -8,8 +8,10 @@ import {
 	type HeldLock,
 	heldLock,
 	makeProject,
+	oneStep,
 	projectWithGoals,
 	ticketText,
+	vagoHome,
 } from "./project.ts";
 import {
 	frameWith,
@@ -131,7 +133,7 @@ test("the footer names the keys of the Project view", async () => {
 	const frame = await frameWith(view, " 1/1 ");
 
 	expect(frame.trimEnd().split("\n").at(-1)).toMatch(
-		/^ ↑↓ Goal {3}Enter Open {3}g G First, last {3}\? Help {3}q Quit *$/,
+		/^ ↑↓ Goal {3}Enter Open {3}s Start {3}g G First, last {3}\? Help {3}q Quit *$/,
 	);
 });
 
@@ -1197,4 +1199,21 @@ test("a resize redraws the view to the new size", async () => {
 	const wider = await frameWith(view, "RUN TIME");
 	holdsTogether(wider, 120);
 	expect(wider.split("\n")).toHaveLength(31);
+});
+
+test("s starts the selected ready Goal in its own vago run, which shows as running", async () => {
+	setEnv({ VAGO_HOME: vagoHome });
+	const root = await makeProject({
+		".vago/workflows/w.toml": oneStep("sleep 1"),
+		".vago-goals/a/goal.md": goalText("w"),
+		".vago-goals/a/tickets/01-t.md": ticketText("ready"),
+	});
+	const view = await renderView(root);
+	expect(rowOf(await frameWith(view, " 1/1 "), "a")).toContain("ready");
+
+	view.mockInput.pressKey("s");
+
+	expect(await frameWith(view, "Started vago run a")).toBeDefined();
+	expect(rowOf(await frameWith(view, "01 work"), "a")).toContain("running");
+	expect(rowOf(await frameWith(view, "finished"), "a")).toContain("done");
 });
