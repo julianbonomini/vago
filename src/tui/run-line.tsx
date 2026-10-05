@@ -3,11 +3,15 @@
 // duration and cost in fixed columns. Hides the columns' widths and how a
 // narrow line is cut.
 
-import { TextAttributes } from "@opentui/core";
+import { type ColorInput, TextAttributes } from "@opentui/core";
 import type { JSX } from "@opentui/solid";
 import type { GoalRunState } from "./goal-tickets.ts";
 import { fitText } from "./text-fit.ts";
 import { runMarkLook, theme } from "./theme.ts";
+
+/** How a selected Run line stands out: in the selection's colours, or bold. */
+export type RunLineSelection = "filled" | "bold";
+
 import { duration, money } from "./time-and-money.ts";
 
 /** What a Run line shows of a Run after its leading field. */
@@ -34,16 +38,20 @@ export const runLineFieldsWidth =
 /**
  * `run` in `width` columns: `lead` dim, its Step, its state or outcome in
  * its colour as `runMarkLook` gives it, how long it took and, for an agent
- * Step, what it cost, all bold when `bold`. A narrow line cuts the fields on
- * the right first.
+ * Step, what it cost, all as `selection` has it when given. A narrow line
+ * cuts the fields on the right first.
  */
 export function RunLine(props: {
 	lead: string;
 	run: RunLineRun;
 	width: number;
-	bold?: boolean;
+	selection?: RunLineSelection;
 }): JSX.Element {
-	const { color, dimSpan } = theme();
+	const { color, dimSpan, selection } = theme();
+	const filled = () => props.selection === "filled";
+	// A filled line is drawn in the selection's colours throughout, so its
+	// own colours don't fight the highlight.
+	const fg = (own: ColorInput) => (filled() ? selection.fg : own);
 	const mark = () => runMarkLook(props.run.state, props.run.outcome);
 	const fields = () => {
 		let left = props.width;
@@ -66,15 +74,22 @@ export function RunLine(props: {
 	};
 	return (
 		<text
-			fg={color.fg}
-			attributes={props.bold === true ? TextAttributes.BOLD : 0}
+			fg={fg(color.fg)}
+			bg={filled() ? selection.bg : undefined}
+			attributes={
+				filled()
+					? selection.attributes
+					: props.selection === "bold"
+						? TextAttributes.BOLD
+						: 0
+			}
 			flexShrink={0}
 			wrapMode="none"
 		>
-			<span style={dimSpan}>{fields().lead}</span>
+			<span style={{ ...dimSpan, fg: fg(dimSpan.fg) }}>{fields().lead}</span>
 			{fields().step}
-			<span style={{ fg: mark().fg }}>{fields().outcome}</span>
-			<span style={dimSpan}>{fields().rest}</span>
+			<span style={{ fg: fg(mark().fg) }}>{fields().outcome}</span>
+			<span style={{ ...dimSpan, fg: fg(dimSpan.fg) }}>{fields().rest}</span>
 		</text>
 	);
 }

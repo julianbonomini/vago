@@ -62,15 +62,15 @@ const screens: {
 	},
 ];
 
-// The glyphs a pane's left or right edge is drawn with, in every look.
-const edge = /[│┃├┤┣┫┌┐└┘┏┓┗┛|+#]/;
+// A line between panes, in every look.
+const divider = /^[─┬┴┼├┤+-]+$/;
 
 for (const size of [
 	{ width: 60, height: 24 },
 	{ width: 80, height: 24 },
 ]) {
 	for (const look of ["colour", "NO_COLOR", "VAGO_ASCII=1"]) {
-		test(`at ${size.width}×${size.height} in ${look} every screen has the Project's header and its boxes edge to edge`, async () => {
+		test(`at ${size.width}×${size.height} in ${look} every screen has the Project's header and its panes edge to edge`, async () => {
 			if (look === "NO_COLOR") setEnv({ NO_COLOR: "1" });
 			if (look === "VAGO_ASCII=1") setEnv({ VAGO_ASCII: "1" });
 			const root = await stuckGoal();
@@ -87,33 +87,38 @@ for (const size of [
 				expect(lines[0]).toMatch(/ [·|] 1 Goals .* spent/);
 				header ??= lines[0];
 				expect(lines[0]).toBe(header ?? "");
-				// Between the header and the footer every row is inside a box, so
-				// no blank row sits between two, and no two borders sit side by
-				// side, so neither does a blank column.
-				for (const line of lines.slice(1, -1)) {
-					expect(line[0] ?? "").toMatch(edge);
-					expect(line.at(-1) ?? "").toMatch(edge);
+				// Between the header and the footer every row spans the screen, no
+				// pane sits empty between two lines, and no two lines sit side by
+				// side.
+				const body = lines.slice(1, -1);
+				for (const line of body) {
+					expect(Bun.stringWidth(line)).toBe(size.width);
 				}
-				expect(frame).not.toMatch(/[│┃|][│┃|]|[┘┛┐┓+][┌┏└┗+]/);
+				body.forEach((line, index) => {
+					if (divider.test(line)) {
+						expect(body[index + 1] ?? "").not.toMatch(divider);
+					}
+				});
+				expect(frame).not.toMatch(/[│┃|][│┃|]/);
 				expect(lines.at(-1)).toContain("? Help");
 			}
 		});
 	}
 }
 
-test("a box under another shares its line, joined at the corners, with both titles on it", async () => {
+test("panes share one line, joined where lines meet, and each title is a row of its own", async () => {
 	const root = await stuckGoal();
 	const view = await renderView(root);
 	const project = await frameWith(view, "Workflow small");
-	expect(project).toMatch(/\n├─ worktrees ─+ 1\/1 ─┤\n/);
+	expect(project).toMatch(/\n─+\n {2}worktrees +Workflow small/);
 
 	view.mockInput.pressEnter();
 	const goal = await frameWith(view, "Goal 1/1");
 	// The Goal's box over the Tickets and the Ticket, the Tickets over their
 	// Runs, and both over the Run.
-	expect(goal).toMatch(/\n├─ Tickets ─+┬─ Ticket 02 ─+┤\n/);
-	expect(goal).toMatch(/\n├─ Runs of Ticket 02 ─+ 2\/2 ─┤ /);
 	expect(goal).toMatch(
-		/\n├─ Run 1 · 02 check ─+┴─+ 1 Run · 30m 0s · \$1\.25 ─┤\n/,
+		/\n─+┬─+\n {2}Tickets +2\/2 │ Ticket 02 +1 Run · 30m 0s · \$1\.25 {2}\n/,
 	);
+	expect(goal).toMatch(/\n─+┤ .*\n {2}Runs of Ticket 02 +│/);
+	expect(goal).toMatch(/\n─+┴─+\n {2}Run 1 · 02 check /);
 });

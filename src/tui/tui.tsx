@@ -41,7 +41,6 @@ async function holdTerminal(view: () => JSX.Element): Promise<void> {
 		exitSignals: [],
 		screenMode: "alternate-screen",
 		consoleMode: "disabled",
-		backgroundColor: theme().color.bg,
 	});
 	// Past ten listeners Node prints a leak warning to stderr, which would
 	// scroll the alternate screen and shift every later frame.

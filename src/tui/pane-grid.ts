@@ -1,14 +1,14 @@
-// The panes' borders drawn as one grid of lines: where two panes share an
-// edge it is one line, joined where lines meet, with each pane's titles on
-// it and the focused pane's outline in the focus look. Hides the junction
+// The lines between the panes, drawn as one grid: where two panes share an
+// edge it is one line, joined where lines meet. The outer edge of the panes
+// together draws nothing, so only the lines between them show, and none
+// carries text: a pane's title is its own first row. Hides the junction
 // glyphs, the pass after each frame that draws them, and the order panes
-// draw in, which no longer decides whose title or focus shows.
+// draw in.
 
 import {
 	type BorderCharacters,
 	type BoxRenderable,
 	type CliRenderer,
-	type ColorInput,
 	type OptimizedBuffer,
 	parseColor,
 	type Renderable,
@@ -18,35 +18,39 @@ import { onCleanup } from "solid-js";
 import { theme } from "./theme.ts";
 
 /**
- * How a pane's border is drawn: `title` on its top line from the left,
- * `bottomTitle` on its bottom line from the right, each left out when it
- * doesn't fit, in `titleColor`, or else the border's colour. A `focused`
- * pane's whole outline and titles are in the accent, its lines in the
- * theme's `focusBorder`.
+ * A ref for a `border`ed box, which makes it a pane of the screen's grid for
+ * as long as the calling component lives and the box and its parents are
+ * visible. The box draws no line of its own: its border only takes the room
+ * the grid draws in. Two panes share an edge by overlapping by `sharedLine`
+ * cells, a margin of `-sharedLine` on the later.
  */
-export type PaneLook = {
-	title: string;
-	bottomTitle?: string;
-	titleColor?: ColorInput;
-	focused: boolean;
-};
-
-/**
- * A ref for a `border`ed box, which makes it a pane of the screen's grid,
- * drawn with `look()` for as long as the calling component lives and the
- * box and its parents are visible. The box draws no title of its own. Two
- * panes share an edge by overlapping by `sharedLine` cells, a margin of
- * `-sharedLine` on the later.
- */
-export function usePane(look: () => PaneLook): (box: BoxRenderable) => void {
+export function usePane(): (box: BoxRenderable) => void {
 	const grid = gridOf(useRenderer());
-	const pane: GridPane = { box: undefined, look };
+	const pane: GridPane = { box: undefined };
 	grid.panes.add(pane);
 	onCleanup(() => grid.panes.delete(pane));
 	return (box) => {
+		box.customBorderChars = blankLines;
+		// In the theme's colour, though blank, so `NO_COLOR` prints none.
+		box.borderColor = theme().color.border;
 		pane.box = box;
 	};
 }
+
+// A pane box's own border, blank so only the grid's lines show.
+const blankLines: BorderCharacters = {
+	topLeft: " ",
+	topRight: " ",
+	bottomLeft: " ",
+	bottomRight: " ",
+	horizontal: " ",
+	vertical: " ",
+	topT: " ",
+	bottomT: " ",
+	leftT: " ",
+	rightT: " ",
+	cross: " ",
+};
 
 /**
  * A ref for a box drawn over the panes, like the help screen: the grid
@@ -65,7 +69,7 @@ export function useCover(): (box: BoxRenderable) => void {
 /** The cells two panes that share an edge overlap by: their one line. */
 export const sharedLine = 1;
 
-type GridPane = { box: BoxRenderable | undefined; look: () => PaneLook };
+type GridPane = { box: BoxRenderable | undefined };
 
 type Grid = {
 	panes: Set<GridPane>;
@@ -102,7 +106,7 @@ const left = 4;
 const right = 8;
 
 function drawGrid(grid: Grid, buffer: OptimizedBuffer): void {
-	const { color, border, focusBorder } = theme();
+	const { color, border } = theme();
 	const covers = [...grid.covers].flatMap(({ box }) => {
 		const rect = shownRect(box);
 		return rect === undefined ? [] : [rect];
@@ -118,99 +122,59 @@ function drawGrid(grid: Grid, buffer: OptimizedBuffer): void {
 				y >= rect.y &&
 				y < rect.y + rect.height,
 		);
-	const panes = [...grid.panes].flatMap((pane) => {
-		const rect = shownRect(pane.box);
+	const panes = [...grid.panes].flatMap(({ box }) => {
+		const rect = shownRect(box);
 		return rect === undefined || rect.width < 2 || rect.height < 2
 			? []
-			: [{ rect, look: pane.look() }];
+			: [rect];
 	});
+
+	// The edge of all the panes together, which draws no line.
+	const outer = {
+		left: Math.min(...panes.map((rect) => rect.x)),
+		top: Math.min(...panes.map((rect) => rect.y)),
+		right: Math.max(...panes.map((rect) => rect.x + rect.width - 1)),
+		bottom: Math.max(...panes.map((rect) => rect.y + rect.height - 1)),
+	};
+	// The arms of a cell's glyph without those along the outer edge, so a
+	// line between panes runs to the edge without a junction there.
+	const innerArms = (x: number, y: number, arms: number) => {
+		let inner = arms;
+		if (x === outer.left || x === outer.right) inner &= ~(up | down);
+		if (y === outer.top || y === outer.bottom) inner &= ~(left | right);
+		return inner;
+	};
 
 	// Every pane's outline adds its arms to the cells it passes, so a cell
 	// two outlines pass gets the junction of both.
-	const cells = new Map<number, { arms: number; focused: boolean }>();
-	const mark = (x: number, y: number, arms: number, focused: boolean) => {
+	const cells = new Map<number, number>();
+	const mark = (x: number, y: number, arms: number) => {
 		if (!onScreen(x, y)) return;
 		const key = y * buffer.width + x;
-		const cell = cells.get(key) ?? { arms: 0, focused: false };
-		cells.set(key, {
-			arms: cell.arms | arms,
-			focused: cell.focused || focused,
-		});
+		cells.set(key, (cells.get(key) ?? 0) | arms);
 	};
-	for (const { rect, look } of panes) {
+	for (const rect of panes) {
 		const lastX = rect.x + rect.width - 1;
 		const lastY = rect.y + rect.height - 1;
 		for (let x = rect.x; x <= lastX; x++) {
 			const across = (x > rect.x ? left : 0) | (x < lastX ? right : 0);
-			mark(
-				x,
-				rect.y,
-				across | (x === rect.x || x === lastX ? down : 0),
-				look.focused,
-			);
-			mark(
-				x,
-				lastY,
-				across | (x === rect.x || x === lastX ? up : 0),
-				look.focused,
-			);
+			const corner = x === rect.x || x === lastX;
+			mark(x, rect.y, across | (corner ? down : 0));
+			mark(x, lastY, across | (corner ? up : 0));
 		}
 		for (let y = rect.y + 1; y < lastY; y++) {
-			mark(rect.x, y, up | down, look.focused);
-			mark(lastX, y, up | down, look.focused);
+			mark(rect.x, y, up | down);
+			mark(lastX, y, up | down);
 		}
 	}
 	const borderColor = parseColor(color.border);
-	const accent = parseColor(color.accent);
 	const bg = parseColor(color.bg);
-	for (const [key, cell] of cells) {
+	for (const [key, allArms] of cells) {
 		const x = key % buffer.width;
 		const y = Math.floor(key / buffer.width);
-		if (covered(x, y)) continue;
-		const lines = cell.focused ? focusBorder : border;
-		buffer.setCell(
-			x,
-			y,
-			glyph(lines, cell.arms),
-			cell.focused ? accent : borderColor,
-			bg,
-		);
-	}
-
-	// Titles go on last, so a neighbour's line never covers one. Cell by
-	// cell, as `drawText` leaves a space's cell as it was.
-	const titled = new Set<number>();
-	const write = (text: string, x: number, y: number, fg: ColorInput) => {
-		let at = x;
-		for (const character of text) {
-			titled.add(y * buffer.width + at);
-			if (!covered(at, y)) buffer.setCell(at, y, character, parseColor(fg), bg);
-			at += Bun.stringWidth(character);
-		}
-	};
-	const titleColor = (look: PaneLook) =>
-		look.titleColor ?? (look.focused ? color.accent : color.border);
-	// Room between the corners and the line beside each of them.
-	const room = (rect: Rect) => rect.width - 4;
-	for (const { rect, look } of panes) {
-		if (Bun.stringWidth(look.title) <= room(rect)) {
-			write(look.title, rect.x + 2, rect.y, titleColor(look));
-		}
-	}
-	// A bottom title shares its line with the title of the pane under it,
-	// which names that pane, so it gives way to it with a line between.
-	for (const { rect, look } of panes) {
-		const text = look.bottomTitle ?? "";
-		const width = Bun.stringWidth(text);
-		const x = rect.x + rect.width - 2 - width;
-		const y = rect.y + rect.height - 1;
-		let free = true;
-		for (let at = x - 1; at <= x + width; at++) {
-			if (titled.has(y * buffer.width + at)) free = false;
-		}
-		if (width > 0 && width <= room(rect) && free) {
-			write(text, x, y, titleColor(look));
-		}
+		const arms = innerArms(x, y, allArms);
+		if (arms === 0 || covered(x, y)) continue;
+		buffer.setCell(x, y, glyph(border, arms), borderColor, bg);
 	}
 }
 
