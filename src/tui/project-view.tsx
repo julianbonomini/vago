@@ -23,7 +23,9 @@ import {
 	readGoalRows,
 	ticketTotal,
 } from "./goal-rows.ts";
+import { startGoal } from "./goal-start.ts";
 import { GoalView } from "./goal-view.tsx";
+import { usePane } from "./pane-grid.ts";
 import {
 	type FooterKey,
 	type HelpKey,
@@ -31,7 +33,7 @@ import {
 	KeyHelp,
 } from "./screen-keys.tsx";
 import { fitText } from "./text-fit.ts";
-import { goalColor, paneBorder, theme } from "./theme.ts";
+import { goalColor, theme } from "./theme.ts";
 import { TicketBar } from "./ticket-bar.tsx";
 import { duration, money } from "./time-and-money.ts";
 
@@ -79,7 +81,8 @@ function liveGoalRows(root: string): () => GoalRow[] | undefined {
 
 /**
  * The Project view of the Project at `root`: a header line with the
- * Project's counts and spend, and a Goals box with one row per Goal showing
+ * Project's counts and spend, which stays on every screen, the Goal view's
+ * included, and a Goals box with one row per Goal showing
  * its standing, Tickets, time, cost, what it is doing and its title, the
  * selected one in the accent colour, moved by ↑↓ and j k, g and G, or a
  * click, with `n/N` on the box's bottom border, or a line naming
@@ -90,11 +93,16 @@ function liveGoalRows(root: string): () => GoalRow[] | undefined {
  * opens the selected Goal, unless it is broken, in the Goal view in place of
  * all this; its `[` and `]` open the Goal before and after, passing over
  * broken ones and stopping at the ends, and its Esc leaves the selection on
- * the Goal last open. Reads the Goals itself, and again every second, so
- * changes on disk show without a key; the selection stays on its Goal when
- * the rows reorder. Throws what the first read throws.
+ * the Goal last open. `s` starts the selected Goal in a `vago run` of its
+ * own, through the command `vago` (`startGoal`), and the footer says what
+ * came of it until the next key. Reads the Goals itself, and again every
+ * second, so changes on disk show without a key; the selection stays on its
+ * Goal when the rows reorder. Throws what the first read throws.
  */
-export function ProjectView(props: { root: string }): JSX.Element {
+export function ProjectView(props: {
+	root: string;
+	vago: string[];
+}): JSX.Element {
 	const { color, symbol, scrollbars, dimText } = theme();
 	const rows = liveGoalRows(props.root);
 	const [chosen, setChosen] = createSignal<string>();
@@ -113,6 +121,7 @@ export function ProjectView(props: { root: string }): JSX.Element {
 		return Math.max(0, Math.min(list.length - 1, previous));
 	}, 0);
 	const [helpShown, setHelpShown] = createSignal(false);
+	const [notice, setNotice] = createSignal<string>();
 	// The Goal open in the Goal view, which takes the whole screen; undefined
 	// on the Goals table.
 	const [opened, setOpened] = createSignal<string>();
@@ -147,8 +156,12 @@ export function ProjectView(props: { root: string }): JSX.Element {
 		if (openedRow() !== undefined) return;
 		// A broken Goal has no Tickets to show; its preview says why.
 		const row = rows()?.[selectedIndex()];
+		setNotice(undefined);
 		if (key.name === "return" && !helpShown() && row?.standing !== "broken") {
 			setOpened(row?.goal);
+		}
+		if (key.name === "s" && !helpShown() && row !== undefined) {
+			setNotice(startGoal(props.vago, props.root, row));
 		}
 		if (key.name === "?") setHelpShown(!helpShown());
 		if (key.name === "escape") setHelpShown(false);
@@ -165,6 +178,11 @@ export function ProjectView(props: { root: string }): JSX.Element {
 			? " 0/0 "
 			: ` ${selectedIndex() + 1}/${list.length} `;
 	};
+	const goalsPane = usePane(() => ({
+		title: " Goals ",
+		bottomTitle: position(),
+		focused: false,
+	}));
 	const terminal = useTerminalDimensions();
 	const wide = () => terminal().width >= wideFrom;
 	// The Goals box takes what its rows need, up to its share of the screen,
@@ -208,7 +226,17 @@ export function ProjectView(props: { root: string }): JSX.Element {
 		return { name: nameWidth(), now, title: rest - now };
 	};
 	return (
-		<>
+		<box flexDirection="column" flexGrow={1}>
+			{/* One header over every screen, so it never moves. */}
+			<Show when={rows()}>
+				{(read: () => GoalRow[]) => (
+					<HeaderLine
+						root={props.root}
+						rows={read()}
+						width={terminal().width}
+					/>
+				)}
+			</Show>
 			{/* Keyed on the Goal, so another Goal opens on its own Ticket, Run
 			    and focus. */}
 			<Show when={openedRow()?.goal} keyed>
@@ -216,6 +244,7 @@ export function ProjectView(props: { root: string }): JSX.Element {
 					{(row: () => GoalRow) => (
 						<GoalView
 							root={props.root}
+							vago={props.vago}
 							row={row()}
 							position={selectedIndex() + 1}
 							count={(rows() ?? []).length}
@@ -231,21 +260,9 @@ export function ProjectView(props: { root: string }): JSX.Element {
 				flexDirection="column"
 				flexGrow={1}
 			>
-				<Show when={rows()}>
-					{(read: () => GoalRow[]) => (
-						<HeaderLine
-							root={props.root}
-							rows={read()}
-							width={terminal().width}
-						/>
-					)}
-				</Show>
 				<box
+					ref={goalsPane}
 					border
-					{...paneBorder(false)}
-					title=" Goals "
-					bottomTitle={position()}
-					bottomTitleAlignment="right"
 					paddingLeft={1}
 					// The scrollbar, when there is one, takes the padding's column.
 					paddingRight={scrollbarShown() ? 0 : 1}
@@ -253,7 +270,7 @@ export function ProjectView(props: { root: string }): JSX.Element {
 					flexShrink={0}
 				>
 					<text {...dimText} flexShrink={0} wrapMode="none">
-						{`${"  STATE".padEnd(stateWidth)}${"GOAL".padEnd(nameWidth())} ${"TICKETS".padEnd(ticketsWidth)}${wide() ? `${"ELAPSED".padEnd(timesWidth)}${"COST".padEnd(timesWidth)}` : ""}${fitText("NOW", widths().now)}${fitText("TITLE", widths().title)}`}
+						{`${"  STATE".padEnd(stateWidth)}${"GOAL".padEnd(nameWidth())} ${"TICKETS".padEnd(ticketsWidth)}${wide() ? `${"RUN TIME".padEnd(timesWidth)}${"COST".padEnd(timesWidth)}` : ""}${fitText("NOW", widths().now)}${fitText("TITLE", widths().title)}`}
 					</text>
 					<scrollbox
 						ref={(box: ScrollBoxRenderable) => {
@@ -300,13 +317,14 @@ export function ProjectView(props: { root: string }): JSX.Element {
 					<KeyFooter
 						keys={footerKeys(symbol.upDown)}
 						width={terminal().width - 2}
+						notice={notice()}
 					/>
 				</box>
 				<Show when={helpShown()}>
 					<KeyHelp keys={helpKeys(symbol.upDown)} />
 				</Show>
 			</box>
-		</>
+		</box>
 	);
 }
 
@@ -315,6 +333,7 @@ export function ProjectView(props: { root: string }): JSX.Element {
 const footerKeys = (upDown: string): FooterKey[] => [
 	{ keys: upDown, label: "Goal", use: 6 },
 	{ keys: "Enter", label: "Open", use: 5 },
+	{ keys: "s", label: "Start", use: 2 },
 	{ keys: "g G", label: "First, last", use: 1 },
 	{ keys: "?", label: "Help", use: 3 },
 	{ keys: "q", label: "Quit", use: 2 },
@@ -323,6 +342,7 @@ const footerKeys = (upDown: string): FooterKey[] => [
 const helpKeys = (upDown: string): HelpKey[] => [
 	{ keys: `${upDown} j k`, meaning: "select the Goal above, below" },
 	{ keys: "Enter", meaning: "open the selected Goal" },
+	{ keys: "s", meaning: "start the selected Goal in vago run" },
 	{ keys: "g G", meaning: "select the first, the last Goal" },
 	{ keys: "click", meaning: "select the Goal clicked" },
 	{ keys: "wheel", meaning: "scroll the Goals" },
@@ -330,7 +350,7 @@ const helpKeys = (upDown: string): HelpKey[] => [
 	{ keys: "q Ctrl-C", meaning: "quit" },
 ];
 
-// The Project's name and its counts on one line above the Goals box,
+// The Project's name and its counts on one line at the top of every screen,
 // `width` columns wide, the counts on the right. The name is cut first when
 // the line is short of room. Not drawn until the Goals are read, so a slow
 // read never shows zero Goals.
@@ -379,9 +399,10 @@ const minShownRows = 3;
 const rowId = (goal: string) => `goal-row-${goal}`;
 // The symbol, a space and the longest standing word, then a space.
 const stateWidth = 10;
-// Below this many columns the ELAPSED and COST columns drop out.
+// Below this many columns the RUN TIME and COST columns drop out.
 const wideFrom = 100;
-// ELAPSED and COST each: `13h 36m` or `$103.70`, then a space.
+// RUN TIME and COST each: `13h 36m`, `$103.70` or the heading, then a
+// space.
 const timesWidth = 9;
 // The most NOW takes at wide sizes, where it is as wide as its longest
 // phrase and a gap before TITLE: room for `NN <step>, no vago run process
@@ -432,7 +453,7 @@ function GoalRowLine(props: {
 			<span style={dim()}>
 				{` ${`${props.row.ticketCounts.done}/${ticketTotal(props.row.ticketCounts)}`.padEnd(ticketsWidth - barWidth - 1)}`}
 				{props.wide
-					? `${duration(props.row.elapsedMs).padEnd(timesWidth)}${money(props.row.costUsd).padEnd(timesWidth)}`
+					? `${duration(props.row.runMs).padEnd(timesWidth)}${money(props.row.costUsd).padEnd(timesWidth)}`
 					: ""}
 				{fitText(props.row.now, props.widths.now)}
 			</span>

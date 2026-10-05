@@ -13,7 +13,7 @@ import {
 	printWorktree,
 	printWorktreeClose,
 } from "./progress.ts";
-import { runStep, spellOutcome } from "./step-runner.ts";
+import { resumeHintFor, runStep, spellOutcome } from "./step-runner.ts";
 import {
 	addTicket,
 	closeOpenRun,
@@ -118,7 +118,13 @@ async function runClaimedGoal(root: string, goal: string): Promise<GoalEnd> {
 	state = await readGoal(root, goal);
 	const stuck = state.tickets
 		.filter(({ status }) => status === "stuck")
-		.map(({ ticket }) => ticket);
+		.map(({ ticket, runs }) => {
+			const last = runs.at(-1);
+			return {
+				ticket,
+				resumeHint: last === undefined ? undefined : resumeHintFor(last),
+			};
+		});
 	if (stuck.length > 0) {
 		printStuckRefusal(goal, stuck);
 		return "unfinished";
@@ -183,7 +189,7 @@ async function runTicket(
 	const stepOutputs = new Map<string, string>();
 	for (const step of workflow.steps) {
 		if (step.when === "last-ticket" && !(await isLastTicket(ticket))) {
-			printStepSkipped(step.id, new Date());
+			printStepSkipped(step.name, new Date());
 			continue;
 		}
 		const run = await runStep(step, ticket, worktree, stepOutputs);
@@ -197,7 +203,7 @@ async function runTicket(
 			await setStatus(ticket, "stuck");
 			printStuck(
 				ticket,
-				step.id,
+				step.name,
 				spellOutcome(run.outcome),
 				run.log,
 				run.resumeHint,

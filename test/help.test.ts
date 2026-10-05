@@ -207,7 +207,7 @@ test("goal new --workflow -h takes -h as the Workflow's name", async () => {
 	expect(result.exitCode).toBe(0);
 	expect(
 		await Bun.file(join(root, ".vago-goals/hello/goal.md")).text(),
-	).toStartWith('+++\nworkflow = "-h"\n+++\n');
+	).toStartWith('+++\nworkflow = "-h"\n');
 });
 
 test("--blocked-by --help is a value that isn't digits, not a call for help", async () => {

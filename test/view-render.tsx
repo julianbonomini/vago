@@ -2,6 +2,7 @@
 // seam the TUI's tests go through, and waiting for the frame a test expects.
 
 import { onTestFinished } from "bun:test";
+import { join } from "node:path";
 import type { TestRendererSetup } from "@opentui/core/testing";
 import { testRender } from "@opentui/solid";
 import { ProjectView } from "../src/tui/project-view.tsx";
@@ -23,15 +24,21 @@ export function setEnv(variables: Record<string, string>): void {
 /** A frame of printable ASCII only, as `VAGO_ASCII=1` draws. */
 export const onlyAscii = /^[\x20-\x7e\n]*$/;
 
+// The `vago` the view starts Goals with: this checkout's, run by this Bun.
+const vago = [process.execPath, join(import.meta.dir, "..", "src", "cli.ts")];
+
 /**
  * The Project view of the Project at `root` in a test terminal of `size`,
- * destroyed after the test.
+ * destroyed after the test. It starts Goals with this checkout's `vago`.
  */
 export async function renderView(
 	root: string,
 	size = { width: 80, height: 24 },
 ): Promise<TestRendererSetup> {
-	const view = await testRender(() => <ProjectView root={root} />, size);
+	const view = await testRender(
+		() => <ProjectView root={root} vago={vago} />,
+		size,
+	);
 	// Destroyed, so it doesn't keep drawing while the rest of the suite runs
 	// in the same process.
 	onTestFinished(() => view.renderer.destroy());

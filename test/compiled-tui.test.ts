@@ -282,3 +282,30 @@ test("with nothing changing the Goal view writes nothing", async () => {
 	expect(tui.screen.printed().length).toBe(drawn);
 	tui.kill("SIGKILL");
 });
+
+test("a Goal started with s keeps running after q, and its output stays off the screen", async () => {
+	const root = await makeProject({
+		".vago/workflows/w.toml": oneStep("sleep 2"),
+		".vago-goals/a/goal.md": goalText("w"),
+		".vago-goals/a/tickets/01-t.md": ticketText("ready"),
+	});
+	const tui = openVago(root);
+	await tui.screen.frameWhere((lines) => rowOf(lines, " 1/1 ") !== -1);
+
+	tui.press("s");
+	await tui.screen.frameWhere((lines) => rowOf(lines, "01 work") !== -1);
+	tui.press("q");
+
+	expect(await tui.exited).toBe(0);
+	const ticket = join(root, ".vago-goals/a/tickets/01-t.md");
+	for (
+		let tries = 0;
+		!(await Bun.file(ticket).text()).includes('"done"');
+		tries++
+	) {
+		if (tries === 100) throw new Error("The started Goal never finished");
+		await Bun.sleep(100);
+	}
+	// The first line `vago run` prints.
+	expect(tui.screen.printed()).not.toContain("Worktree ");
+});

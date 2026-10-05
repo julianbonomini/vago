@@ -400,3 +400,38 @@ prompt = "prompts/implement.md"
 		"02-wave implement",
 	]);
 });
+
+test("a Step's name changes none of what its id names: its Run, its log and its output", async () => {
+	const root = await workflowProject({
+		".vago/workflows/test.toml": `
+harness = "claude-code"
+model   = "opus"
+
+[[steps]]
+id   = "greet"
+name = "Say hello"
+type = "shell"
+run  = "echo hello"
+
+[[steps]]
+id     = "implement"
+name   = "Build it"
+type   = "agent"
+prompt = "prompts/implement.md"
+`,
+		".vago/prompts/implement.md": "Greeted: {{steps.greet.output}}\n",
+	});
+	const claude = await makeFakeClaude();
+
+	const result = await runVago(root, ["run", "hello"], claude.env);
+
+	expect(result.stderr).toBe("");
+	expect(result.exitCode).toBe(0);
+	const { header } = await readTicketFile(root, ticketPath);
+	expect(runsOf(header).map((run) => run.step)).toEqual(["greet", "implement"]);
+	expect(
+		await Bun.file(join(root, goalDir, "logs", "01-greet-1.log")).text(),
+	).toBe("hello\n");
+	const [call] = await claude.calls();
+	expect(call?.stdin).toContain("Greeted: exit code 0\nhello");
+});

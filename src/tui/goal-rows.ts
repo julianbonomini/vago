@@ -1,6 +1,6 @@
 // What the Project view knows of each Goal: its standing, the "now" phrase
 // saying what it is doing or waiting for, how many Tickets it has, its
-// elapsed time, tokens and cost, the order of the rows, the header line's
+// run time, tokens and cost, the order of the rows, the header line's
 // totals, what the preview shows of the selected Goal, and the Tickets the
 // Goal view shows of it. Hides the rules behind each.
 
@@ -12,12 +12,12 @@ import {
 	readGoal,
 	runLogLastWritten,
 	type TicketStatus,
-	ticketNumberText,
 } from "../tickets/tickets.ts";
-import { readWorkflowStepIds } from "../workflow.ts";
+import { readWorkflowStepNames } from "../workflow.ts";
 import {
 	type GoalRunState,
 	type GoalTicket,
+	type GoalTicketMark,
 	type GoalWorkflowSteps,
 	goalTickets,
 	runningStep,
@@ -56,7 +56,11 @@ export type GoalRow = {
 	/** From goal.md's first heading. */
 	title: string;
 	ticketCounts: GoalTicketCounts;
-	elapsedMs: number;
+	/**
+	 * Every Ticket's `runsMs` added up: the time the Goal's Runs ran, not
+	 * the pauses between them.
+	 */
+	runMs: number;
 	/** Sum of every Run's input and output tokens, 0 with none. */
 	tokens: number;
 	/** Sum of every Run's cost, 0 with none. */
@@ -68,6 +72,11 @@ export type GoalRow = {
 	now: string;
 	/** The Workflow the Goal's header names; `unknown` for a broken Goal. */
 	workflow: string;
+	/**
+	 * When the Goal was created; undefined for a broken Goal or one made
+	 * before Vago recorded it.
+	 */
+	created: Date | undefined;
 	/**
 	 * How long before the rows were read a Run last started or ended;
 	 * undefined with no Runs.
@@ -89,7 +98,7 @@ export type GoalRowRun = {
 	started: Date;
 	/** The Run's Ticket number as file names spell it, like `02`. */
 	ticketNumber: string;
-	step: string;
+	stepName: string;
 	state: GoalRunState;
 	/** As spelled in the header, like `ok`; absent while the Run is open. */
 	outcome?: string;
@@ -101,10 +110,9 @@ export type GoalRowRun = {
 
 /**
  * Every Goal of the Project at `root` as a row, sorted running, lost, stuck,
- * broken, ready, done, then latest activity first, then name. Elapsed time
- * runs to `now` while a Goal is running. A Goal `readGoal` can't read is a
- * broken row saying why, with paths relative to `root`. Throws what
- * `listGoals` throws.
+ * broken, ready, done, then latest activity first, then name. A live Run's
+ * time runs to `now`. A Goal `readGoal` can't read is a broken row saying
+ * why, with paths relative to `root`. Throws what `listGoals` throws.
  */
 export async function readGoalRows(
 	root: string,
@@ -158,10 +166,10 @@ async function readWorkflows(
 		await Promise.all(
 			names.map(async (name): Promise<[string, GoalWorkflowSteps]> => {
 				try {
-					const stepIds = await readWorkflowStepIds(root, name);
-					return [name, { stepIds, problem: undefined }];
+					const steps = await readWorkflowStepNames(root, name);
+					return [name, { steps, problem: undefined }];
 				} catch (error) {
-					return [name, { stepIds: [], problem: projectMessage(error, root) }];
+					return [name, { steps: [], problem: projectMessage(error, root) }];
 				}
 			}),
 		),
@@ -230,11 +238,12 @@ function brokenRow(goal: string, message: string): GoalRow {
 		standing: "broken",
 		title: "",
 		ticketCounts: { done: 0, running: 0, stuck: 0, ready: 0 },
-		elapsedMs: 0,
+		runMs: 0,
 		tokens: 0,
 		costUsd: 0,
 		now: message.replace(/\s+/g, " "),
 		workflow: "unknown",
+		created: undefined,
 		sinceLastActivityMs: undefined,
 		tickets: [],
 		latestRuns: [],
@@ -251,10 +260,8 @@ function goalRow(
 	now: Date,
 	last: Date | undefined,
 ): GoalRow {
-	const { standing, phrase } = goalStanding(state, claimed);
+	const { standing, phrase } = goalStanding(claimed, tickets);
 	const runs = state.tickets.flatMap((ticket) => ticket.runs);
-	const starts = runs.map(({ started }) => started.getTime());
-	const end = standing === "running" ? now : last;
 	const count = (status: TicketStatus) =>
 		state.tickets.filter((ticket) => ticket.status === status).length;
 	return {
@@ -267,11 +274,7 @@ function goalRow(
 			stuck: count("stuck"),
 			ready: count("ready"),
 		},
-		// From the first Run's start; 0 with no Runs.
-		elapsedMs:
-			end === undefined || starts.length === 0
-				? 0
-				: end.getTime() - Math.min(...starts),
+		runMs: tickets.reduce((sum, ticket) => sum + ticket.runsMs, 0),
 		tokens: runs.reduce(
 			(sum, run) => sum + (run.tokens?.input ?? 0) + (run.tokens?.output ?? 0),
 			0,
@@ -279,6 +282,7 @@ function goalRow(
 		costUsd: runs.reduce((sum, run) => sum + (run.costUsd ?? 0), 0),
 		now: phrase,
 		workflow: state.workflow,
+		created: state.created,
 		sinceLastActivityMs:
 			last === undefined ? undefined : now.getTime() - last.getTime(),
 		tickets,
@@ -287,7 +291,7 @@ function goalRow(
 				runs.map((run) => ({
 					started: run.started,
 					ticketNumber: number,
-					step: run.step,
+					stepName: run.stepName,
 					state: run.state,
 					outcome: run.outcome,
 					durationMs: run.durationMs,
@@ -300,20 +304,20 @@ function goalRow(
 	};
 }
 
-// The Goal's standing and the "now" phrase that goes with it. The first
-// Ticket in a status is the lowest-numbered, as `readGoal` lists them in
-// number order. Done is not `GoalState.done`, which a Goal with no Tickets
-// is: such a Goal has nothing done yet and is ready to start.
+// The Goal's standing and the "now" phrase that goes with it, from its
+// Tickets as `goalTickets` gives them, lowest number first, so the first
+// Ticket found is the lowest-numbered. Done is not `GoalState.done`, which a
+// Goal with no Tickets is: such a Goal has nothing done yet and is ready to
+// start.
 function goalStanding(
-	state: GoalState,
 	claimed: boolean,
+	tickets: GoalTicket[],
 ): { standing: GoalStanding; phrase: string } {
-	const first = (status: TicketStatus) =>
-		state.tickets.find((ticket) => ticket.status === status);
-	const running = first("running");
-	const runningOn =
-		running &&
-		`${ticketNumberText(running.ticket.number)} ${runningStep(running.runs)}`;
+	const first = (...marks: GoalTicketMark[]) =>
+		tickets.find((ticket) => marks.includes(ticket.mark));
+	// A running Ticket is marked lost while no `vago run` holds the Goal.
+	const running = first("running", "lost");
+	const runningOn = running && `${running.number} ${runningStep(running.runs)}`;
 	if (claimed) {
 		return { standing: "running", phrase: runningOn ?? "between Tickets" };
 	}
@@ -325,20 +329,16 @@ function goalStanding(
 	}
 	const stuck = first("stuck");
 	if (stuck !== undefined) {
-		const number = ticketNumberText(stuck.ticket.number);
 		const last = stuck.runs.at(-1);
 		return {
 			standing: "stuck",
 			phrase:
 				last === undefined
-					? `${number} stuck`
-					: `${number} stuck after ${last.step} ${last.outcome ?? ""}`.trimEnd(),
+					? `${stuck.number} stuck`
+					: `${stuck.number} stuck after ${last.stepName} ${last.outcome ?? ""}`.trimEnd(),
 		};
 	}
-	if (
-		state.tickets.length > 0 &&
-		state.tickets.every(({ status }) => status === "done")
-	) {
+	if (tickets.length > 0 && tickets.every(({ mark }) => mark === "done")) {
 		return { standing: "done", phrase: "finished" };
 	}
 	return {

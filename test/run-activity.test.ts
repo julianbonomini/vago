@@ -1,6 +1,10 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
-import { findHarness, type RunActivity } from "../src/harness/registry.ts";
+import {
+	findHarness,
+	type RunActivity,
+	type RunDiffLine,
+} from "../src/harness/registry.ts";
 
 // Recorded Claude Code streams, their paths replaced. The tool-call, Skill
 // and max-turns sessions ran in a Goal's worktree under
@@ -17,16 +21,13 @@ async function activityOf(name: string): Promise<RunActivity> {
 	return findHarness("claude-code").runActivity(await fixtureLines(name), root);
 }
 
-test("a session gives its start, the tools it called, its prose and its end", async () => {
-	expect(await activityOf("claude-code-skill.jsonl")).toEqual({
+test("a session gives its start, the Skills it loaded, its prose and its end", async () => {
+	const { items, working } = await activityOf("claude-code-skill.jsonl");
+
+	expect({ items, working }).toEqual({
 		items: [
 			{ kind: "session-start", model: "claude-haiku-4-5-20251001" },
-			{
-				kind: "tool-calls",
-				verb: "Skill",
-				files: false,
-				calls: [{ subject: "say-hi" }],
-			},
+			{ kind: "skill-loaded", name: "say-hi" },
 			{ kind: "prose", lines: [{ text: "hi there", heading: false }] },
 			{
 				kind: "session-end",
@@ -39,6 +40,15 @@ test("a session gives its start, the tools it called, its prose and its end", as
 		working: false,
 	});
 });
+
+// What the recorded Edit changed in greet.ts.
+const greetDiff: RunDiffLine[] = [
+	{ kind: "hunk", text: "@@ -1,3 +1,3 @@" },
+	{ kind: "kept", text: "export function greet(name: string): string {" },
+	{ kind: "removed", text: `  return \`hello \${name}\`;` },
+	{ kind: "added", text: `  return \`hi \${name}\`;` },
+	{ kind: "kept", text: "}" },
+];
 
 test("each tool call shows by a short verb, with paths relative to the worktree", async () => {
 	const { items } = await activityOf("claude-code-tool-calls.jsonl");
@@ -85,13 +95,27 @@ test("each tool call shows by a short verb, with paths relative to the worktree"
 			kind: "tool-calls",
 			verb: "Edit",
 			files: true,
-			calls: [{ subject: "greet.ts", size: "+1 −1" }],
+			calls: [{ subject: "greet.ts", size: "+1 −1", diff: greetDiff }],
 		},
 		{
 			kind: "tool-calls",
 			verb: "Write",
 			files: true,
-			calls: [{ subject: "bye.ts", size: "3 lines" }],
+			calls: [
+				{
+					subject: "bye.ts",
+					size: "3 lines",
+					diff: [
+						{ kind: "hunk", text: "@@ -0,0 +1,3 @@" },
+						{
+							kind: "added",
+							text: "export function bye(name: string): string {",
+						},
+						{ kind: "added", text: `\treturn \`goodbye \${name}\`;` },
+						{ kind: "added", text: "}" },
+					],
+				},
+			],
 		},
 		{
 			kind: "tool-calls",
@@ -155,7 +179,7 @@ test("a path in the Project's main checkout shows relative to the Project too", 
 		kind: "tool-calls",
 		verb: "Edit",
 		files: true,
-		calls: [{ subject: "greet.ts", size: "+1 −1" }],
+		calls: [{ subject: "greet.ts", size: "+1 −1", diff: greetDiff }],
 	});
 });
 
@@ -205,7 +229,11 @@ test("prose keeps its line breaks, marks its headings and drops bold and code ma
 });
 
 test("consecutive calls of one verb fold into one item", async () => {
-	expect(await activityOf("claude-code-parallel-calls.jsonl")).toEqual({
+	const { items, working } = await activityOf(
+		"claude-code-parallel-calls.jsonl",
+	);
+
+	expect({ items, working }).toEqual({
 		items: [
 			{ kind: "session-start", model: "claude-sonnet-5-5" },
 			{
@@ -302,10 +330,9 @@ test("a stream with no end yet is the activity of an open Run", async () => {
 
 	// Cut after the three Bash calls, before their results: a tool runs.
 	const running = harness.runActivity(lines.slice(0, 17), root);
-	expect(running.items.at(-1)).toEqual({
+	expect(running.items.at(-1)).toMatchObject({
 		kind: "tool-calls",
 		verb: "Execute",
-		files: false,
 		calls: [
 			{ subject: "Count greet lines" },
 			{ subject: "Count notes lines" },
@@ -323,4 +350,158 @@ test("a stream with no end yet is the activity of an open Run", async () => {
 		false,
 	);
 	expect(thinking.working).toBe(true);
+});
+
+// The session that edited files through Bash, Edit and Write, sent a command
+// to the background, ran a long one and loaded a Skill, in that order.
+const editsAndTasks = "claude-code-edits-and-tasks.jsonl";
+
+test("a Bash call that edited a file shows as an edit of it, and Edit and Write calls carry their diff", async () => {
+	const { items } = await activityOf(editsAndTasks);
+
+	// The Bash edit of notes.md folds with the Edit of greet.ts after it.
+	expect(items[2]).toEqual({
+		kind: "tool-calls",
+		verb: "Edit",
+		files: true,
+		calls: [
+			{
+				subject: "notes.md",
+				size: "+1 −1",
+				diff: [
+					{ kind: "hunk", text: "@@ -1,3 +1,3 @@" },
+					{ kind: "kept", text: "one" },
+					{ kind: "removed", text: "two" },
+					{ kind: "added", text: "TWO" },
+					{ kind: "kept", text: "three" },
+				],
+			},
+			{
+				subject: "greet.ts",
+				size: "+1 −1",
+				diff: [
+					{ kind: "hunk", text: "@@ -1,3 +1,3 @@" },
+					{ kind: "kept", text: "export function greet() {" },
+					{ kind: "removed", text: '  return "hello";' },
+					{ kind: "added", text: '  return "hi";' },
+					{ kind: "kept", text: "}" },
+				],
+			},
+		],
+	});
+	// A new file's every line is added.
+	expect(items[3]).toEqual({
+		kind: "tool-calls",
+		verb: "Write",
+		files: true,
+		calls: [
+			{
+				subject: "bye.ts",
+				size: "3 lines",
+				diff: [
+					{ kind: "hunk", text: "@@ -0,0 +1,3 @@" },
+					{ kind: "added", text: "// bye" },
+					{ kind: "added", text: "export const bye = 1;" },
+					{ kind: "added", text: "export const later = 2;" },
+				],
+			},
+		],
+	});
+});
+
+test("a command sent to the background is one item that completes in place", async () => {
+	const lines = await fixtureLines(editsAndTasks);
+	const harness = findHarness("claude-code");
+
+	// Cut before the task's notification: it still runs.
+	const running = harness.runActivity(lines.slice(0, 29), root);
+	expect(running.items[4]).toEqual({
+		kind: "background-task",
+		subject: "Wait a little",
+		state: "running",
+	});
+
+	const { items } = harness.runActivity(lines, root);
+	expect(items[4]).toEqual({
+		kind: "background-task",
+		subject: "Wait a little",
+		state: "completed",
+	});
+});
+
+test("a call waiting for its result carries when it started, and loses it once answered", async () => {
+	const lines = await fixtureLines(editsAndTasks);
+	const harness = findHarness("claude-code");
+
+	// Cut after the long command's heartbeat, before its result.
+	const running = harness.runActivity(lines.slice(0, 32), root);
+	expect(running.items.at(-1)).toEqual({
+		kind: "tool-calls",
+		verb: "Execute",
+		files: false,
+		calls: [
+			{
+				subject: "Count to thirty-five",
+				runningSince: new Date("2026-10-05T18:44:59.306Z"),
+			},
+		],
+	});
+
+	const { items } = harness.runActivity(lines, root);
+	expect(items).toContainEqual({
+		kind: "tool-calls",
+		verb: "Execute",
+		files: false,
+		calls: [{ subject: "Count to thirty-five" }],
+	});
+});
+
+test("a Skill shows as loaded once its result says so", async () => {
+	const lines = await fixtureLines(editsAndTasks);
+	const harness = findHarness("claude-code");
+
+	const loading = harness.runActivity(lines.slice(0, 35), root);
+	expect(loading.items.at(-1)).toMatchObject({
+		kind: "tool-calls",
+		verb: "Skill",
+		calls: [{ subject: "say-hi" }],
+	});
+
+	const { items } = harness.runActivity(lines, root);
+	expect(items).toContainEqual({ kind: "skill-loaded", name: "say-hi" });
+	expect(
+		items.some((item) => item.kind === "tool-calls" && item.verb === "Skill"),
+	).toBe(false);
+});
+
+test("an open Run's tokens and cost so far come from each message, close to the session's own totals", async () => {
+	const lines = await fixtureLines(editsAndTasks);
+	const harness = findHarness("claude-code");
+
+	const half = harness.runActivity(lines.slice(0, 20), root);
+	const whole = harness.runActivity(lines, root);
+	const end = whole.items.at(-1);
+	if (end?.kind !== "session-end") throw new Error("the session didn't end");
+
+	expect(half.spent.tokens).toBeGreaterThan(0);
+	expect(half.spent.tokens).toBeLessThan(whole.spent.tokens);
+	// Each message's output is counted as it starts, so the count runs a
+	// little short of the session's own.
+	const tokens = whole.spent.tokens / (end.tokens ?? 0);
+	const cost = (whole.spent.costUsd ?? 0) / (end.costUsd ?? 0);
+	expect(tokens).toBeGreaterThan(0.9);
+	expect(tokens).toBeLessThanOrEqual(1);
+	expect(cost).toBeGreaterThan(0.9);
+	expect(cost).toBeLessThanOrEqual(1);
+});
+
+test("a model the Harness can't price leaves the cost so far out", async () => {
+	const lines = (await fixtureLines(editsAndTasks)).map((line) =>
+		line.replaceAll("claude-opus-5-5", "claude-unknown-9"),
+	);
+
+	const { spent } = findHarness("claude-code").runActivity(lines, root);
+
+	expect(spent.tokens).toBeGreaterThan(0);
+	expect(spent.costUsd).toBeUndefined();
 });

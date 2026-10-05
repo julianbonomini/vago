@@ -70,7 +70,7 @@ Both starter Workflows run each Ticket through these Steps, in order, with Claud
 | Workflow | Steps | Pick it when |
 |---|---|---|
 | `small` | branch, implement, check, review, merge | The Tickets are small and already clear. One agent builds each Ticket and a fresh one reviews it. |
-| `try-hard` | branch, design, product, architecture, implement, check, review, merge | A Ticket leaves design questions open. One agent proposes two or three designs, a second checks them against the Ticket, a third picks one and fixes it until it passes the skills, then implement builds it and review checks it. It takes three more agent Runs per Ticket than `small`. |
+| `try-hard` | branch, design, product, architecture, design-choices, implement, check, review, merge | A Ticket leaves design questions open. One agent proposes two or three designs, a second checks them against the Ticket, a third picks one and fixes it until it passes the skills, a fourth writes down the choices for the PR description, then implement builds it and review checks it. It takes four more agent Runs per Ticket than `small`. |
 
 The starter files are yours to change, and a few of them assume things about the Project that you may need to change first:
 
@@ -109,7 +109,7 @@ vago ticket add search ranking --blocked-by 1 --body-file ranking.md
 
 Each Ticket gets the next number, so these are `.vago-goals/search/tickets/01-index.md` and `02-ranking.md`. `--blocked-by 1` means `02-ranking` waits until `01-index` is done; repeat the flag for each blocker. Goal names and Ticket slugs may hold only letters, digits, `-` and `_`.
 
-Vago writes a `+++` header at the top of each file. The Ticket's header holds its status (`ready`, `running`, `done` or `stuck`), its blockers and its Runs, and only Vago writes it. You may edit the text below the header at any time. In `goal.md` the header holds only `workflow`, which you may change by hand between runs to switch the Goal to another Workflow.
+Vago writes a `+++` header at the top of each file. The Ticket's header holds its status (`ready`, `running`, `done` or `stuck`), when it was created, its blockers and its Runs, and only Vago writes it. You may edit the text below the header at any time. In `goal.md` the header holds `workflow`, which you may change by hand between runs to switch the Goal to another Workflow, and when the Goal was created.
 
 ## Run a Goal
 
@@ -122,19 +122,20 @@ vago run search
 1. `branch` switches the Goal's worktree to a fresh `search/01-index` branch cut from `vago/search`, the Goal's branch, which Vago cut from the repo's default branch. It fails if the worktree has uncommitted changes.
 2. The agent Steps build and review the Ticket on that branch and commit there. `check` runs between them; when it fails, the Ticket goes on, and review reads the failure and fixes it.
 3. On the Goal's last Ticket, `goal-review` reads the whole Goal's diff for problems no single Ticket shows: names that disagree with the glossary, one decision owned in two places, docs that no longer match the code. It fixes the small ones on the branch. For bigger ones it adds Tickets to the Goal, so this Ticket is no longer the last and `vago run` takes them next. Only the first Goal review may add Tickets; the ones after it fix or report. Its `when = "last-ticket"` skips it on every other Ticket; a Step without `when` runs on every Ticket.
-4. `merge` squash-merges the Ticket's branch into `vago/search` as one commit, deletes the Ticket's branch, pushes `vago/search`, and creates or updates its PR to the repo's default branch. The PR description is the output of `vago goal report search`, rewritten after every Ticket. After the Goal's last Ticket, `merge` also labels the PR `ready-for-review` and comments on it mentioning you, the account `gh` is logged in as, so GitHub notifies you. A Goal that ends with a stuck Ticket gets neither.
+4. `merge` commits any changes the Steps left uncommitted, squash-merges the Ticket's branch into `vago/search` as one commit, deletes the Ticket's branch, pushes `vago/search`, and creates or updates its PR to the repo's default branch. The PR description is the output of `vago goal report search`, rewritten after every Ticket. After the Goal's last Ticket, `merge` also labels the PR `ready-for-review` and comments on it mentioning you, the account `gh` is logged in as, so GitHub notifies you. A Goal that ends with a stuck Ticket gets neither. A push or `gh` call that fails on the network or with a 5xx from GitHub is tried again a few times. When `merge` fails anyway, its log's last line says why, and running the Ticket again finishes the job: a Ticket already squashed into `vago/search` isn't squashed twice.
 
 A shell Step gets the Goal's and Ticket's names in `$VAGO_GOAL` and `$VAGO_TICKET`, and `$VAGO_LAST_TICKET` is `true` when every other Ticket of the Goal is `done`, `false` otherwise. An agent Step's prompt gets the Ticket in `{{ticket}}`, `goal.md` without its header in `{{goal}}`, the Goal's name in `{{goal_name}}`, and an earlier Step's output in `{{steps.<id>.output}}`.
 
 The Steps run in your checkout and switch its branches, so leave it alone until the run ends. When it ends, you review the Goal's PR and merge it yourself.
 
-`vago run` prints a line when each Step starts and when it ends, with the time in UTC, the Ticket, the Step, how it ended, how long it took and, for an agent Step, what it cost. At the end it prints a summary table:
+`vago run` prints each Ticket's name as it starts, and under it a line when each Step starts and when it ends, with the time in UTC, how long it took and, for an agent Step, what it cost, then the Step and how it ended. A Step shows by its `name` in the Workflow, or by its `id` when it has none. At the end it prints a summary table:
 
 ```text
-2026-10-02T21:00:48Z  01-index    branch     started
-2026-10-02T21:00:48Z  01-index    branch     ok              0.1s
-2026-10-02T21:00:48Z  01-index    implement  started
-2026-10-02T21:14:01Z  01-index    implement  ok            13m13s  $2.41
+01-index
+  2026-10-02T21:00:48Z                  New branch started
+  2026-10-02T21:00:48Z    0.1s          New branch ok
+  2026-10-02T21:00:48Z                  Build started
+  2026-10-02T21:14:01Z  13m13s   $2.41  Build ok
 ...
 
 search: 2 of 2 Tickets done
@@ -148,13 +149,13 @@ On a terminal the outcomes and statuses are coloured; set `NO_COLOR` to turn tha
 
 A Step ends `ok`, `exit <code>` for a shell Step or Claude Code exiting non-zero, `idle-timeout` when Claude printed nothing for the Workflow's `idle_timeout` (10 minutes in the starters), `interrupted` when you pressed Ctrl-C, `permission-denied` when Claude Code refused a tool call, or `permission-mode <mode>` when the session ran in another mode than the one its command asked for.
 
-`vago goal report search` prints the Goal's text followed by a Markdown table of each Ticket's Runs, time and cost, with every Run in a collapsed table below. It is the same text the PR description holds.
+`vago goal report search` prints the Goal's text, each paragraph on one line, then the output of each Step with `goal_report = true`, such as `try-hard`'s design choices, collapsed under its Ticket, then a Markdown table of each Ticket's Runs, time and cost, with every Run in a collapsed table below. It is the same text the PR description holds.
 
 ## Watch every Goal
 
-`vago` with no command, on a terminal, opens a full-screen view of every Goal of the Project: its state (running, lost, stuck, ready or done), a progress bar with its Tickets done of total, its elapsed time and cost, and what it is doing or waiting for. The selected Goal's latest Runs and description show below the list. It reads `.vago-goals/` again every second, so you can leave it open while Goals run in other terminals. It starts, stops and changes nothing.
+`vago` with no command, on a terminal, opens a full-screen view of every Goal of the Project: its state (running, lost, stuck, ready or done), a progress bar with its Tickets done of total, its run time (how long its Runs ran, pauses left out) and cost, and what it is doing or waiting for. The selected Goal's latest Runs and description show below the list. It reads `.vago-goals/` again every second, so you can leave it open while Goals run in other terminals. Its one action is `s`, which starts the selected Goal when it is ready, in a `vago run` of its own that keeps running after you quit the TUI. It stops and changes nothing.
 
-A Goal shows as lost when one of its Tickets says `running` but no live `vago run` has the Goal; the next `vago run` makes that Ticket stuck. Move with `↑↓` or `j k`, jump with `g` and `G`, press `?` for the keys and `q` to quit. Set `NO_COLOR` to drop the colours and `VAGO_ASCII=1` for a terminal without the box and symbol glyphs. Run from inside a Goal's worktree, it shows the main checkout's Project. Without a terminal, `vago` prints the usage and exits 1.
+A Goal shows as lost when one of its Tickets says `running` but no live `vago run` has the Goal; the next `vago run` makes that Ticket stuck. Move with `↑↓` or `j k`, jump with `g` and `G`, open a Goal with Enter, start it with `s`, press `?` for the keys and `q` to quit. Set `NO_COLOR` to drop the colours and `VAGO_ASCII=1` for a terminal without the box and symbol glyphs. Run from inside a Goal's worktree, it shows the main checkout's Project. Without a terminal, `vago` prints the usage and exits 1.
 
 ## Recover a stuck Ticket
 
@@ -170,10 +171,10 @@ A Ticket goes stuck when one of its Steps fails. `vago run` stops there and tell
 To recover:
 
 1. Read the log. Each Run has one under `.vago-goals/<goal>/logs/`, named for the Ticket number, the Step and the Run's position: a `.log` with a shell Step's output, or a `.jsonl` with Claude Code's raw stream for an agent Step. `resume` opens the agent's session in Claude Code, if you want to ask it what happened.
-2. Fix the checkout. The Step stopped wherever it was, so the checkout may be on the Ticket's branch with uncommitted changes, or partway through the merge. `branch` refuses to start on a dirty checkout, so commit, stash or discard what's there. If the Ticket itself was the problem, edit its text below the header.
+2. Fix the checkout. The Step stopped wherever it was, so the checkout may be on the Ticket's branch with uncommitted changes. A failed `merge` leaves it clean. `branch` refuses to start on a dirty checkout, so commit, stash or discard what's there. If the Ticket itself was the problem, edit its text below the header.
 3. Reset the Ticket with `vago ticket reset search 02`. Its status goes back to `ready`; its Runs stay in the header.
 4. Run `vago run search` again.
 
 A reset Ticket starts over: `branch` cuts its branch again from `vago/search`, so commits left on the old `search/02-ranking` branch are dropped. Tickets already merged into `vago/search` keep their work.
 
-While any Ticket of the Goal is stuck, `vago run` runs nothing and lists the reset command for each stuck one. A Ticket left `running` by a `vago run` that crashed or was killed goes stuck on the next run, with its open Run ended `lost`, because the checkout may hold that Run's partial work.
+While any Ticket of the Goal is stuck, `vago run` runs nothing and lists the reset command for each stuck one, and the resume command when its last Run was an agent's. A Ticket left `running` by a `vago run` that crashed or was killed goes stuck on the next run, with its open Run ended `lost`, because the checkout may hold that Run's partial work. An agent Run's `session_id` reaches its `[[runs]]` entry as soon as Claude Code reports it, so a lost Run can still be resumed.

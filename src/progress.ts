@@ -6,6 +6,7 @@
 // line formats, columns and colours, and how durations and costs read.
 
 import { relative } from "node:path";
+import { joinParagraphLines } from "./markdown-paragraphs.ts";
 import {
 	type GoalState,
 	type Ticket,
@@ -25,23 +26,23 @@ export function printTicketStarted(ticket: Ticket): void {
 	console.log(ticket.name);
 }
 
-/** Prints the indented line saying Step `stepId` started at `started`. */
-export function printStepStarted(stepId: string, started: Date): void {
-	console.log(paint(stepLine(started, stepId, "started"), "dim"));
+/** Prints the indented line saying Step `stepName` started at `started`. */
+export function printStepStarted(stepName: string, started: Date): void {
+	console.log(paint(stepLine(started, stepName, "started"), "dim"));
 }
 
-/** Prints the indented line saying Step `stepId` was skipped on this Ticket. */
-export function printStepSkipped(stepId: string, at: Date): void {
-	console.log(paint(stepLine(at, stepId, "skipped"), "dim"));
+/** Prints the indented line saying Step `stepName` was skipped on this Ticket. */
+export function printStepSkipped(stepName: string, at: Date): void {
+	console.log(paint(stepLine(at, stepName, "skipped"), "dim"));
 }
 
 /**
- * Prints the indented line saying how Step `stepId` ended, with `outcome` as
+ * Prints the indented line saying how Step `stepName` ended, with `outcome` as
  * spelled in the header (`ok`, `exit 1`), how long it took and, when the
  * Harness reported one, what it cost.
  */
 export function printStepEnded(
-	stepId: string,
+	stepName: string,
 	outcome: string,
 	started: Date,
 	ended: Date,
@@ -49,24 +50,26 @@ export function printStepEnded(
 ): void {
 	const took = duration(ended.getTime() - started.getTime());
 	const colour = outcome === "ok" ? "green" : "red";
-	console.log(stepLine(ended, stepId, outcome, colour, took, dollars(costUsd)));
+	console.log(
+		stepLine(ended, stepName, outcome, colour, took, dollars(costUsd)),
+	);
 }
 
 /**
- * Prints that `ticket` went stuck after Step `stepId`, whose Run ended with
+ * Prints that `ticket` went stuck after Step `stepName`, whose Run ended with
  * `outcome` as spelled in the header, with what the human needs next: the
  * Run's log at the absolute path `log`, the command that resumes its Harness
  * session when there is one, and the command that resets the Ticket.
  */
 export function printStuck(
 	ticket: Ticket,
-	stepId: string,
+	stepName: string,
 	outcome: string,
 	log: string,
 	resumeHint?: string,
 ): void {
 	console.log(
-		paint(`${ticket.name} is stuck after ${stepId}: ${outcome}`, "red"),
+		paint(`${ticket.name} is stuck after ${stepName}: ${outcome}`, "red"),
 	);
 	// Relative to the repo root, which `vago run` runs in, so it's short
 	// enough to read and still opens from where the human is.
@@ -77,14 +80,19 @@ export function printStuck(
 
 /**
  * Prints why `vago run` won't start `goal`: the Tickets in `stuck`, each with
- * the command that resets it.
+ * the command that resets it and, when given, the command that resumes its
+ * last Run's Harness session.
  */
-export function printStuckRefusal(goal: string, stuck: Ticket[]): void {
+export function printStuckRefusal(
+	goal: string,
+	stuck: { ticket: Ticket; resumeHint?: string }[],
+): void {
 	console.log(
 		`${goal} has stuck Tickets. Check the Goal's worktree, then reset each one:`,
 	);
-	for (const ticket of stuck) {
+	for (const { ticket, resumeHint } of stuck) {
 		console.log(`  ${ticket.name}: ${resetCommand(ticket)}`);
+		if (resumeHint !== undefined) console.log(`    resume: ${resumeHint}`);
 	}
 }
 
@@ -165,21 +173,43 @@ export function printWorktreeClose(close: WorktreeClose): void {
 }
 
 /**
- * Prints `goal.md` without its header, as `goalBody`, and then in Markdown
- * the Workflow the Goal names and what the Goal's Runs took and cost: a
- * table with one row per Ticket and a total, and every Run in a collapsed
- * table under it. Made to be a PR description. A Run still going counts
- * toward neither total.
+ * Prints `goal.md` without its header, as `goalBody`, each of its paragraphs
+ * on one line, and then in Markdown what each Ticket's Steps put in the Goal
+ * report, collapsed by Ticket, the Workflow the Goal names and what the
+ * Goal's Runs took and cost: a table with one row per Ticket and a total, and
+ * every Run in a collapsed table under it. Made to be a PR description.
+ * `outputs` holds the output of each Run whose Step puts it in the report, by
+ * the Run's log; a Ticket shows the latest such Run of each Step that ended
+ * `ok`, and nothing when none did. A Run still going counts toward neither
+ * total.
  */
-export function printGoalReport(goalBody: string, state: GoalState): void {
+export function printGoalReport(
+	goalBody: string,
+	state: GoalState,
+	outputs: ReadonlyMap<string, string>,
+): void {
+	// `goal.md` is hard-wrapped, and GitHub keeps every line break in a PR body.
 	const lines = [
-		goalBody.trimEnd(),
-		"",
-		"## Runs",
-		"",
-		`Workflow: ${state.workflow}`,
+		...joinParagraphLines(goalBody.trimEnd()).map(({ text }) => text),
 		"",
 	];
+	const reported = state.tickets.flatMap(({ ticket, runs }) => {
+		const latest = new Map<string, string>();
+		for (const run of runs) {
+			const output = outputs.get(run.log)?.trim();
+			if (run.outcome === "ok" && output) latest.set(run.step, output);
+		}
+		return latest.size === 0
+			? []
+			: [{ name: ticket.name, texts: [...latest.values()] }];
+	});
+	if (reported.length > 0) lines.push("## Tickets", "");
+	for (const { name, texts } of reported) {
+		lines.push("<details>", `<summary>${name}</summary>`, "");
+		for (const text of texts) lines.push(text, "");
+		lines.push("</details>", "");
+	}
+	lines.push("## Runs", "", `Workflow: ${state.workflow}`, "");
 	lines.push("| Ticket | Runs | Took | Cost |", "|---|---:|---:|---:|");
 	const { tickets, total } = goalTotals(state);
 	for (const { name, totals } of tickets) {
@@ -240,13 +270,13 @@ const durationWidth = "99h59m".length;
 const costWidth = "$99.99".length;
 
 // Indented under the Ticket's name, columns two spaces apart, the duration and
-// cost right-aligned so their units line up. The Step id and outcome vary in
+// cost right-aligned so their units line up. The Step name and outcome vary in
 // length, so they come last, where nothing after them needs aligning. A
-// started line leaves the duration and cost blank, which keeps its Step id in
+// started line leaves the duration and cost blank, which keeps its Step name in
 // line with the ended lines'.
 function stepLine(
 	at: Date,
-	stepId: string,
+	stepName: string,
 	outcome: string,
 	colour?: Colour,
 	took = "",
@@ -256,7 +286,7 @@ function stepLine(
 		timestamp(at),
 		took.padStart(durationWidth),
 		cost.padStart(costWidth),
-		`${stepId} ${paint(outcome, colour)}`,
+		`${stepName} ${paint(outcome, colour)}`,
 	];
 	return `  ${cells.join("  ")}`;
 }

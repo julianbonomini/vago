@@ -21,6 +21,15 @@ export type FakeGitHub = {
 	pullRequests: Record<string, FakePullRequest>;
 	/** The labels defined in the repo. */
 	labels: string[];
+	/** Calls still to fail, each once, before doing anything. */
+	failures: FakeGhFailure[];
+};
+
+/** A `gh` call to fail, and the error it prints. */
+export type FakeGhFailure = {
+	/** The call's subcommands, as `pr create`. */
+	call: string;
+	message: string;
 };
 
 /** A fake `gh`, ready to put on the `PATH` of a `vago` child. */
@@ -29,6 +38,11 @@ export type FakeGh = {
 	env: Record<string, string>;
 	/** The repo as the calls so far left it. */
 	state(): Promise<FakeGitHub>;
+	/**
+	 * Makes the next `call` fail, printing `message` to stderr and changing
+	 * nothing, as GitHub's errors do. The calls after it work again.
+	 */
+	failNext(call: string, message: string): Promise<void>;
 };
 
 /**
@@ -42,7 +56,7 @@ export type FakeGh = {
 export async function makeFakeGh(login: string): Promise<FakeGh> {
 	const dir = await mkdtemp(join(tmpdir(), "vago-fake-gh-"));
 	const stateFile = join(dir, "state.json");
-	const empty: FakeGitHub = { pullRequests: {}, labels: [] };
+	const empty: FakeGitHub = { pullRequests: {}, labels: [], failures: [] };
 	await Bun.write(stateFile, JSON.stringify(empty));
 	const program = join(dir, "gh");
 	await Bun.write(
@@ -50,9 +64,16 @@ export async function makeFakeGh(login: string): Promise<FakeGh> {
 		`#!${process.execPath}\nimport { runFakeGh } from ${JSON.stringify(import.meta.path)};\nawait runFakeGh(${JSON.stringify(stateFile)}, ${JSON.stringify(login)});\n`,
 	);
 	await chmod(program, 0o755);
+	const state = async (): Promise<FakeGitHub> =>
+		JSON.parse(await Bun.file(stateFile).text());
 	return {
 		env: { PATH: `${dir}:${process.env.PATH}` },
-		state: async () => JSON.parse(await Bun.file(stateFile).text()),
+		state,
+		failNext: async (call, message) => {
+			const repo = await state();
+			repo.failures.push({ call, message });
+			await Bun.write(stateFile, JSON.stringify(repo));
+		},
 	};
 }
 
@@ -73,7 +94,12 @@ export async function runFakeGh(
 	};
 	const [group, command, target = ""] = argv;
 	const call = `${group} ${command}`;
-	if (call === "api user") {
+	const failure = state.failures.find((failing) => failing.call === call);
+	if (failure !== undefined) {
+		state.failures.splice(state.failures.indexOf(failure), 1);
+		await Bun.write(stateFile, JSON.stringify(state));
+		fail(failure.message);
+	} else if (call === "api user") {
 		console.log(login);
 	} else if (call === "label create") {
 		if (!state.labels.includes(target)) state.labels.push(target);

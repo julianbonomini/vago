@@ -17,6 +17,7 @@ import {
 	readTicketFile,
 	rewriteHeader,
 	type TicketHeader,
+	type TicketRunTable,
 } from "./header.ts";
 import { readTicketFolder, ticketFilePath } from "./ticket-folder.ts";
 
@@ -77,10 +78,17 @@ export type TicketRun = {
 	harness?: string;
 	/** The model an agent Step ran on. Absent like `harness`. */
 	model?: string;
+	/**
+	 * The id of an agent Run's Harness session, there from when the Harness
+	 * reported it, so a Run still going or one cut off has it too.
+	 */
+	sessionId?: string;
 	/** What the Harness reported the Run used. Absent like `costUsd`. */
 	tokens?: { input: number; output: number };
 	/** What the Harness reported the Run cost. Absent for a shell Step. */
 	costUsd?: number;
+	/** Whether the Goal report carries the Run's output, as its Step said. */
+	inGoalReport: boolean;
 };
 
 /**
@@ -98,10 +106,12 @@ export type GoalState = {
 	 * exist.
 	 */
 	workflow: string;
+	/** Undefined for a Goal made before Vago recorded it. */
+	created: Date | undefined;
 	/**
-	 * Every Ticket of the Goal with its status, the name of the Workflow it
-	 * goes through (which might not exist) and its `[[runs]]` in the order
-	 * they ran, lowest number first.
+	 * Every Ticket of the Goal, lowest number first, with its status, the name
+	 * of the Workflow it goes through (which might not exist) and its
+	 * `[[runs]]` in the order they ran. Their count is the Goal's size.
 	 */
 	tickets: {
 		ticket: Ticket;
@@ -127,11 +137,12 @@ export type GoalState = {
 
 /**
  * Creates Goal `goal` with an empty `tickets/` and a `goal.md` whose `+++`
- * header names `workflow`, followed by `body` exactly as given, which is what
- * `{{goal}}` will be. Without `body`, the body is a `# <goal>` title. Doesn't
- * check that the Workflow exists. Returns the path of `goal.md`. Throws an
- * Error naming the problem, and creates nothing, when `body` is empty or only
- * whitespace, the Goal already exists, or `goal` isn't a valid name.
+ * header names `workflow` and when the Goal was created, followed by `body`
+ * exactly as given, which is what `{{goal}}` will be. Without `body`, the
+ * body is a `# <goal>` title. Doesn't check that the Workflow exists.
+ * Returns the path of `goal.md`. Throws an Error naming the problem, and
+ * creates nothing, when `body` is empty or only whitespace, the Goal already
+ * exists, or `goal` isn't a valid name.
  */
 export async function createGoal(
 	root: string,
@@ -146,7 +157,10 @@ export async function createGoal(
 		throw new Error(`Goal ${goal} already exists: ${goalFile}`);
 	}
 	await mkdir(join(folder, "tickets"), { recursive: true });
-	await Bun.write(goalFile, headedText({ workflow }, body ?? `# ${goal}\n`));
+	await Bun.write(
+		goalFile,
+		headedText({ workflow, created: new Date() }, body ?? `# ${goal}\n`),
+	);
 	return goalFile;
 }
 
@@ -182,7 +196,7 @@ export async function listGoals(root: string): Promise<string[]> {
  */
 export async function readGoal(root: string, goal: string): Promise<GoalState> {
 	const folder = goalFolder(root, goal);
-	const { workflow, body } = await readGoalFile(
+	const { workflow, created, body } = await readGoalFile(
 		await existingGoalFile(root, goal),
 	);
 	const ticketFolder = join(folder, "tickets");
@@ -212,8 +226,10 @@ export async function readGoal(root: string, goal: string): Promise<GoalState> {
 			log: runLogPath(ticket, run.log),
 			harness: run.harness,
 			model: run.model,
+			sessionId: run.session_id,
 			tokens: run.tokens,
 			costUsd: run.cost_usd,
+			inGoalReport: run.goal_report === true,
 		})),
 	}));
 	const nextReady = tickets.find(
@@ -227,6 +243,7 @@ export async function readGoal(root: string, goal: string): Promise<GoalState> {
 		title: headingTitle(body, goal),
 		description: afterHeading(body),
 		workflow,
+		created,
 		tickets,
 		nextReady:
 			nextReady === undefined
@@ -238,11 +255,11 @@ export async function readGoal(root: string, goal: string): Promise<GoalState> {
 
 /**
  * Adds a Ticket named `slug` to `goal`, numbered one past its highest
- * Ticket, with status `ready` and blocked by the Tickets numbered in
- * `blockedBy` (each once, however often it's given), going through Workflow
- * `workflow`, or the Goal's when it's undefined. Doesn't check that the
- * Workflow exists. The Ticket's body is
- * `body` exactly as given, which is what `readTicketBody` will return.
+ * Ticket, created now, with status `ready` and blocked by the Tickets
+ * numbered in `blockedBy` (each once, however often it's given), going
+ * through Workflow `workflow`, or the Goal's when it's undefined. Doesn't
+ * check that the Workflow exists. The Ticket's body is `body` exactly as
+ * given, which is what `readTicketBody` will return.
  * Without `body`, it's a `# <slug>` title for the human to fill in. Returns
  * the path of the new Ticket file. Throws an Error naming the problem, and
  * writes nothing, when `body` is empty or only whitespace, `body` starts with
@@ -280,7 +297,7 @@ export async function addTicket(
 	}
 	const number = Math.max(0, ...tickets.map(({ ticket }) => ticket.number)) + 1;
 	const ticket = { root, goal, name: ticketName(number, slug), number };
-	const header: TicketHeader = { status: "ready" };
+	const header: TicketHeader = { status: "ready", created: new Date() };
 	if (blockedBy.length > 0) header.blocked_by = [...new Set(blockedBy)];
 	if (workflow !== undefined) header.workflow = workflow;
 	const file = ticketFile(ticket);
@@ -387,9 +404,10 @@ export async function setStatus(
 
 /**
  * Appends a `[[runs]]` entry for `step`, started at `started`, naming the
- * Harness and model for an agent Step. Call it before the Step starts, so a
- * crash mid-Step still leaves a trace. Returns the entry, which carries the
- * path the Run's log must be written to.
+ * Harness and model for an agent Step, and whether the Goal report carries
+ * its output. Call it before the Step starts, so a crash mid-Step still
+ * leaves a trace. Returns the entry, which carries the path the Run's log
+ * must be written to.
  */
 export async function recordRunStart(
 	ticket: Ticket,
@@ -411,6 +429,8 @@ export async function recordRunStart(
 							model: step.model,
 							started,
 							log: `${logStem}.jsonl`,
+							// Left out when false, so most entries read as before.
+							...(step.inGoalReport ? { goal_report: true } : {}),
 						}
 					: { step: step.id, started, log: `${logStem}.log` };
 			runs.push(entry);
@@ -422,9 +442,23 @@ export async function recordRunStart(
 }
 
 /**
+ * Writes `sessionId`, the id the Run's Harness reported for its session, to
+ * `entry` while the Run is still going, so a Run that never ends still says
+ * which session to resume.
+ */
+export async function recordRunSession(
+	entry: TicketRunEntry,
+	sessionId: string,
+): Promise<void> {
+	await rewriteHeader(ticketFile(entry.ticket), (header) => {
+		runTable(header, entry).session_id = sessionId;
+	});
+}
+
+/**
  * Closes `entry` with when its Run ended, its outcome as spelled in the
- * header (`ok`, `exit 1`) and, for an agent Step, what its Harness session
- * reported.
+ * header (`ok`, `exit 1`) and, for an agent Step, the tokens and cost its
+ * Harness session reported. Its session id is `recordRunSession`'s to write.
  */
 export async function recordRunEnd(
 	entry: TicketRunEntry,
@@ -432,18 +466,25 @@ export async function recordRunEnd(
 	ended: Date,
 	session?: HarnessSessionReport,
 ): Promise<void> {
-	const file = ticketFile(entry.ticket);
-	await rewriteHeader(file, (header) => {
-		const table = header.runs?.[entry.position - 1];
-		if (table === undefined) {
-			throw new Error(`${file} has no [[runs]] entry ${entry.position}`);
-		}
+	await rewriteHeader(ticketFile(entry.ticket), (header) => {
+		const table = runTable(header, entry);
 		table.ended = ended;
 		table.outcome = outcome;
-		if (session?.sessionId !== undefined) table.session_id = session.sessionId;
 		if (session?.tokens !== undefined) table.tokens = session.tokens;
 		if (session?.costUsd !== undefined) table.cost_usd = session.costUsd;
 	});
+}
+
+// The `[[runs]]` table of `header`, the header of `entry`'s Ticket file, that
+// `entry` points at.
+function runTable(header: TicketHeader, entry: TicketRunEntry): TicketRunTable {
+	const table = header.runs?.[entry.position - 1];
+	if (table === undefined) {
+		throw new Error(
+			`${ticketFile(entry.ticket)} has no [[runs]] entry ${entry.position}`,
+		);
+	}
+	return table;
 }
 
 /**

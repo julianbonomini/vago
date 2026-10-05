@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { makeFakeClaude } from "./fake-claude.ts";
 import { goalText, makeProject, runVago } from "./project.ts";
 
 const goalDir = ".vago-goals/hello";
@@ -91,6 +92,46 @@ Workflow: small
 `);
 });
 
+test("goal report shows, collapsed by Ticket, the output of the Steps whose Workflow puts it in the report", async () => {
+	const agentStep = (id: string, inReport: boolean) => `
+[[steps]]
+id     = "${id}"
+type   = "agent"
+prompt = "prompts/p.md"
+${inReport ? "goal_report = true" : ""}
+`;
+	const root = await makeProject({
+		".vago/workflows/chosen.toml": `harness = "claude-code"\nmodel = "opus"\n${agentStep("choices", true)}${agentStep("implement", false)}`,
+		".vago/workflows/plain.toml": `harness = "claude-code"\nmodel = "opus"\n${agentStep("implement", false)}`,
+		".vago/prompts/p.md": "{{ticket}}\n",
+		[`${goalDir}/goal.md`]: goalText("chosen"),
+		[`${goalDir}/tickets/01-greet.md`]:
+			'+++\nstatus = "ready"\n+++\n\n# Greet\n',
+		[`${goalDir}/tickets/02-wave.md`]:
+			'+++\nstatus = "ready"\nworkflow = "plain"\n+++\n\n# Wave\n',
+	});
+	// The fixture's session answers "done" every time.
+	const claude = await makeFakeClaude();
+	expect((await runVago(root, ["run", "hello"], claude.env)).exitCode).toBe(0);
+
+	const result = await runVago(root, ["goal", "report", "hello"]);
+
+	expect(result.exitCode).toBe(0);
+	expect(result.stdout).toStartWith(`# Hello
+
+## Tickets
+
+<details>
+<summary>01-greet</summary>
+
+done
+
+</details>
+
+## Runs
+`);
+});
+
 test("goal report leaves every cost blank when no Run reported one", async () => {
 	const root = await makeProject({
 		[`${goalDir}/goal.md`]: goalText("small"),
@@ -142,6 +183,63 @@ test("goal report counts a Ticket with no Runs as nothing", async () => {
 | 02-x | 0 | 0.0s |  |
 | **Total** | **2** | **5m31s** | **$1.25** |
 `);
+});
+
+test("goal report joins each hard-wrapped paragraph of goal.md into one line", async () => {
+	const body = [
+		"# Hello",
+		"",
+		"Say hello to",
+		"everyone in",
+		"the room.",
+		"",
+		"- a list item",
+		"  wrapped under it",
+		"- another",
+		"1. first",
+		"2. second",
+		"",
+		"## Steps",
+		"",
+		"> a quote",
+		"> on two lines",
+		"",
+		"```ts",
+		"const a = 1;",
+		"const b = 2;",
+		"```",
+		"",
+		"    indented code",
+		"    more code",
+		"",
+		"| a | b |",
+		"|---|---|",
+		"| 1 | 2 |",
+		"",
+		"Two spaces break  ",
+		"this line, and a backslash\\",
+		"this one.",
+		"",
+		"Last words\r",
+		"here.",
+		"",
+	].join("\n");
+	const root = await makeProject({
+		[`${goalDir}/goal.md`]: goalText("small", body),
+	});
+
+	const result = await runVago(root, ["goal", "report", "hello"]);
+
+	expect(result.stderr).toBe("");
+	expect(result.exitCode).toBe(0);
+	expect(result.stdout).toStartWith(
+		body
+			.replace(
+				"Say hello to\neveryone in\nthe room.",
+				"Say hello to everyone in the room.",
+			)
+			.replace("Last words\r\nhere.", "Last words here."),
+	);
 });
 
 test("goal report leaves out blank lines under a hand-edited header", async () => {

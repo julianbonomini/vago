@@ -215,3 +215,34 @@ test("in a terminal with NO_COLOR set, the output is plain text", async () => {
 	expect(printed).toContain("03-fail is stuck after check-everything: exit 1");
 	expect(printed).not.toContain("\x1b[");
 });
+
+test("a named Step's lines and stuck message show its name, an unnamed one's its id", async () => {
+	const root = await makeProject({
+		".vago/workflows/test.toml": `
+[[steps]]
+id   = "greet"
+type = "shell"
+run  = "true"
+
+[[steps]]
+id   = "check"
+name = "Run the checks"
+type = "shell"
+run  = "false"
+`,
+		[`${goalDir}/goal.md`]: goalText("test"),
+		[`${goalDir}/tickets/01-greet.md`]: ticket(),
+	});
+
+	const result = await runVago(root, ["run", "hello"]);
+
+	expect(steady(result.stdout)).toContain(`
+01-greet
+  2026-10-02T10:00:00Z                  greet started
+  2026-10-02T10:00:00Z    1.0s          greet ok
+  2026-10-02T10:00:00Z                  Run the checks started
+  2026-10-02T10:00:00Z    1.0s          Run the checks exit 1
+01-greet is stuck after Run the checks: exit 1
+  log:    .vago-goals/hello/logs/01-check-2.log
+`);
+});

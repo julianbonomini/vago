@@ -8,6 +8,7 @@
 import { newGoal, newTicket, resetTicket, runGoal } from "./goal-runner.ts";
 import { initProject, updateProject } from "./init.ts";
 import { printGoalReport } from "./progress.ts";
+import { readAgentRunOutput } from "./step-runner.ts";
 import { readGoal, readGoalBody } from "./tickets/tickets.ts";
 import { projectRoot } from "./worktree.ts";
 
@@ -227,7 +228,13 @@ how long they took and what they cost, ready to paste into a PR description.`,
 			const goal = given.operand(goalToReport);
 			// readGoal first, since it names a missing Goal as such.
 			const state = await readGoal(root, goal);
-			printGoalReport(await readGoalBody(root, goal), state);
+			const outputs = new Map<string, string>();
+			for (const run of state.tickets.flatMap(({ runs }) => runs)) {
+				if (run.inGoalReport) {
+					outputs.set(run.log, await readAgentRunOutput(run));
+				}
+			}
+			printGoalReport(await readGoalBody(root, goal), state, outputs);
 			return 0;
 		},
 	},
@@ -277,6 +284,16 @@ stay in the Ticket file. It refuses a Ticket that isn't stuck.`,
 	},
 ];
 
+// The command that runs this same `vago`, for the TUI to start Goals with:
+// the compiled binary alone, or Bun with the script it runs. A compiled
+// binary's script sits in Bun's embedded `/$bunfs/`, which no other process
+// can read.
+function thisVago(): string[] {
+	return Bun.main.startsWith("/$bunfs/")
+		? [process.execPath]
+		: [process.execPath, Bun.main];
+}
+
 const helpPointer = "Run `vago --help` for what each command does.";
 
 async function main(args: string[]): Promise<number> {
@@ -286,7 +303,7 @@ async function main(args: string[]): Promise<number> {
 		// nowhere else, so no command loads OpenTUI or needs Solid's transform.
 		if (args.length === 0 && process.stdin.isTTY && process.stdout.isTTY) {
 			const { openTui } = await import("./tui/tui.tsx");
-			await openTui(await projectRoot(process.cwd()));
+			await openTui(await projectRoot(process.cwd()), thisVago());
 			return 0;
 		}
 		const shown = helpAsked ? listing(words) : undefined;

@@ -165,3 +165,54 @@ prompt = "prompts/review.md"
 	]);
 	expect(await claude.calls()).toEqual([]);
 });
+
+// The id the session fixture's `init` line reports.
+const fixtureSessionId = "f679b9c4-e75a-4f73-affd-0dedfe161e0d";
+
+// Polls the Ticket's first Run until it holds a `session_id`, which `vago`
+// writes a moment after the fake has streamed it.
+async function waitForSessionId(root: string): Promise<unknown> {
+	for (;;) {
+		const [run] = runsOf(await headerOf(root, "01-greet"));
+		if (run?.session_id !== undefined) return run.session_id;
+		await Bun.sleep(20);
+	}
+}
+
+test("a running agent Run's [[runs]] entry already holds its session_id", async () => {
+	const root = await twoTickets(agentWorkflow);
+	const claude = await makeFakeClaude("echo $$ > claude.pid; sleep 60");
+
+	const vago = startVago(root, ["run", "hello"], claude.env);
+	await waitForProcessGroup(root, "claude.pid");
+
+	expect(await waitForSessionId(root)).toBe(fixtureSessionId);
+	const [running] = runsOf(await headerOf(root, "01-greet"));
+	expect(running?.ended).toBeUndefined();
+	expect(
+		(await readTicketFile(root, `${goalDir}/tickets/01-greet.md`)).body,
+	).toBe("\n# Greet\n");
+	vago.kill("SIGINT");
+	await vago.exited;
+});
+
+test("a vago run killed mid-Run keeps the session_id, and the next run's stuck message resumes it", async () => {
+	const root = await twoTickets(agentWorkflow);
+	const claude = await makeFakeClaude("echo $$ > claude.pid; sleep 60");
+	const vago = startVago(root, ["run", "hello"], claude.env);
+	const group = await waitForProcessGroup(root, "claude.pid");
+	await waitForSessionId(root);
+	// SIGKILL gives `vago` no chance to close the Run or kill its Step.
+	vago.kill("SIGKILL");
+	await vago.exited;
+	process.kill(-group, "SIGKILL");
+
+	const result = await runVago(root, ["run", "hello"], claude.env);
+
+	const [lost] = runsOf(await headerOf(root, "01-greet"));
+	expect(lost?.outcome).toBe("lost");
+	expect(lost?.session_id).toBe(fixtureSessionId);
+	expect(result.stdout).toContain(`  01-greet: vago ticket reset hello 01
+    resume: claude --resume ${fixtureSessionId}
+`);
+});

@@ -22,15 +22,23 @@ import {
 	findHarness,
 	knownHarness,
 	type RunActivity,
+	type RunToolCalls,
 } from "../harness/registry.ts";
 import { readRunLog } from "../tickets/tickets.ts";
 import { type GoalRow, ticketTotal } from "./goal-rows.ts";
+import { startGoal } from "./goal-start.ts";
 import type {
 	GoalTicket,
 	GoalTicketRun,
 	GoalTicketStep,
 } from "./goal-tickets.ts";
-import { RunActivityLines } from "./run-activity.tsx";
+import { sharedLine, usePane } from "./pane-grid.ts";
+import {
+	activityItemId,
+	editIndexes,
+	RunActivityLines,
+	RunDiffLines,
+} from "./run-activity.tsx";
 import { RunLine } from "./run-line.tsx";
 import {
 	type FooterKey,
@@ -41,7 +49,6 @@ import {
 import { fitSpans, fitText, wrapText } from "./text-fit.ts";
 import {
 	goalColor,
-	paneBorder,
 	runMarkLook,
 	stepMarkLook,
 	theme,
@@ -52,9 +59,10 @@ import { duration, money, tokenCount } from "./time-and-money.ts";
 
 /**
  * The Goal view of the Goal `row` shows, of the Project at `root`, the
- * `position`th of `count` Goals in the Project list: a header box with the
- * Goal's progress and numbers, its Tickets on the left with `n/N` on their
- * border and the selected Ticket's Runs under them, the selected Ticket's
+ * `position`th of `count` Goals in the Project list, under the Project
+ * view's header: a box with the Goal's progress and numbers, its Tickets on
+ * the left with `n/N` on their border and the selected Ticket's Runs under
+ * them, the selected Ticket's
  * title, blockers and text on the right, and the selected Run across the
  * bottom. The Ticket the Goal is on starts selected, the first not done or
  * else the last. A Ticket starts on its latest Run, and ←→ and h l move to
@@ -69,16 +77,23 @@ import { duration, money, tokenCount } from "./time-and-money.ts";
  * focuses it. A footer names the keys, and `?` shows them all until `?` or
  * Esc. Esc otherwise closes the whole screen, then calls `onClose`. `[` and
  * `]` call `onNeighbour` with -1 and 1, to open the Goal before or after.
+ * `s` starts the Goal in a `vago run` of its own, through the command `vago`
+ * (`startGoal`), and the footer says what came of it until the next key.
+ * `e` selects the shown Run's latest edit, then the edit before it, and `E`
+ * the one after, scrolled into view; `d` shows the selected edit's diff in
+ * place of the Run, the latest edit's when none is selected, until `d` or
+ * Esc.
  */
 export function GoalView(props: {
 	root: string;
+	vago: string[];
 	row: GoalRow;
 	position: number;
 	count: number;
 	onClose: () => void;
 	onNeighbour: (step: -1 | 1) => void;
 }): JSX.Element {
-	const { color, symbol } = theme();
+	const { symbol } = theme();
 	const terminal = useTerminalDimensions();
 	const [chosen, setChosen] = createSignal<string>();
 	const selectedIndex = () => {
@@ -102,13 +117,71 @@ export function GoalView(props: {
 			? Math.min(chosen.index, runs.length - 1)
 			: runs.length - 1;
 	};
+	const run = () => ticket()?.runs[runIndex()];
+	const log = liveRunLog(run);
+	// A log whose Harness this build doesn't know shows as text.
+	const activity = createMemo(() => {
+		const harness = run()?.harness;
+		const text = log()?.text;
+		if (harness === undefined || !knownHarness(harness)) return undefined;
+		if (text === undefined) return undefined;
+		return findHarness(harness).runActivity(text.split("\n"), props.root);
+	});
+	// The edit picked in the Run whose log is `log`, by its item's index, and
+	// whether its diff shows. Another Run has neither.
+	const [chosenEdit, setChosenEdit] = createSignal<{
+		log: string;
+		item: number;
+		diff: boolean;
+	}>();
+	const shownEdit = () => {
+		const chosen = chosenEdit();
+		return chosen?.log === run()?.log ? chosen : undefined;
+	};
+	const selectedEdit = () => shownEdit()?.item;
+	// The selected edit while its diff shows. A live Run's items can shift
+	// under the selection, so the item is checked to be an edit still.
+	const diffEdit = () => {
+		const chosen = shownEdit();
+		const shown = activity();
+		if (chosen?.diff !== true || shown === undefined) return undefined;
+		const item = shown.items[chosen.item];
+		return item?.kind === "tool-calls" &&
+			editIndexes(shown).includes(chosen.item)
+			? item
+			: undefined;
+	};
+	const diffOpen = () => diffEdit() !== undefined;
+	// One edit back for -1 and on for 1, from the latest when none is
+	// selected, keeping the diff shown or not.
+	const moveEdit = (step: -1 | 1) => {
+		const shown = activity();
+		const logPath = run()?.log;
+		if (shown === undefined || logPath === undefined) return;
+		const edits = editIndexes(shown);
+		const at = edits.indexOf(selectedEdit() ?? -1);
+		const item =
+			at === -1 ? edits.at(-1) : edits[clamp(at + step, edits.length)];
+		if (item === undefined) return;
+		setChosenEdit({ log: logPath, item, diff: diffOpen() });
+		runBox?.scrollChildIntoView(activityItemId(item));
+	};
+	const showDiff = (diff: boolean) => {
+		if (selectedEdit() === undefined) moveEdit(-1);
+		const chosen = shownEdit();
+		if (chosen !== undefined) setChosenEdit({ ...chosen, diff });
+	};
 	const [helpShown, setHelpShown] = createSignal(false);
+	const [notice, setNotice] = createSignal<string>();
 	const [focus, setFocus] = createSignal<GoalViewPane>("tickets");
 	const [fullScreen, setFullScreen] = createSignal<"ticket" | "run">();
 	// The scrollboxes of the Ticket's text and the shown Run, which the keys
 	// scroll.
 	let ticketBox: ScrollBoxRenderable | undefined;
 	let runBox: ScrollBoxRenderable | undefined;
+	let diffBox: ScrollBoxRenderable | undefined;
+	// The Run pane's scrollbox the keys scroll: the diff's while it shows.
+	const runScroll = () => (diffOpen() ? diffBox : runBox);
 	// Clamped, not wrapped, so holding a key stops at the end of the list.
 	const clamp = (index: number, length: number) =>
 		Math.max(0, Math.min(length - 1, index));
@@ -130,11 +203,14 @@ export function GoalView(props: {
 		const pane = focus();
 		if (pane === "tickets") select(selectedIndex() + step);
 		else if (pane === "runs") selectRun(runIndex() + step);
-		else (pane === "ticket" ? ticketBox : runBox)?.scrollBy(step);
+		else (pane === "ticket" ? ticketBox : runScroll())?.scrollBy(step);
 	};
 	// The lists have nothing to page, so from them the Run pages.
 	const page = (pages: number) =>
-		(focus() === "ticket" ? ticketBox : runBox)?.scrollBy(pages, "viewport");
+		(focus() === "ticket" ? ticketBox : runScroll())?.scrollBy(
+			pages,
+			"viewport",
+		);
 	// A click on `pane`, or on a Ticket or Run in it, which `pick` selects.
 	// The help screen hides what is under it, so a click there does nothing.
 	const click = (pane: GoalViewPane, pick?: () => void) => {
@@ -149,8 +225,10 @@ export function GoalView(props: {
 	useKeyboard((key) => {
 		// The pane 1 to 4 name, undefined for any other key.
 		const numbered = paneOrder[Number(key.name) - 1];
+		setNotice(undefined);
 		if (key.name === "?") setHelpShown(!helpShown());
 		else if (key.name === "escape" && helpShown()) setHelpShown(false);
+		else if (key.name === "escape" && diffOpen()) showDiff(false);
 		else if (key.name === "escape" && fullScreen() !== undefined)
 			setFullScreen(undefined);
 		else if (key.name === "escape") props.onClose();
@@ -165,6 +243,10 @@ export function GoalView(props: {
 		} else if (numbered !== undefined) setFocus(numbered);
 		else if (key.name === "[") props.onNeighbour(-1);
 		else if (key.name === "]") props.onNeighbour(1);
+		else if (key.name === "s")
+			setNotice(startGoal(props.vago, props.root, props.row));
+		else if (key.name === "e") moveEdit(key.shift ? 1 : -1);
+		else if (key.name === "d") showDiff(!diffOpen());
 		else if (key.name === "t") openFullScreen("ticket");
 		else if (key.name === "r") openFullScreen("run");
 		else if (key.name === "up" || key.name === "k") moveInFocus(-1);
@@ -179,14 +261,17 @@ export function GoalView(props: {
 	});
 	const lost = () => props.row.standing === "lost";
 	const ticketsWidth = () => Math.floor(terminal().width * ticketsShare);
-	// The share is of what a bordered header leaves, so the rows a borderless
-	// one saves go to the Tickets.
+	// The share is of the rows under the Goal box, and its bottom line, which
+	// the top shares.
 	const topRows = () =>
 		Math.round(
-			(terminal().height - roomyHeaderRows - (lost() ? 1 : 0) - 1) * topShare,
-		) +
-		roomyHeaderRows -
-		headerRows(terminal().height);
+			(terminal().height -
+				headerRows -
+				goalBoxRows(lost()) -
+				footerRows +
+				sharedLine) *
+				topShare,
+		);
 	// Enough rows for every Run, between 3 and 8, and at most a third of the
 	// top's, so the Tickets keep the most.
 	const runsRows = () =>
@@ -196,27 +281,18 @@ export function GoalView(props: {
 		);
 	return (
 		<box flexDirection="column" flexGrow={1}>
-			<GoalHeader
+			<GoalBox
 				row={props.row}
 				position={props.position}
 				count={props.count}
 				width={terminal().width}
-				height={terminal().height}
 			/>
-			<Show when={lost()}>
-				<box flexShrink={0} paddingLeft={1} paddingRight={1}>
-					<text fg={color.warn} flexShrink={0} wrapMode="none">
-						{fitText(
-							`${symbol.lost} No vago run process runs this Goal; the next records its open Run as lost.`,
-							terminal().width - 2,
-						)}
-					</text>
-				</box>
-			</Show>
 			{/* A pane off the whole screen is hidden, not dropped, so it keeps
-			    its scroll and its Run's log. */}
+			    its scroll and its Run's log. Each box under or beside another
+			    overlaps it by its shared line. */}
 			<box
 				flexDirection="row"
+				marginTop={-sharedLine}
 				visible={fullScreen() !== "run"}
 				height={fullScreen() === "ticket" ? undefined : topRows()}
 				flexGrow={fullScreen() === "ticket" ? 1 : 0}
@@ -251,9 +327,11 @@ export function GoalView(props: {
 						<TicketPane
 							ticket={ticket()}
 							width={
-								terminal().width -
-								(fullScreen() === "ticket" ? 0 : ticketsWidth())
+								fullScreen() === "ticket"
+									? terminal().width
+									: terminal().width - ticketsWidth() + sharedLine
 							}
+							besideTickets={fullScreen() !== "ticket"}
 							focused={focus() === "ticket"}
 							onClick={() => click("ticket")}
 							scrollRef={(box) => {
@@ -263,16 +341,26 @@ export function GoalView(props: {
 					)}
 				</Show>
 			</box>
-			<box flexGrow={1} visible={fullScreen() !== "ticket"}>
+			<box
+				flexGrow={1}
+				marginTop={-sharedLine}
+				visible={fullScreen() !== "ticket"}
+			>
 				<RunPane
-					root={props.root}
 					ticket={ticket()}
 					selected={runIndex()}
+					log={log()?.text}
+					activity={activity()}
+					selectedEdit={selectedEdit()}
+					diff={diffEdit()}
 					width={terminal().width}
 					focused={focus() === "run"}
 					onClick={() => click("run")}
 					scrollRef={(box) => {
 						runBox = box;
+					}}
+					diffRef={(box) => {
+						diffBox = box;
 					}}
 				/>
 			</box>
@@ -280,6 +368,7 @@ export function GoalView(props: {
 				<KeyFooter
 					keys={footerKeys(symbol.upDown, symbol.leftRight)}
 					width={terminal().width - 2}
+					notice={notice()}
 				/>
 			</box>
 			<Show when={helpShown()}>
@@ -300,8 +389,10 @@ const footerKeys = (upDown: string, leftRight: string): FooterKey[] => [
 	{ keys: leftRight, label: "Run", use: 4 },
 	{ keys: "Tab", label: "Pane", use: 3 },
 	{ keys: "[ ]", label: "Goal", use: 2 },
+	{ keys: "s", label: "Start", use: 2 },
 	{ keys: "t r", label: "Full screen", use: 2 },
 	{ keys: "G", label: "Follow", use: 2 },
+	{ keys: "e d", label: "Diff", use: 2 },
 	{ keys: "Esc", label: "Goals", use: 3 },
 	// Kept over the rest at small sizes, since it names what drops out.
 	{ keys: "?", label: "Help", use: 3 },
@@ -317,10 +408,13 @@ const helpKeys = (upDown: string, leftRight: string): HelpKey[] => [
 	{ keys: "PgUp", meaning: "page back" },
 	{ keys: "t r", meaning: "Ticket, Run full screen" },
 	{ keys: "G", meaning: "follow the live Run again" },
+	{ keys: "e E", meaning: "select the Run's edit before, after" },
+	{ keys: "d", meaning: "show, hide the selected edit's diff" },
 	{ keys: "[ ]", meaning: "open the Goal before, after" },
+	{ keys: "s", meaning: "start this Goal in vago run" },
 	{ keys: "click", meaning: "select the Ticket or Run, focus the pane" },
 	{ keys: "wheel", meaning: "scroll the pane under the pointer" },
-	{ keys: "Esc", meaning: "close full screen, then go to the Goals" },
+	{ keys: "Esc", meaning: "close the diff, full screen, then the Goals" },
 	{ keys: "? Esc", meaning: "show, hide these keys" },
 	{ keys: "q Ctrl-C", meaning: "quit" },
 ];
@@ -333,33 +427,26 @@ const ticketsShare = 0.4;
 const topShare = 0.62;
 // A box's border and padding, on both sides.
 const paneEdges = 4;
+// The Project view's header line over the Goal view, and the footer.
+const headerRows = 1;
+const footerRows = 1;
 
-// From this many rows the header has its border and the solid bar; below,
-// the border's two rows go to the Tickets, the title takes a line of its own
-// and the bar is the lighter one.
-const roomyFrom = 30;
+// The Goal box's rows: its border, its bar and numbers, and, while the Goal
+// is lost, the line saying so.
+const goalBoxRows = (lost: boolean) => (lost ? 5 : 4);
 
-// The header's rows: its bar and numbers, and its border, which carries its
-// title, or below `roomyFrom` its title's own line.
-const roomyHeaderRows = 4;
-const headerRows = (height: number) =>
-	height >= roomyFrom ? roomyHeaderRows : 3;
-
-// The header box, `width` columns wide on a screen `height` rows tall,
-// titled with the Goal's place in the Project list, its symbol and its name,
-// over its progress bar and a line of its numbers, labels dim and values
-// bold. The Goal's title takes what the numbers leave.
-function GoalHeader(props: {
+// The Goal box, `width` columns wide, titled with the Goal's place in the
+// Project list, its symbol and its name, over its progress bar and a line of
+// its numbers, labels dim and values bold, and for a lost Goal a line saying
+// no `vago run` runs it. The Goal's title takes what the numbers leave.
+function GoalBox(props: {
 	row: GoalRow;
 	position: number;
 	count: number;
 	width: number;
-	height: number;
 }): JSX.Element {
 	const { color, symbol, dimSpan } = theme();
-	const roomy = () => props.height >= roomyFrom;
-	// Inside the border and padding, or the padding alone.
-	const inner = () => props.width - (roomy() ? paneEdges : 2);
+	const inner = () => props.width - paneEdges;
 	const done = () => `  ${props.row.ticketCounts.done}`;
 	const total = () => `/${ticketTotal(props.row.ticketCounts)} Tickets`;
 	const value = (text: string, fg: ColorInput = color.fg) => ({
@@ -374,8 +461,8 @@ function GoalHeader(props: {
 			[
 				value(props.row.standing.toUpperCase(), goalColor(props.row.standing)),
 				label("   "),
-				value(duration(props.row.elapsedMs)),
-				label(" elapsed   "),
+				value(duration(props.row.runMs)),
+				label(" run time   "),
 				value(tokenCount(props.row.tokens)),
 				label(" tokens   "),
 				value(money(props.row.costUsd)),
@@ -386,17 +473,20 @@ function GoalHeader(props: {
 			],
 			inner(),
 		);
-	// A function, so each layout below gets its own lines: one tree moved
-	// between the two loses its spans' colours.
-	const lines = () => (
-		<>
+	const pane = usePane(() => ({
+		title: ` ${title()} `,
+		titleColor: goalColor(props.row.standing),
+		focused: false,
+	}));
+	return (
+		<box ref={pane} border paddingLeft={1} paddingRight={1} flexShrink={0}>
 			<text fg={color.fg} flexShrink={0} wrapMode="none">
 				<TicketBar
 					tickets={props.row.ticketCounts}
 					standing={props.row.standing}
 					width={Math.max(0, inner() - done().length - total().length)}
 					selected={false}
-					solid={roomy()}
+					solid
 				/>
 				<span style={{ fg: color.fg, bold: true }}>{done()}</span>
 				<span style={dimSpan}>{total()}</span>
@@ -406,38 +496,15 @@ function GoalHeader(props: {
 					{(span) => <span style={span.style}>{span.text}</span>}
 				</For>
 			</text>
-		</>
-	);
-	// Two boxes, not one with its border switched: OpenTUI turns a box's
-	// border back on whenever its border colour is set.
-	return (
-		<Show
-			when={roomy()}
-			fallback={
-				<box paddingLeft={1} paddingRight={1} flexShrink={0}>
-					<text
-						fg={goalColor(props.row.standing)}
-						flexShrink={0}
-						wrapMode="none"
-					>
-						{fitText(title(), inner())}
-					</text>
-					{lines()}
-				</box>
-			}
-		>
-			<box
-				border
-				{...paneBorder(false)}
-				title={` ${title()} `}
-				titleColor={goalColor(props.row.standing)}
-				paddingLeft={1}
-				paddingRight={1}
-				flexShrink={0}
-			>
-				{lines()}
-			</box>
-		</Show>
+			<Show when={props.row.standing === "lost"}>
+				<text fg={color.warn} flexShrink={0} wrapMode="none">
+					{fitText(
+						`${symbol.lost} No vago run process runs this Goal; the next records its open Run as lost.`,
+						inner(),
+					)}
+				</text>
+			</Show>
+		</box>
 	);
 }
 
@@ -464,13 +531,15 @@ function TicketsPane(props: {
 		if (ticket !== undefined)
 			list?.scrollChildIntoView(ticketRowId(ticket.number));
 	});
+	const pane = usePane(() => ({
+		title: " Tickets ",
+		bottomTitle: ` ${props.selected + 1}/${props.tickets.length} `,
+		focused: props.focused,
+	}));
 	return (
 		<box
+			ref={pane}
 			border
-			{...paneBorder(props.focused)}
-			title=" Tickets "
-			bottomTitle={` ${props.selected + 1}/${props.tickets.length} `}
-			bottomTitleAlignment="right"
 			paddingLeft={1}
 			paddingRight={1}
 			flexGrow={1}
@@ -530,7 +599,8 @@ function TicketsPane(props: {
 	);
 }
 
-// The selected Ticket, `width` columns wide with its border: its title,
+// The selected Ticket, `width` columns wide with its border, its left edge
+// the Tickets' right one when `besideTickets`: its title,
 // the Tickets it comes after, its Workflow's Steps marked, or why the
 // Workflow can't be read, and its text wrapped to the pane, scrolled by the
 // wheel and in `scrollRef`'s scrollbox. Its Runs' totals sit on its border,
@@ -538,6 +608,7 @@ function TicketsPane(props: {
 function TicketPane(props: {
 	ticket: GoalTicket;
 	width: number;
+	besideTickets: boolean;
 	focused: boolean;
 	onClick: () => void;
 	scrollRef: (box: ScrollBoxRenderable) => void;
@@ -550,13 +621,16 @@ function TicketPane(props: {
 			duration(props.ticket.runsMs),
 			money(props.ticket.costUsd),
 		].join(` ${symbol.sep} `);
+	const pane = usePane(() => ({
+		title: ` Ticket ${props.ticket.number} `,
+		bottomTitle: ` ${totals()} `,
+		focused: props.focused,
+	}));
 	return (
 		<box
+			ref={pane}
 			border
-			{...paneBorder(props.focused)}
-			title={` Ticket ${props.ticket.number} `}
-			bottomTitle={` ${totals()} `}
-			bottomTitleAlignment="right"
+			marginLeft={props.besideTickets ? -sharedLine : 0}
 			paddingLeft={1}
 			paddingRight={1}
 			flexGrow={1}
@@ -592,7 +666,7 @@ function TicketPane(props: {
 									<>
 										<Show when={index() > 0}>{stepGap}</Show>
 										<span style={look().style}>{look().symbol}</span>
-										<span style={{ fg: color.fg }}>{` ${step.id}`}</span>
+										<span style={{ fg: color.fg }}>{` ${step.name}`}</span>
 									</>
 								);
 							}}
@@ -642,7 +716,7 @@ function stepLines(steps: GoalTicketStep[], width: number): GoalTicketStep[][] {
 	let line: GoalTicketStep[] = [];
 	let lineWidth = 0;
 	for (const step of steps) {
-		const stepWidth = 2 + Bun.stringWidth(step.id);
+		const stepWidth = 2 + Bun.stringWidth(step.name);
 		const joined =
 			line.length === 0 ? stepWidth : lineWidth + stepGap.length + stepWidth;
 		if (line.length > 0 && joined > width) {
@@ -684,7 +758,7 @@ function RunsPane(props: {
 		list?.scrollChildIntoView(runRowId(props.selected));
 	createEffect(showSelected);
 	const runs = () => props.ticket?.runs ?? [];
-	// OpenTUI drops a title too long for its border, so a narrow pane says
+	// The grid drops a title too long for its border, so a narrow pane says
 	// only Runs.
 	const title = () => {
 		const long = ` Runs of Ticket ${props.ticket?.number} `;
@@ -692,11 +766,12 @@ function RunsPane(props: {
 			? " Runs "
 			: long;
 	};
+	const pane = usePane(() => ({ title: title(), focused: props.focused }));
 	return (
 		<box
+			ref={pane}
 			border
-			{...paneBorder(props.focused)}
-			title={title()}
+			marginTop={-sharedLine}
 			paddingLeft={1}
 			paddingRight={1}
 			height={props.height}
@@ -799,39 +874,36 @@ function liveRunLog(
 
 // The `selected`th Run of `ticket` across the screen, `width` columns wide
 // with its border, titled with its position, Ticket and Step, its outcome,
-// duration and, for an agent Step, cost on its border. An agent Step's Run
-// shows its activity as its Harness reads its log, with paths relative to
-// the Project at `root`, and a shell Step's Run its log as text, both
-// scrolled by the wheel and, as it grows, read again. An open Run opens at
-// its bottom and follows what it adds until scrolled up, and `scrollRef`
-// gets each Run's scrollbox, to scroll it and to follow again by scrolling
-// it to its bottom. The border is in the accent when `focused`, and a click
-// on it calls `onClick`.
+// duration and, for an agent Step, cost on its border, or while it is open
+// its tokens and cost so far. An agent Step's Run shows its `activity`, the
+// `selectedEdit`th item selected, or in its place the edit `diff`'s diff, and
+// a shell Step's Run its `log` as text, both scrolled by the wheel, and
+// both undefined until the log is first read. An open Run opens at its
+// bottom and follows what it adds until scrolled up, and `scrollRef` gets
+// each Run's scrollbox, to scroll it and to follow again by scrolling it to
+// its bottom, and `diffRef` each diff's. The border is in the accent when
+// `focused`, and a click on it calls `onClick`.
 function RunPane(props: {
-	root: string;
 	ticket: GoalTicket | undefined;
 	selected: number;
+	log: string | undefined;
+	activity: RunActivity | undefined;
+	selectedEdit: number | undefined;
+	diff: RunToolCalls | undefined;
 	width: number;
 	focused: boolean;
 	onClick: () => void;
 	scrollRef: (box: ScrollBoxRenderable) => void;
+	diffRef: (box: ScrollBoxRenderable) => void;
 }): JSX.Element {
 	const { color, symbol, dimText } = theme();
 	const run = () => props.ticket?.runs[props.selected];
-	const log = liveRunLog(run);
-	const shownLog = () => log()?.text ?? "";
 	const live = () => run()?.state === "live";
-	// A log whose Harness this build doesn't know shows as text.
-	const activity = createMemo(() => {
-		const harness = run()?.harness;
-		if (harness === undefined || !knownHarness(harness)) return undefined;
-		return findHarness(harness).runActivity(shownLog().split("\n"), props.root);
-	});
 	const title = () => {
 		const shown = run();
 		return shown === undefined
 			? " Run "
-			: ` Run ${props.selected + 1} ${symbol.sep} ${props.ticket?.number} ${shown.step} `;
+			: ` Run ${props.selected + 1} ${symbol.sep} ${props.ticket?.number} ${shown.stepName} `;
 	};
 	const numbers = () => {
 		const shown = run();
@@ -839,7 +911,12 @@ function RunPane(props: {
 		const mark = runMarkLook(shown.state, shown.outcome).text;
 		if (shown.state !== "ended") {
 			const after = shown.state === "lost" ? "after " : "";
-			return ` ${mark} ${after}${duration(shown.durationMs)} `;
+			const spent = props.activity?.spent;
+			return ` ${[
+				`${mark} ${after}${duration(shown.durationMs)}`,
+				...(spent === undefined ? [] : [`${tokenCount(spent.tokens)} tokens`]),
+				...(spent?.costUsd === undefined ? [] : [money(spent.costUsd)]),
+			].join(` ${symbol.sep} `)} `;
 		}
 		return ` ${[
 			mark,
@@ -847,13 +924,15 @@ function RunPane(props: {
 			...(shown.costUsd === undefined ? [] : [money(shown.costUsd)]),
 		].join(` ${symbol.sep} `)} `;
 	};
+	const pane = usePane(() => ({
+		title: title(),
+		bottomTitle: numbers(),
+		focused: props.focused,
+	}));
 	return (
 		<box
+			ref={pane}
 			border
-			{...paneBorder(props.focused)}
-			title={title()}
-			bottomTitle={numbers()}
-			bottomTitleAlignment="right"
 			paddingLeft={1}
 			paddingRight={1}
 			flexGrow={1}
@@ -868,19 +947,21 @@ function RunPane(props: {
 					</text>
 				}
 			>
-				{/* One scrollbox per Run, so each opens at its own top or bottom. */}
+				{/* One scrollbox per Run, so each opens at its own top or bottom,
+				    hidden, not dropped, under a diff, so it keeps its scroll. */}
 				<scrollbox
 					ref={props.scrollRef}
 					flexGrow={1}
+					visible={props.diff === undefined}
 					stickyScroll={run()?.outcome === undefined}
 					stickyStart="bottom"
 					verticalScrollbarOptions={{ visible: false }}
 				>
 					<Show
-						when={activity()}
+						when={props.activity}
 						fallback={
 							<text fg={color.fg} wrapMode="word">
-								{Bun.stripANSI(shownLog()).trimEnd()}
+								{Bun.stripANSI(props.log ?? "").trimEnd()}
 							</text>
 						}
 					>
@@ -888,11 +969,23 @@ function RunPane(props: {
 							<RunActivityLines
 								activity={shown()}
 								live={live()}
+								selected={props.selectedEdit}
 								width={props.width - paneEdges}
 							/>
 						)}
 					</Show>
 				</scrollbox>
+				<Show when={props.diff}>
+					{(item: () => RunToolCalls) => (
+						<scrollbox
+							ref={props.diffRef}
+							flexGrow={1}
+							verticalScrollbarOptions={{ visible: false }}
+						>
+							<RunDiffLines item={item()} width={props.width - paneEdges} />
+						</scrollbox>
+					)}
+				</Show>
 			</Show>
 		</box>
 	);

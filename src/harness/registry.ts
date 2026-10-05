@@ -34,12 +34,21 @@ export type RunActivity = {
 	 * Run is open, which the stream alone can't tell.
 	 */
 	working: boolean;
+	/**
+	 * What the session has spent so far, counted from each of its messages.
+	 * Close to the totals its end reports, which are the ones to trust once
+	 * it has ended. No cost when the Harness can't price a model the session
+	 * used.
+	 */
+	spent: { tokens: number; costUsd?: number };
 };
 
 export type RunActivityItem =
 	| { kind: "session-start"; model: string }
 	| { kind: "prose"; lines: RunProseLine[] }
 	| RunToolCalls
+	| { kind: "skill-loaded"; name: string }
+	| RunBackgroundTask
 	/** A tool call's result that failed; results that didn't are left out. */
 	| { kind: "failed-result"; firstLine: string }
 	| { kind: "denied"; tool: string; reason: string }
@@ -54,6 +63,16 @@ export type RunToolCalls = {
 	verb: string;
 	files: boolean;
 	calls: RunToolCall[];
+};
+
+/**
+ * A command the agent sent to run in the background, by its description,
+ * and how it ended once it has.
+ */
+export type RunBackgroundTask = {
+	kind: "background-task";
+	subject: string;
+	state: "running" | "completed" | "failed" | "stopped";
 };
 
 /** How the session ended, with the numbers it reported. */
@@ -80,7 +99,23 @@ export type RunProseLine = { text: string; heading: boolean };
  * description, and its size when the call has one, such as "120 lines" or
  * "+3 −1".
  */
-export type RunToolCall = { subject: string; size?: string };
+export type RunToolCall = {
+	subject: string;
+	size?: string;
+	/** What the call changed in the file it edited, for a call that did. */
+	diff?: RunDiffLine[];
+	/** When the call started, while it waits for its result. */
+	runningSince?: Date;
+};
+
+/**
+ * One line of a file's diff: a hunk's header, such as `@@ -1,3 +1,3 @@`, or a
+ * line kept, added or removed, without its `+` or `-`.
+ */
+export type RunDiffLine = {
+	kind: "hunk" | "kept" | "added" | "removed";
+	text: string;
+};
 
 /**
  * One Harness's CLI. Its functions do no I/O: the kernel spawns the command,

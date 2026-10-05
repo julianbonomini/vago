@@ -1,10 +1,11 @@
 // Fitting text to a column of the terminal by display width, cut to one
 // line, styled or not, or wrapped to many, so CJK and emoji, which take two
 // cells, keep columns aligned, and hard-wrapped Markdown joined into
-// paragraphs to be wrapped again. Hides the grapheme splitting, the width
-// measure and which lines start a paragraph.
+// paragraphs to be wrapped again. Hides the grapheme splitting and the width
+// measure.
 
 import type { ColorInput } from "@opentui/core";
+import { joinParagraphLines } from "../markdown-paragraphs.ts";
 import { theme } from "./theme.ts";
 
 const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
@@ -87,33 +88,20 @@ export function wrapText(text: string, width: number): string[] {
 /**
  * The paragraphs of `text`, hard-wrapped Markdown such as a Goal's or a
  * Ticket's text, one string per paragraph with its lines joined, for
- * `wrapText` to wrap to a column. A heading, its `#`s dropped, or a list item
- * is a paragraph of its own; "" stands for the blank line between
- * paragraphs, and none starts or ends the list.
+ * `wrapText` to wrap to a column. A heading, its `#`s dropped, a list item and
+ * each line of a block such as a fenced code block or a table is a paragraph
+ * of its own; "" stands for the blank line between paragraphs, and none
+ * starts or ends the list. A fenced code block keeps its `#` lines and its
+ * blank lines.
  */
 export function joinParagraphs(text: string): string[] {
 	const out: string[] = [];
-	let paragraph = "";
-	const endParagraph = () => {
-		if (paragraph !== "") out.push(paragraph);
-		paragraph = "";
-	};
-	for (const line of text.split("\n").map((each) => each.trim())) {
-		if (line === "") {
-			endParagraph();
-			if (out.length > 0 && out.at(-1) !== "") out.push("");
-		} else if (/^#+ /.test(line)) {
-			endParagraph();
-			out.push(line.replace(/^#+ /, ""));
-		} else if (/^([-*] |\d+\. )/.test(line)) {
-			endParagraph();
-			paragraph = line;
-		} else {
-			paragraph = paragraph === "" ? line : `${paragraph} ${line}`;
+	for (const { text: line, fenced } of joinParagraphLines(text)) {
+		const trimmed = fenced ? line.trim() : line.trim().replace(/^#+ /, "");
+		if (fenced || trimmed !== "" || (out.length > 0 && out.at(-1) !== "")) {
+			out.push(trimmed);
 		}
 	}
-	endParagraph();
-	while (out[0] === "") out.shift();
-	while (out.at(-1) === "") out.pop();
+	if (out.at(-1) === "") out.pop();
 	return out;
 }
