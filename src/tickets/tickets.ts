@@ -302,8 +302,6 @@ export type RunLogRead = {
 	added: string;
 	/** The bytes read up to now, to skip on the next read. */
 	end: number;
-	/** When the log was last written; undefined while there is none. */
-	lastWritten: Date | undefined;
 };
 
 /**
@@ -315,15 +313,25 @@ export type RunLogRead = {
 export async function readRunLog(log: string, from = 0): Promise<RunLogRead> {
 	const file = Bun.file(log);
 	if (!(await file.exists())) {
-		return { added: "", end: from, lastWritten: undefined };
+		return { added: "", end: from };
 	}
 	const bytes = await file.slice(from).bytes();
 	const whole = wholeCharacters(bytes);
 	return {
 		added: new TextDecoder().decode(bytes.subarray(0, whole)),
 		end: from + whole,
-		lastWritten: new Date(file.lastModified),
 	};
+}
+
+/**
+ * When the log at `log`, a `TicketRun`'s, was last written; undefined while
+ * its Run hasn't written it yet.
+ */
+export async function runLogLastWritten(
+	log: string,
+): Promise<Date | undefined> {
+	const file = Bun.file(log);
+	return (await file.exists()) ? new Date(file.lastModified) : undefined;
 }
 
 // How many of `bytes`, UTF-8, end on a whole character: all of them, unless

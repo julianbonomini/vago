@@ -24,7 +24,7 @@ import {
 	type RunActivity,
 } from "../harness/registry.ts";
 import { readRunLog } from "../tickets/tickets.ts";
-import { type GoalRow, type GoalStanding, ticketTotal } from "./goal-rows.ts";
+import { type GoalRow, ticketTotal } from "./goal-rows.ts";
 import type {
 	GoalTicket,
 	GoalTicketRun,
@@ -239,7 +239,6 @@ export function GoalView(props: {
 					<RunsPane
 						ticket={ticket()}
 						selected={runIndex()}
-						standing={props.row.standing}
 						width={ticketsWidth()}
 						height={runsRows()}
 						focused={focus() === "runs"}
@@ -269,7 +268,6 @@ export function GoalView(props: {
 					root={props.root}
 					ticket={ticket()}
 					selected={runIndex()}
-					standing={props.row.standing}
 					width={terminal().width}
 					focused={focus() === "run"}
 					onClick={() => click("run")}
@@ -674,7 +672,6 @@ const positionWidth = 3;
 function RunsPane(props: {
 	ticket: GoalTicket | undefined;
 	selected: number;
-	standing: GoalStanding;
 	width: number;
 	height: number;
 	focused: boolean;
@@ -737,7 +734,6 @@ function RunsPane(props: {
 								<RunLine
 									lead={`${index() + 1}`.padEnd(positionWidth)}
 									run={run}
-									standing={props.standing}
 									width={props.width - paneEdges}
 									bold={index() === props.selected}
 								/>
@@ -761,7 +757,6 @@ type ShownLog = {
 	text: string;
 	/** The bytes of the log `text` holds, to skip on the next read. */
 	end: number;
-	lastWritten: Date | undefined;
 };
 
 // The log of the Run `run` gives, undefined until the first read of it ends,
@@ -786,7 +781,6 @@ function liveRunLog(
 				log,
 				text: (before?.text ?? "") + piece.added,
 				end: piece.end,
-				lastWritten: piece.lastWritten,
 			});
 		} finally {
 			reading = false;
@@ -808,17 +802,15 @@ function liveRunLog(
 // duration and, for an agent Step, cost on its border. An agent Step's Run
 // shows its activity as its Harness reads its log, with paths relative to
 // the Project at `root`, and a shell Step's Run its log as text, both
-// scrolled by the wheel and, as it grows, read again. An open Run is live
-// while its Goal's `standing` is running, and lost otherwise. An open Run
-// opens at its bottom and follows what it adds until scrolled up, and
-// `scrollRef` gets each Run's scrollbox, to scroll it and to follow again by
-// scrolling it to its bottom. The border is in the accent when `focused`,
-// and a click on it calls `onClick`.
+// scrolled by the wheel and, as it grows, read again. An open Run opens at
+// its bottom and follows what it adds until scrolled up, and `scrollRef`
+// gets each Run's scrollbox, to scroll it and to follow again by scrolling
+// it to its bottom. The border is in the accent when `focused`, and a click
+// on it calls `onClick`.
 function RunPane(props: {
 	root: string;
 	ticket: GoalTicket | undefined;
 	selected: number;
-	standing: GoalStanding;
 	width: number;
 	focused: boolean;
 	onClick: () => void;
@@ -828,8 +820,7 @@ function RunPane(props: {
 	const run = () => props.ticket?.runs[props.selected];
 	const log = liveRunLog(run);
 	const shownLog = () => log()?.text ?? "";
-	const live = () =>
-		run()?.outcome === undefined && props.standing === "running";
+	const live = () => run()?.state === "live";
 	// A log whose Harness this build doesn't know shows as text.
 	const activity = createMemo(() => {
 		const harness = run()?.harness;
@@ -845,13 +836,10 @@ function RunPane(props: {
 	const numbers = () => {
 		const shown = run();
 		if (shown === undefined) return "";
-		const mark = runMarkLook(shown.outcome, props.standing).text;
-		if (live()) return ` ${mark} ${duration(shown.durationMs)} `;
-		// A lost Run's clock runs to when it was last heard from.
-		if (shown.outcome === undefined) {
-			const heard = log()?.lastWritten ?? shown.started;
-			const after = Math.max(0, heard.getTime() - shown.started.getTime());
-			return ` ${mark} after ${duration(after)} `;
+		const mark = runMarkLook(shown.state, shown.outcome).text;
+		if (shown.state !== "ended") {
+			const after = shown.state === "lost" ? "after " : "";
+			return ` ${mark} ${after}${duration(shown.durationMs)} `;
 		}
 		return ` ${[
 			mark,

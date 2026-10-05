@@ -1,6 +1,7 @@
 // The TUI's look: the colour tokens every text takes, the symbols, the box
-// borders, and which colour each Goal standing and Ticket status is drawn in,
-// with `NO_COLOR` and `VAGO_ASCII` already applied. No view names a colour, a
+// borders and a focused pane's, which colour each Goal standing and Ticket
+// status is drawn in, and the look of each Ticket, Step and Run mark, with
+// `NO_COLOR` and `VAGO_ASCII` already applied. No view names a colour, a
 // glyph or an environment variable of its own.
 
 import {
@@ -11,7 +12,11 @@ import {
 } from "@opentui/core";
 import type { TicketStatus } from "../tickets/tickets.ts";
 import type { GoalStanding } from "./goal-rows.ts";
-import type { GoalTicketMark, GoalTicketStepMark } from "./goal-tickets.ts";
+import type {
+	GoalRunState,
+	GoalTicketMark,
+	GoalTicketStepMark,
+} from "./goal-tickets.ts";
 
 /** The colour tokens. */
 export type ThemeColors = {
@@ -202,20 +207,19 @@ export function stepMarkLook(mark: GoalTicketStepMark): {
 }
 
 /**
- * A Run's outcome with its symbol and colour: `✓ ok` ok, `✗ exit 1` and the
- * like bad, and `? lost` warn. An open Run, its `outcome` undefined, is
- * `● live` accent while its Goal's `standing` is running, and lost
- * otherwise, as is one the next `vago run` ended `lost`.
+ * A Run in `state` with its symbol and colour: `● live` accent, `? lost`
+ * warn, and an ended Run by its `outcome`: `✓ ok` ok, `? lost` warn when the
+ * next `vago run` ended it lost, and `✗ exit 1` and the like bad.
  */
 export function runMarkLook(
+	state: GoalRunState,
 	outcome: string | undefined,
-	standing: GoalStanding,
 ): { text: string; fg: ColorInput } {
 	const { color, symbol } = theme();
-	if (outcome === undefined && standing === "running") {
+	if (state === "live") {
 		return { text: `${symbol.running} live`, fg: color.accent };
 	}
-	if (outcome === undefined || outcome === "lost") {
+	if (state === "lost" || outcome === "lost") {
 		return { text: `${symbol.lost} lost`, fg: color.warn };
 	}
 	if (outcome === "ok") return { text: `${symbol.done} ok`, fg: color.ok };

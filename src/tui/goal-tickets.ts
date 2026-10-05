@@ -1,7 +1,8 @@
 // What the Goal view knows of each Ticket of a Goal: the mark its symbol and
 // colour come from, the state word before its title, its blockers, its
-// Workflow's Steps marked from its latest pass, its Runs and their totals,
-// and its text as paragraphs. Hides the rules behind each.
+// Workflow's Steps marked from its latest pass, its Runs, live or lost while
+// open, and their totals, and its text as paragraphs. Hides the rules behind
+// each.
 
 import {
 	type GoalState,
@@ -57,9 +58,16 @@ export type GoalTicket = {
 	costUsd: number;
 };
 
+/**
+ * Whether a Run is going: `live` while open and a `vago run` holds its Goal,
+ * `lost` while open and none does, `ended` once it ended.
+ */
+export type GoalRunState = "live" | "lost" | "ended";
+
 /** One Run of a Ticket as the Runs pane lists it and the Run pane shows it. */
 export type GoalTicketRun = {
 	step: string;
+	state: GoalRunState;
 	/**
 	 * The Harness an agent Step's Run ran on, whose stream its log holds;
 	 * absent for a shell Step's, whose log is text.
@@ -69,8 +77,8 @@ export type GoalTicketRun = {
 	outcome?: string;
 	started: Date;
 	/**
-	 * To the Run's end; an open one's to when it was read, or to its start
-	 * when the Ticket is lost, as the Goal's clock stops then too.
+	 * To the Run's end; a live one's to when it was read, and a lost one's to
+	 * when its log was last written, the last time it was heard from.
 	 */
 	durationMs: number;
 	/** Absent for a shell Step, and for an agent Step's until it ends. */
@@ -105,14 +113,17 @@ export type GoalWorkflowSteps = {
 };
 
 /**
- * The Tickets of the Goal read as `state`, lowest number first, with open
- * Runs timed to `now`. `claimed` says whether a live `vago run` holds the
- * Goal. `workflows` holds the Steps of each Workflow the Tickets go through,
+ * The Tickets of the Goal read as `state`, lowest number first. `claimed`
+ * says whether a live `vago run` holds the Goal: its open Runs are then
+ * live, timed to `now`, and otherwise lost, timed to their log's last write
+ * as `lastWritten` holds it by the log's path, or to their start without
+ * one. `workflows` holds the Steps of each Workflow the Tickets go through,
  * by name; a Ticket whose Workflow it lacks has no Steps.
  */
 export function goalTickets(
 	state: GoalState,
 	claimed: boolean,
+	lastWritten: Map<string, Date>,
 	workflows: Map<string, GoalWorkflowSteps>,
 	now: Date,
 ): GoalTicket[] {
@@ -122,32 +133,35 @@ export function goalTickets(
 	return state.tickets.map((ticket) => {
 		const markAndWord = markAndStateWord(
 			ticket.status,
-			ticket.runs.at(-1)?.step,
+			runningStep(ticket.runs),
 			claimed,
 			ticket.blockedBy.filter((blocker) => !done.includes(blocker)),
 		);
-		const lost = markAndWord.mark === "lost";
 		const workflow = workflows.get(ticket.workflow);
-		const runs = ticket.runs.map(
-			(run): GoalTicketRun => ({
+		const runs = ticket.runs.map((run): GoalTicketRun => {
+			const runState =
+				run.ended !== undefined ? "ended" : claimed ? "live" : "lost";
+			const end =
+				run.ended ??
+				(runState === "live" ? now : (lastWritten.get(run.log) ?? run.started));
+			return {
 				step: run.step,
+				state: runState,
 				harness: run.harness,
 				outcome: run.outcome,
 				started: run.started,
-				durationMs:
-					(run.ended ?? (lost ? run.started : now)).getTime() -
-					run.started.getTime(),
+				durationMs: Math.max(0, end.getTime() - run.started.getTime()),
 				costUsd: run.costUsd,
 				log: run.log,
-			}),
-		);
+			};
+		});
 		return {
 			number: ticketNumberText(ticket.ticket.number),
 			title: ticket.title,
 			...markAndWord,
 			blockedBy: ticket.blockedBy.map(ticketNumberText),
 			description: joinParagraphs(ticket.description),
-			steps: markSteps(workflow?.stepIds ?? [], ticket.runs, lost),
+			steps: markSteps(workflow?.stepIds ?? [], runs),
 			workflowProblem: workflow?.problem,
 			runs,
 			runsMs: runs.reduce((sum, run) => sum + run.durationMs, 0),
@@ -158,34 +172,39 @@ export function goalTickets(
 
 // Each of `stepIds` marked from the Ticket's latest pass, the Runs from the
 // last one of its first Step on, since a Ticket can start over from there.
-// `lost` says no `vago run` runs the Ticket, so its open Run is lost.
-function markSteps(
-	stepIds: string[],
-	runs: TicketRun[],
-	lost: boolean,
-): GoalTicketStep[] {
+function markSteps(stepIds: string[], runs: GoalTicketRun[]): GoalTicketStep[] {
 	const passStart = runs.findLastIndex(({ step }) => step === stepIds[0]);
 	const pass = runs.slice(Math.max(0, passStart));
 	return stepIds.map((id) => {
 		const run = pass.findLast(({ step }) => step === id);
 		if (run === undefined) return { id, mark: "pending" };
-		if (run.ended === undefined) return { id, mark: lost ? "lost" : "current" };
+		if (run.state === "live") return { id, mark: "current" };
+		if (run.state === "lost") return { id, mark: "lost" };
 		return { id, mark: run.outcome === "ok" ? "done" : "failed" };
 	});
 }
 
-// A Ticket's mark and state word from its status, the Step of its last Run,
-// whether a `vago run` holds its Goal and the blockers it waits on.
+/**
+ * The Step a running Ticket whose Runs are `runs` is on, as its state word
+ * and the Goals table's "now" phrase spell it: its latest Run's, or
+ * `starting` before its first.
+ */
+export function runningStep(runs: TicketRun[]): string {
+	return runs.at(-1)?.step ?? "starting";
+}
+
+// A Ticket's mark and state word from its status, the Step it is on while
+// running, whether a `vago run` holds its Goal and the blockers it waits on.
 function markAndStateWord(
 	status: TicketStatus,
-	lastStep: string | undefined,
+	step: string,
 	claimed: boolean,
 	waitingOn: number[],
 ): { mark: GoalTicketMark; stateWord: string } {
 	switch (status) {
 		case "running":
 			return claimed
-				? { mark: "running", stateWord: lastStep ?? "starting" }
+				? { mark: "running", stateWord: step }
 				: { mark: "lost", stateWord: "lost" };
 		case "stuck":
 			return { mark: "stuck", stateWord: "stuck" };

@@ -10,14 +10,17 @@ import {
 	isGoalClaimed,
 	listGoals,
 	readGoal,
+	runLogLastWritten,
 	type TicketStatus,
 	ticketNumberText,
 } from "../tickets/tickets.ts";
 import { readWorkflowStepIds } from "../workflow.ts";
 import {
+	type GoalRunState,
 	type GoalTicket,
 	type GoalWorkflowSteps,
 	goalTickets,
+	runningStep,
 } from "./goal-tickets.ts";
 import { joinParagraphs } from "./text-fit.ts";
 
@@ -87,9 +90,10 @@ export type GoalRowRun = {
 	/** The Run's Ticket number as file names spell it, like `02`. */
 	ticketNumber: string;
 	step: string;
+	state: GoalRunState;
 	/** As spelled in the header, like `ok`; absent while the Run is open. */
 	outcome?: string;
-	/** To the Run's end, or to the time the rows were read while open. */
+	/** As `GoalTicketRun`'s. */
 	durationMs: number;
 	/** Absent for a shell Step. */
 	costUsd?: number;
@@ -122,6 +126,7 @@ export async function readGoalRows(
 			const tickets = goalTickets(
 				state,
 				claimed,
+				await readOpenLogsLastWritten(state),
 				await readWorkflows(root, state),
 				now,
 			);
@@ -161,6 +166,22 @@ async function readWorkflows(
 			}),
 		),
 	);
+}
+
+// When each open Run of the Goal last wrote its log, by the log's path.
+async function readOpenLogsLastWritten(
+	state: GoalState,
+): Promise<Map<string, Date>> {
+	const logs = state.tickets
+		.flatMap(({ runs }) => runs)
+		.filter(({ ended }) => ended === undefined)
+		.map(({ log }) => log);
+	const written = new Map<string, Date>();
+	for (const log of logs) {
+		const at = await runLogLastWritten(log);
+		if (at !== undefined) written.set(log, at);
+	}
+	return written;
 }
 
 // What `error` says, its paths relative to the Project at `root`, so it
@@ -261,14 +282,15 @@ function goalRow(
 		sinceLastActivityMs:
 			last === undefined ? undefined : now.getTime() - last.getTime(),
 		tickets,
-		latestRuns: state.tickets
-			.flatMap(({ ticket, runs }) =>
+		latestRuns: tickets
+			.flatMap(({ number, runs }) =>
 				runs.map((run) => ({
 					started: run.started,
-					ticketNumber: ticketNumberText(ticket.number),
+					ticketNumber: number,
 					step: run.step,
+					state: run.state,
 					outcome: run.outcome,
-					durationMs: (run.ended ?? now).getTime() - run.started.getTime(),
+					durationMs: run.durationMs,
 					costUsd: run.costUsd,
 				})),
 			)
@@ -289,16 +311,16 @@ function goalStanding(
 	const first = (status: TicketStatus) =>
 		state.tickets.find((ticket) => ticket.status === status);
 	const running = first("running");
-	const runningStep =
+	const runningOn =
 		running &&
-		`${ticketNumberText(running.ticket.number)} ${running.runs.at(-1)?.step ?? "starting"}`;
+		`${ticketNumberText(running.ticket.number)} ${runningStep(running.runs)}`;
 	if (claimed) {
-		return { standing: "running", phrase: runningStep ?? "between Tickets" };
+		return { standing: "running", phrase: runningOn ?? "between Tickets" };
 	}
-	if (runningStep !== undefined) {
+	if (runningOn !== undefined) {
 		return {
 			standing: "lost",
-			phrase: `${runningStep}, no vago run process runs it`,
+			phrase: `${runningOn}, no vago run process runs it`,
 		};
 	}
 	const stuck = first("stuck");

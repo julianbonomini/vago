@@ -84,7 +84,8 @@ export type RunToolCall = { subject: string; size?: string };
 
 /**
  * One Harness's CLI. Its functions do no I/O: the kernel spawns the command,
- * writes the prompt to its stdin, and feeds each line it streams to `readLine`.
+ * writes the prompt to its stdin, and feeds each line it streams to `readLine`,
+ * and the TUI feeds a Run's log to `runActivity`.
  */
 export type Harness = {
 	/**

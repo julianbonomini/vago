@@ -85,7 +85,6 @@ export function GoalPreview(props: {
 										startWidth,
 									)}
 									run={run}
-									standing={props.row.standing}
 									width={runsColumn()}
 								/>
 							)}

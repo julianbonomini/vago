@@ -811,6 +811,24 @@ test("a lost Goal marks its Ticket, Step and open Run lost and says what to do",
 	expect(frame).not.toContain("working");
 });
 
+test("a lost Run's time in the Runs pane runs to its log's last write, as on its border", async () => {
+	const root = await makeProject({
+		".vago-goals/lost/goal.md": goalText("small"),
+		".vago-goals/lost/tickets/01-only.md": ticketText("running", {
+			runs: [runOf("check", 1)],
+		}),
+		".vago-goals/lost/logs/check-1.log": numberedLines(1, 3),
+	});
+	const heard = new Date(Date.UTC(2026, 9, 1, 10, 1, 12));
+	await utimes(`${root}/.vago-goals/lost/logs/check-1.log`, heard, heard);
+
+	const { view } = await openFirstGoal(root);
+
+	const frame = await frameWith(view, "│ line 3 ");
+	expect(frame).toMatch(/│ 1 {2}check +\? lost +12s +│/);
+	expect(frame).toMatch(/─ \? lost after 12s ─+┘/);
+});
+
 test("at 80 columns the lost hint shows whole", async () => {
 	const root = await makeProject({
 		".vago-goals/lost/goal.md": goalText("small"),
