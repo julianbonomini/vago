@@ -1,19 +1,27 @@
 // Test helper: the Project view rendered through OpenTUI's test renderer, the
 // seam the TUI's tests go through, and waiting for the frame a test expects.
 
-import { afterEach } from "bun:test";
+import { onTestFinished } from "bun:test";
 import type { TestRendererSetup } from "@opentui/core/testing";
 import { testRender } from "@opentui/solid";
 import { ProjectView } from "../src/tui/project-view.tsx";
 
-let rendered: TestRendererSetup[] = [];
+// Each test cleans up after itself through `onTestFinished`, not a shared
+// `afterEach`: a hook here would run only for the first test file that
+// imports this one.
 
-// Each test renderer is destroyed after its test, so none keeps drawing while
-// the rest of the suite runs in the same process.
-afterEach(() => {
-	for (const view of rendered) view.renderer.destroy();
-	rendered = [];
-});
+/** Sets the environment variables in `variables` for the rest of the test. */
+export function setEnv(variables: Record<string, string>): void {
+	for (const [name, value] of Object.entries(variables)) {
+		process.env[name] = value;
+		onTestFinished(() => {
+			delete process.env[name];
+		});
+	}
+}
+
+/** A frame of printable ASCII only, as `VAGO_ASCII=1` draws. */
+export const onlyAscii = /^[\x20-\x7e\n]*$/;
 
 /**
  * The Project view of the Project at `root` in a test terminal of `size`,
@@ -24,7 +32,9 @@ export async function renderView(
 	size = { width: 80, height: 24 },
 ): Promise<TestRendererSetup> {
 	const view = await testRender(() => <ProjectView root={root} />, size);
-	rendered.push(view);
+	// Destroyed, so it doesn't keep drawing while the rest of the suite runs
+	// in the same process.
+	onTestFinished(() => view.renderer.destroy());
 	return view;
 }
 

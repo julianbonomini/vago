@@ -8,7 +8,7 @@ import { For, Show } from "solid-js";
 import { type GoalRow, ticketTotal } from "./goal-rows.ts";
 import { RunLine, runLineFieldsWidth } from "./run-line.tsx";
 import { fitText, wrapText } from "./text-fit.ts";
-import { theme } from "./theme.ts";
+import { paneBorder, theme } from "./theme.ts";
 import { TicketBar } from "./ticket-bar.tsx";
 import { clock, duration } from "./time-and-money.ts";
 
@@ -21,7 +21,7 @@ export function GoalPreview(props: {
 	row: GoalRow;
 	width: number;
 }): JSX.Element {
-	const { color, symbol, border, dimText } = theme();
+	const { color, symbol, dimText } = theme();
 	const inner = () => props.width - boxEdges;
 	// The Runs column keeps its full width while the description has room
 	// for a few words, and gives up the rest below that.
@@ -37,8 +37,7 @@ export function GoalPreview(props: {
 	return (
 		<box
 			border
-			customBorderChars={border}
-			borderColor={color.border}
+			{...paneBorder(false)}
 			title={` ${props.row.goal} `}
 			bottomTitle={` Workflow ${props.row.workflow} ${symbol.sep} ${activity()} `}
 			bottomTitleAlignment="right"

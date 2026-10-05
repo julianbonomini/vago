@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { rm } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { RGBA, TextAttributes } from "@opentui/core";
@@ -11,7 +11,13 @@ import {
 	projectWithGoals,
 	ticketText,
 } from "./project.ts";
-import { frameWith, frameWithout, renderView } from "./view-render.tsx";
+import {
+	frameWith,
+	frameWithout,
+	onlyAscii,
+	renderView,
+	setEnv,
+} from "./view-render.tsx";
 
 test("the Project view lists every Goal by name, in name order", async () => {
 	const root = await projectWithGoals(["beta", "alpha", "gamma"]);
@@ -1035,21 +1041,6 @@ for (const [what, tickets, error] of [
 	});
 }
 
-let setVariables: string[] = [];
-
-// Sets the environment variables in `variables` for the rest of the test.
-function setEnv(variables: Record<string, string>): void {
-	for (const [name, value] of Object.entries(variables)) {
-		process.env[name] = value;
-		setVariables.push(name);
-	}
-}
-
-afterEach(() => {
-	for (const name of setVariables) delete process.env[name];
-	setVariables = [];
-});
-
 // Every Goal standing, and more Goals than the Goals box shows at 20 rows,
 // so its scrollbar draws too.
 async function projectThatScrolls(): Promise<string> {
@@ -1100,8 +1091,6 @@ test("under NO_COLOR every text takes the terminal's own colours, dim and invers
 		TextAttributes.DIM,
 	);
 });
-
-const onlyAscii = /^[\x20-\x7e\n]*$/;
 
 test("under VAGO_ASCII=1 every symbol, bar and border is ASCII", async () => {
 	setEnv({ VAGO_ASCII: "1" });

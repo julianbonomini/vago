@@ -31,7 +31,7 @@ import {
 	KeyHelp,
 } from "./screen-keys.tsx";
 import { fitText } from "./text-fit.ts";
-import { goalColor, theme } from "./theme.ts";
+import { goalColor, paneBorder, theme } from "./theme.ts";
 import { TicketBar } from "./ticket-bar.tsx";
 import { duration, money } from "./time-and-money.ts";
 
@@ -88,13 +88,14 @@ function liveGoalRows(root: string): () => GoalRow[] | undefined {
  * Below it, the selected Goal's preview fills the rest of the screen, then
  * a footer names the keys, and `?` shows them all until `?` or Esc. Enter
  * opens the selected Goal, unless it is broken, in the Goal view in place of
- * all this, until its Esc leaves the selection where it was. Reads the Goals
- * itself, and again every second, so changes on disk show without
- * a key; the selection stays on its Goal when the rows reorder. Throws what
- * the first read throws.
+ * all this; its `[` and `]` open the Goal before and after, passing over
+ * broken ones and stopping at the ends, and its Esc leaves the selection on
+ * the Goal last open. Reads the Goals itself, and again every second, so
+ * changes on disk show without a key; the selection stays on its Goal when
+ * the rows reorder. Throws what the first read throws.
  */
 export function ProjectView(props: { root: string }): JSX.Element {
-	const { color, symbol, border, scrollbars, dimText } = theme();
+	const { color, symbol, scrollbars, dimText } = theme();
 	const rows = liveGoalRows(props.root);
 	const [chosen, setChosen] = createSignal<string>();
 	// Pinned on the first read, so the selection follows its Goal from the
@@ -124,6 +125,23 @@ export function ProjectView(props: { root: string }): JSX.Element {
 		const list = rows() ?? [];
 		const row = list[Math.max(0, Math.min(list.length - 1, index))];
 		if (row !== undefined) setChosen(row.goal);
+	};
+	// Opens the Goal `step` rows from the open one, passing over broken Goals;
+	// past either end the open Goal stays, as the selection stops there.
+	const openNeighbour = (step: number) => {
+		const list = rows() ?? [];
+		for (
+			let index = selectedIndex() + step;
+			index >= 0 && index < list.length;
+			index += step
+		) {
+			const row = list[index];
+			if (row !== undefined && row.standing !== "broken") {
+				setChosen(row.goal);
+				setOpened(row.goal);
+				return;
+			}
+		}
 	};
 	useKeyboard((key) => {
 		if (openedRow() !== undefined) return;
@@ -191,16 +209,21 @@ export function ProjectView(props: { root: string }): JSX.Element {
 	};
 	return (
 		<>
-			<Show when={openedRow()}>
-				{(row: () => GoalRow) => (
-					<GoalView
-						root={props.root}
-						row={row()}
-						position={selectedIndex() + 1}
-						count={(rows() ?? []).length}
-						onClose={() => setOpened(undefined)}
-					/>
-				)}
+			{/* Keyed on the Goal, so another Goal opens on its own Ticket, Run
+			    and focus. */}
+			<Show when={openedRow()?.goal} keyed>
+				<Show when={openedRow()}>
+					{(row: () => GoalRow) => (
+						<GoalView
+							root={props.root}
+							row={row()}
+							position={selectedIndex() + 1}
+							count={(rows() ?? []).length}
+							onClose={() => setOpened(undefined)}
+							onNeighbour={openNeighbour}
+						/>
+					)}
+				</Show>
 			</Show>
 			{/* Hidden, not unmounted, so the Goals box keeps its scroll. */}
 			<box
@@ -219,8 +242,7 @@ export function ProjectView(props: { root: string }): JSX.Element {
 				</Show>
 				<box
 					border
-					customBorderChars={border}
-					borderColor={color.border}
+					{...paneBorder(false)}
 					title=" Goals "
 					bottomTitle={position()}
 					bottomTitleAlignment="right"

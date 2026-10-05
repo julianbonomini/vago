@@ -74,6 +74,11 @@ export type Theme = {
 	symbol: ThemeSymbols;
 	/** Every box's border, as a box's `customBorderChars` takes it. */
 	border: BorderCharacters;
+	/**
+	 * The focused pane's border, as `paneBorder` gives it: heavier lines
+	 * under `NO_COLOR`, where no accent tells the pane apart.
+	 */
+	focusBorder: BorderCharacters;
 	/** Whether scrollbars show: their glyphs have no ASCII form. */
 	scrollbars: boolean;
 	/**
@@ -98,6 +103,20 @@ export function theme(): Theme {
 	const ascii = process.env.VAGO_ASCII === "1";
 	if (noColor) return ascii ? plainAscii : plain;
 	return ascii ? colouredAscii : coloured;
+}
+
+/**
+ * A box's border, spread onto it: in the border colour, or while the box
+ * is a `focused` pane in the accent, and under `NO_COLOR` in heavier lines.
+ */
+export function paneBorder(focused: boolean): {
+	customBorderChars: BorderCharacters;
+	borderColor: ColorInput;
+} {
+	const { color, border, focusBorder } = theme();
+	return focused
+		? { customBorderChars: focusBorder, borderColor: color.accent }
+		: { customBorderChars: border, borderColor: color.border };
 }
 
 /**
@@ -306,10 +325,35 @@ const asciiLines: BorderCharacters = {
 	cross: "+",
 };
 
+const heavyLines: BorderCharacters = {
+	topLeft: "┏",
+	topRight: "┓",
+	bottomLeft: "┗",
+	bottomRight: "┛",
+	horizontal: "━",
+	vertical: "┃",
+	topT: "┳",
+	bottomT: "┻",
+	leftT: "┣",
+	rightT: "┫",
+	cross: "╋",
+};
+
+const heavyAsciiLines: BorderCharacters = {
+	...asciiLines,
+	topLeft: "#",
+	topRight: "#",
+	bottomLeft: "#",
+	bottomRight: "#",
+	horizontal: "=",
+	vertical: "#",
+};
+
 const coloured: Theme = {
 	color: palette,
 	symbol: glyphs,
 	border: lines,
+	focusBorder: lines,
 	scrollbars: true,
 	dimText: { fg: grey, attributes: 0 },
 	dimSpan: { fg: grey, dim: false },
@@ -320,6 +364,7 @@ const plain: Theme = {
 	color: noPalette,
 	symbol: glyphs,
 	border: lines,
+	focusBorder: heavyLines,
 	scrollbars: true,
 	dimText: { fg: terminalForeground, attributes: TextAttributes.DIM },
 	dimSpan: { fg: terminalForeground, dim: true },
@@ -334,6 +379,7 @@ const colouredAscii: Theme = {
 	...coloured,
 	symbol: asciiGlyphs,
 	border: asciiLines,
+	focusBorder: asciiLines,
 	scrollbars: false,
 };
 
@@ -341,5 +387,6 @@ const plainAscii: Theme = {
 	...plain,
 	symbol: asciiGlyphs,
 	border: asciiLines,
+	focusBorder: heavyAsciiLines,
 	scrollbars: false,
 };

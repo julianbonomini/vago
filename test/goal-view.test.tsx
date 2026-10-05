@@ -11,7 +11,13 @@ import {
 	projectWithGoals,
 	ticketText,
 } from "./project.ts";
-import { frameWith, frameWithout, renderView } from "./view-render.tsx";
+import {
+	frameWith,
+	frameWithout,
+	onlyAscii,
+	renderView,
+	setEnv,
+} from "./view-render.tsx";
 
 test("Enter opens the selected Goal and Esc goes back with it still selected", async () => {
 	const root = await projectWithGoals(["alpha", "beta", "gamma"]);
@@ -118,7 +124,7 @@ test("the header names the Goal and shows its progress and numbers, values bold"
 	const frame = await frameWith(view, "Goal 1/1");
 
 	const lines = frame.split("\n");
-	expect(lines[0]).toContain("Goal 1/1 · ✗ worktrees");
+	expect(lines[0]).toMatch(/^┌─ Goal 1\/1 · ✗ worktrees ─+┐$/);
 	expect(lines[1]).toMatch(/█+ {2}1\/2 Tickets/);
 	expect(lines[2]).toContain(
 		"STUCK   1h 1m elapsed   1.5k tokens   $1.75   Workflow small   Each Goal runs in its own worktree",
@@ -167,7 +173,8 @@ async function openFirstGoal(
 	const view = await renderView(root, size);
 	await frameWith(view, "─ 1/");
 	view.mockInput.pressEnter();
-	return { view, frame: await frameWith(view, "─ Tickets ─") };
+	// The Runs pane, whose border the focus never starts on.
+	return { view, frame: await frameWith(view, "─ Runs") };
 }
 
 test("a running Goal's Tickets show the Step, the blockers waited on and nothing for ready", async () => {
@@ -231,11 +238,29 @@ test("↑↓ change the Ticket pane to that Ticket, its text read as paragraphs"
 test("the footer names the Goal view's keys, and ? shows them all", async () => {
 	const { view, frame } = await openFirstGoal(await runningGoal());
 	expect(frame.trimEnd().split("\n").at(-1)).toMatch(
-		/^ ↑↓ Move {3}←→ Run {3}Tab Pane {3}t r Full screen {3}G Follow {3}Esc Goals {3}\? Help {3}q Quit *$/,
+		/^ ↑↓ Move {3}←→ Run {3}Tab Pane {3}\[ \] Goal {3}t r Full screen {3}G Follow {3}Esc Goals {3}\? Help {3}q Quit *$/,
 	);
 
 	view.mockInput.pressKey("?");
-	await frameWith(view, " Keys ");
+	const help = await frameWith(view, " Keys ");
+	for (const keys of [
+		"↑↓ j k",
+		"←→ h l",
+		"Tab",
+		"1 2 3 4",
+		"Space PgDn",
+		"PgUp",
+		"t r",
+		"G",
+		"[ ]",
+		"click",
+		"wheel",
+		"Esc",
+		"? Esc",
+		"q Ctrl-C",
+	]) {
+		expect(help).toMatch(new RegExp(`│ ${RegExp.escape(keys)} +\\S`));
+	}
 	view.mockInput.pressArrow("down");
 	view.mockInput.pressEscape();
 	const closed = await frameWithout(view, " Keys ");
@@ -266,20 +291,16 @@ test("below 30 rows the header's bar is the Project view's lighter one", async (
 });
 
 test("under NO_COLOR a blocked Ticket's mark and state word stay dim", async () => {
-	process.env.NO_COLOR = "1";
-	try {
-		const { view } = await openFirstGoal(await runningGoal());
+	setEnv({ NO_COLOR: "1" });
+	const { view } = await openFirstGoal(await runningGoal());
 
-		const spans = view.captureSpans().lines.flatMap((line) => line.spans);
-		const after = spans.find((span) => span.text.startsWith("after 02"));
-		expect((after?.attributes ?? 0) & TextAttributes.DIM).toBe(
-			TextAttributes.DIM,
-		);
-		const review = spans.find((span) => span.text.startsWith("review"));
-		expect((review?.attributes ?? 0) & TextAttributes.DIM).toBe(0);
-	} finally {
-		delete process.env.NO_COLOR;
-	}
+	const spans = view.captureSpans().lines.flatMap((line) => line.spans);
+	const after = spans.find((span) => span.text.startsWith("after 02"));
+	expect((after?.attributes ?? 0) & TextAttributes.DIM).toBe(
+		TextAttributes.DIM,
+	);
+	const review = spans.find((span) => span.text.startsWith("review"));
+	expect((review?.attributes ?? 0) & TextAttributes.DIM).toBe(0);
 });
 
 // A Workflow of shell Steps named `ids`, in that order.
@@ -967,4 +988,247 @@ test("r gives the Run the whole screen, which scrolls, and Esc closes it", async
 
 	view.mockInput.pressEscape();
 	await frameWith(view, "─ Tickets ─");
+});
+
+test("[ and ] open the Goal before and after, stop at the ends, and Esc goes back to the one open", async () => {
+	const root = await makeProject({
+		".vago-goals/alpha/goal.md": goalText("w"),
+		".vago-goals/beta/goal.md": goalText("w"),
+		".vago-goals/gamma/goal.md": goalText("w"),
+	});
+	const view = await renderView(root);
+	await frameWith(view, " 1/3 ");
+	view.mockInput.pressEnter();
+	await frameWith(view, "Goal 1/3 · ○ alpha");
+
+	view.mockInput.pressKey("]");
+	await frameWith(view, "Goal 2/3 · ○ beta");
+	view.mockInput.pressKey("]");
+	view.mockInput.pressKey("]");
+	await frameWith(view, "Goal 3/3 · ○ gamma");
+	view.mockInput.pressKey("[");
+	await frameWith(view, "Goal 2/3 · ○ beta");
+
+	view.mockInput.pressEscape();
+	const back = await frameWith(view, "─ Goals ─");
+	expect(back).toContain(" 2/3 ");
+});
+
+test("[ and ] pass over a broken Goal, which can't open", async () => {
+	const root = await makeProject({
+		".vago-goals/alpha/goal.md": goalText("w"),
+		".vago-goals/bad/goal.md": "no header\n",
+		".vago-goals/gamma/goal.md": goalText("w"),
+	});
+	const view = await renderView(root);
+	await frameWith(view, " 1/3 ");
+	view.mockInput.pressArrow("down");
+	view.mockInput.pressEnter();
+	await frameWith(view, "Goal 2/3 · ○ alpha");
+
+	view.mockInput.pressKey("[");
+	await Bun.sleep(50);
+	await frameWith(view, "Goal 2/3 · ○ alpha");
+	view.mockInput.pressKey("]");
+	await frameWith(view, "Goal 3/3 · ○ gamma");
+});
+
+// The row and column of the frame where `text` first shows.
+function placeOf(frame: string, text: string): { x: number; y: number } {
+	const lines = frame.split("\n");
+	const y = lines.findIndex((line) => line.includes(text));
+	if (y === -1) throw new Error(`No line shows ${text}:\n${frame}`);
+	return { x: lines[y]?.indexOf(text) ?? 0, y };
+}
+
+test("a click on a Ticket or a Run picks it and focuses its pane", async () => {
+	const view = await openLongTicket();
+	const frame = await frameWith(view, "02 Short");
+
+	const ticket = placeOf(frame, "02 Short");
+	await view.mockMouse.click(ticket.x, ticket.y);
+	await frameWith(view, "─ Ticket 02 ─");
+	await until(view, () => accented(view).join() === "Tickets");
+
+	view.mockInput.pressArrow("up");
+	const back = await frameWith(view, "─ Ticket 01 ─");
+	const run = placeOf(back, "1  branch");
+	await view.mockMouse.click(run.x, run.y);
+	await frameWith(view, "─ Run 1 · 01 branch ─");
+	await until(view, () => accented(view).join() === "Runs of Ticket 01");
+});
+
+test("a click in the Ticket or the Run pane focuses it", async () => {
+	const view = await openLongTicket();
+	const frame = view.captureCharFrame();
+
+	const text = placeOf(frame, "para 2");
+	await view.mockMouse.click(text.x, text.y);
+	await until(view, () => accented(view).join() === "Ticket 01");
+	const log = placeOf(frame, "line 2");
+	await view.mockMouse.click(log.x, log.y);
+	await until(view, () => accented(view).join() === "Run 2 · 01 check");
+});
+
+test("the wheel over the Ticket's text scrolls it, whatever has the focus", async () => {
+	const view = await openLongTicket();
+	const text = placeOf(view.captureCharFrame(), "para 2");
+
+	for (let turn = 0; turn < 3; turn++)
+		await view.mockMouse.scroll(text.x, text.y, "down");
+	const scrolled = await frameWithout(view, "│ para 1 ");
+	expect(scrolled).toContain("│ line 1 ");
+	expect(accented(view)).toEqual(["Tickets"]);
+});
+
+test("while the keys show, a click beside them picks and focuses nothing", async () => {
+	const view = await openLongTicket();
+	view.mockInput.pressKey("?");
+	const frame = await frameWith(view, " Keys ");
+
+	const ticket = placeOf(frame, "02 Short");
+	await view.mockMouse.click(ticket.x, ticket.y);
+	await Bun.sleep(50);
+	view.mockInput.pressEscape();
+	await frameWithout(view, " Keys ");
+	expect(await frameWith(view, "─ Ticket 01 ─")).toContain(" 1/2 ");
+	expect(accented(view)).toEqual(["Tickets"]);
+});
+
+// Goal `small`, lost on its running Ticket 01, whose long title wraps, with
+// a 60-line `check` log, before a blocked Ticket 02.
+function lostGoalWithLongTitles(): Promise<string> {
+	return makeProject({
+		".vago/workflows/small.toml": workflowOf(
+			"branch",
+			"implement",
+			"check",
+			"review",
+			"merge",
+		),
+		".vago-goals/small/goal.md": goalText(
+			"small",
+			"# A Goal with a long title that runs on and on\n",
+		),
+		".vago-goals/small/tickets/01-long.md": ticketText("running", {
+			runs: [runOf("branch", 0, 1), runOf("check", 1)],
+			body: "# A long Ticket title that wraps in a narrow pane\n\nSome text.\n",
+		}),
+		".vago-goals/small/tickets/02-short.md": titled("ready", "Short", {
+			blockedBy: [1],
+		}),
+		".vago-goals/small/logs/check-2.log": numberedLines(1, 60),
+	});
+}
+
+for (const size of [
+	{ width: 60, height: 24 },
+	{ width: 80, height: 24 },
+]) {
+	test(`at ${size.width}×${size.height} the header loses its border and nothing overlaps`, async () => {
+		const { view } = await openFirstGoal(await lostGoalWithLongTitles(), size);
+		const frame = await frameWith(view, "│ line 60 ");
+
+		const lines = frame.split("\n");
+		expect(lines[0]).toMatch(/^ Goal 1\/1 · \? small +$/);
+		expect(lines[1]).toMatch(/^ ━+ {2}0\/2 Tickets $/);
+		expect(lines[2]).toMatch(/^ LOST {3}/);
+		expect(lines[3]).toContain("No vago run process runs this Goal");
+		expect(lines[4]).toMatch(/^┌─ Tickets ─+┐┌─ Ticket 01 ─+┐$/);
+		expect(frame).toContain("02 after 01");
+		expect(frame).toContain("· merge");
+		expect(frame).toContain("─ Runs of Ticket 01 ─");
+		expect(frame).toContain("─ Run 2 · 01 check ─");
+		for (const line of lines.slice(4, -2)) {
+			expect(Bun.stringWidth(line)).toBe(size.width);
+			expect(line).toMatch(/^[│┌└].*[│┐┘]$/);
+		}
+		expect(lines.at(-2)).toContain("? Help");
+	});
+}
+
+// The Goal view of the only Goal of the Project at `root`, under VAGO_ASCII,
+// once a frame shows `text`.
+async function openAsciiGoal(
+	root: string,
+	size: { width: number; height: number },
+	text: string,
+): Promise<{ view: TestRendererSetup; frame: string }> {
+	const view = await renderView(root, size);
+	await frameWith(view, "- 1/1 -");
+	view.mockInput.pressEnter();
+	return { view, frame: await frameWith(view, text) };
+}
+
+test("under VAGO_ASCII=1 every symbol, bar, border and activity line is ASCII", async () => {
+	setEnv({ VAGO_ASCII: "1" });
+	const agent = await makeProject({
+		".vago-goals/agent/goal.md": goalText("small"),
+		".vago-goals/agent/tickets/01-only.md": ticketText("done", {
+			runs: [{ ...runOf("implement", 0, 9), costUsd: 0.09, model: "opus" }],
+		}),
+		".vago-goals/agent/logs/implement-1.jsonl": await Bun.file(
+			join(import.meta.dir, "fixtures", "claude-code-parallel-calls.jsonl"),
+		).text(),
+	});
+	const { view, frame } = await openAsciiGoal(
+		agent,
+		{ width: 120, height: 60 },
+		"Run finished",
+	);
+	expect(frame).toMatch(onlyAscii);
+	expect(frame).toContain("Goal 1/1 | + agent");
+	view.mockInput.pressKey("?");
+	expect(await frameWith(view, " Keys ")).toMatch(onlyAscii);
+
+	const small = await openAsciiGoal(
+		await lostGoalWithLongTitles(),
+		{ width: 80, height: 24 },
+		"| line 60 ",
+	);
+	expect(small.frame).toMatch(onlyAscii);
+	expect(small.frame).toContain(" Goal 1/1 | ? small");
+});
+
+test("under NO_COLOR every text takes the terminal's own colours, and the selected Ticket is inverse", async () => {
+	setEnv({ NO_COLOR: "1" });
+	const { view } = await openAgentRun("claude-code-parallel-calls.jsonl", {
+		size: { width: 120, height: 60 },
+	});
+	await frameWith(view, "Run finished");
+
+	const spans = view
+		.captureSpans()
+		.lines.flatMap((line) => line.spans)
+		.filter((span) => span.text.trim() !== "");
+	expect(
+		spans.filter((span) => span.fg.intent !== "default").map((s) => s.text),
+	).toEqual([]);
+	expect(
+		spanWith(view, "✓ 01 A Ticket").attributes & TextAttributes.INVERSE,
+	).toBe(TextAttributes.INVERSE);
+});
+
+test("under NO_COLOR the focused pane's border is heavy, its only mark", async () => {
+	setEnv({ NO_COLOR: "1" });
+	const view = await openLongTicket();
+	expect(view.captureCharFrame()).toContain("┏━ Tickets ━");
+	view.mockInput.pressKey("4");
+	const frame = await frameWith(view, "┏━ Run 2 · 01 check ━");
+	expect(frame).toContain("┌─ Tickets ─");
+
+	setEnv({ VAGO_ASCII: "1" });
+	const ascii = await renderView(await stuckGoal(), roomy);
+	await frameWith(ascii, "- 1/1 -");
+	ascii.mockInput.pressEnter();
+	const asciiFrame = await frameWith(ascii, "#= Tickets =");
+	expect(asciiFrame).toContain("+- Ticket 02 -");
+});
+
+test("a Runs pane too narrow for its Ticket's number is titled Runs", async () => {
+	const { frame } = await openTicket(ticketText("ready"), {
+		size: { width: 50, height: 24 },
+	});
+
+	expect(frame).toMatch(/┌─ Runs ─+┐/);
 });
