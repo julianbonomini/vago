@@ -6,6 +6,7 @@
 // line formats, columns and colours, and how durations and costs read.
 
 import { relative } from "node:path";
+import { joinParagraphLines } from "./markdown-paragraphs.ts";
 import {
 	type GoalState,
 	type Ticket,
@@ -187,7 +188,11 @@ export function printGoalReport(
 	state: GoalState,
 	outputs: ReadonlyMap<string, string>,
 ): void {
-	const lines = [joinParagraphLines(goalBody.trimEnd()), ""];
+	// `goal.md` is hard-wrapped, and GitHub keeps every line break in a PR body.
+	const lines = [
+		...joinParagraphLines(goalBody.trimEnd()).map(({ text }) => text),
+		"",
+	];
 	const reported = state.tickets.flatMap(({ ticket, runs }) => {
 		const latest = new Map<string, string>();
 		for (const run of runs) {
@@ -233,31 +238,6 @@ export function printGoalReport(
 	}
 	lines.push("", "</details>");
 	console.log(lines.join("\n"));
-}
-
-// `goal.md` is hard-wrapped, and GitHub keeps every line break in a PR body,
-// so a paragraph's lines are joined. A line that starts a list item, heading,
-// quote, table row, HTML tag, rule or indented code is left as it is, and so
-// is every line of a fenced code block. A line ending in a hard break, two
-// spaces or a backslash, keeps the break after it.
-const blockLineStart = /^(\s|[-*+]\s|\d+[.)]\s|[#>|<]|[-=*_]{3,}\s*$)/;
-const hardBreakEnd = /( {2}|\\)\r?$/;
-
-function joinParagraphLines(markdown: string): string {
-	const lines: string[] = [];
-	let inFence = false;
-	let previousJoins = false;
-	for (const line of markdown.split("\n")) {
-		const isFence = /^ {0,3}(```|~~~)/.test(line);
-		if (isFence) inFence = !inFence;
-		const isProse =
-			!isFence && !inFence && line.trim() !== "" && !blockLineStart.test(line);
-		if (isProse && previousJoins)
-			lines.push(`${(lines.pop() ?? "").trimEnd()} ${line}`);
-		else lines.push(line);
-		previousJoins = isProse && !hardBreakEnd.test(line);
-	}
-	return lines.join("\n");
 }
 
 type Colour = "dim" | "green" | "red";

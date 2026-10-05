@@ -236,6 +236,27 @@ test("↑↓ change the Ticket pane to that Ticket, its text read as paragraphs"
 	expect(await frameWith(view, "─ Ticket 01 ─")).toContain(" 1/4 ");
 });
 
+test("the Ticket pane keeps a fenced code block's lines", async () => {
+	const root = await makeProject({
+		".vago/workflows/small.toml": workflowOf("implement"),
+		".vago-goals/code/goal.md": goalText("small"),
+		".vago-goals/code/tickets/01-code.md": ticketText("ready", {
+			body: "# Code\n\nRun this\nfirst:\n\n```sh\nbun install\n# then\nbun test\n```\n",
+		}),
+	});
+
+	const { frame } = await openFirstGoal(root);
+
+	const lines = frame.split("\n");
+	const prose = lines.findIndex((line) => line.includes("│ Run this first: "));
+	expect(prose).not.toBe(-1);
+	expect(lines[prose + 2]).toContain("│ ```sh ");
+	expect(lines[prose + 3]).toContain("│ bun install ");
+	expect(lines[prose + 4]).toContain("│ # then ");
+	expect(lines[prose + 5]).toContain("│ bun test ");
+	expect(lines[prose + 6]).toContain("│ ``` ");
+});
+
 test("the footer names the Goal view's keys, and ? shows them all", async () => {
 	const { view, frame } = await openFirstGoal(await runningGoal());
 	expect(frame.trimEnd().split("\n").at(-1)).toMatch(
