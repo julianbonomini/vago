@@ -37,6 +37,7 @@ UX IMPROVEMENTS
   - [x] pr descrition does not use full width. it has weird enters. it comes from goals
 - [x] TUI Run stream extras, from the prototype's round 6: Bash edits shown as edits with the diff a key away, a live clock on long commands, background tasks as one line, Skill loads, live tokens and cost for an open Run.
 - [x] session ID gets added to goal only when session ends...
+- [ ] visual workflow steps rather than a list (maybe)
 
 NEW FEATURES (grilling needed)
 - [ ] Milestones and nested Goals. _(grill)_
@@ -47,6 +48,7 @@ NEW FEATURES (grilling needed)
 - [ ] Notifications (ntfy, Slack, push). something to let you know if something is stuck, or what. or current progress.
 - [ ] Harnesses other than Claude Code (a Codex adapter, user-supplied Harness plugins). _(grill)_
 - [ ] Interact with agent session if you want to, like steer or correct while it runs without messing up the goal run
+- [ ] user new matpocock (or copy) of the PR skill at the end of a goal
 
 
 TECHINICAL IMRPOVEMENTS
