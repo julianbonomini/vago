@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { makeFakeClaude } from "./fake-claude.ts";
+import { makeFakeClaude } from "./fake-harness.ts";
 import { goalText, makeProject, readTicketFile, runVago } from "./project.ts";
 
 const starter = join(import.meta.dir, "..", "starter");

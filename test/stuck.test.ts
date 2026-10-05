@@ -1,11 +1,13 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
 import {
+	codexRefusedFixture,
 	makeFakeClaude,
+	makeFakeCodex,
 	permissionDeniedFixture,
 	permissionModeFallbackFixture,
 	sessionFixture,
-} from "./fake-claude.ts";
+} from "./fake-harness.ts";
 import {
 	goalText,
 	makeProject,
@@ -195,6 +197,23 @@ test("the stuck message shows the outcome, the log, the resume command and the r
   log:    .vago-goals/hello/logs/01-implement-1.jsonl
   resume: claude --resume f679b9c4-e75a-4f73-affd-0dedfe161e0d
   reset:  vago ticket reset hello 01
+`);
+});
+
+test("a Codex session with a refused call is stuck, and its resume command resumes the Codex session", async () => {
+	const root = await stuckProject(
+		agentWorkflow.replace(`harness = "claude-code"`, `harness = "codex"`),
+	);
+	const codex = await makeFakeCodex("exit 0", codexRefusedFixture);
+
+	const result = await runVago(root, ["run", "hello"], codex.env);
+
+	expect(result.exitCode).not.toBe(0);
+	expect(
+		result.stdout,
+	).toContain(`01-greet is stuck after implement: permission-denied
+  log:    .vago-goals/hello/logs/01-implement-1.jsonl
+  resume: codex resume 01a10e2e-cf08-7251-946c-b9850a710ad9
 `);
 });
 

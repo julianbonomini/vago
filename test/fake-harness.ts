@@ -1,5 +1,6 @@
-// Test helper: a fake `claude` that replays a stream-json fixture recorded
-// from a real Claude Code session and records what Vago handed it.
+// Test helper: a fake `claude` or `codex` that replays a stream fixture
+// recorded from a real session of that Harness and records what Vago handed
+// it.
 
 import { chmod, mkdir, mkdtemp, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -33,19 +34,34 @@ export const permissionDeniedFixture = fixture(
  */
 export const acceptEditsFixture = fixture("claude-code-accept-edits.jsonl");
 
+// Each Codex fixture was recorded from `codex exec --json --approve-for-me
+// --model <model> -` in a Goal's worktree, with the recording's paths
+// replaced.
+
+/** A gpt-6-luna session that answers without any tool call. */
+export const codexSessionFixture = fixture("codex-session.jsonl");
+
+/**
+ * A gpt-6-sol session whose upload of a secrets file Codex's automatic
+ * review declined.
+ */
+export const codexRefusedFixture = fixture("codex-refused.jsonl");
+
 function fixture(name: string): string {
 	return join(import.meta.dir, "fixtures", name);
 }
 
 /** What one call of the fake received: its argv without the program name, and its stdin. */
-export type FakeClaudeCall = { argv: string[]; stdin: string };
+export type FakeHarnessCall = { argv: string[]; stdin: string };
 
-/** A fake `claude`, ready to put on the `PATH` of a `vago` child. */
-export type FakeClaude = {
+/** A fake Harness CLI, ready to put on the `PATH` of a `vago` child. */
+export type FakeHarness = {
 	/** Environment for `runVago` that puts the fake first on `PATH`. */
 	env: Record<string, string>;
+	/** The folder the fake is in, to put before another fake's `PATH`. */
+	folder: string;
 	/** Every call so far, first call first. */
-	calls(): Promise<FakeClaudeCall[]>;
+	calls(): Promise<FakeHarnessCall[]>;
 };
 
 /**
@@ -56,19 +72,36 @@ export type FakeClaude = {
 export async function makeFakeClaude(
 	afterFixture = "exit 0",
 	fixturePath = sessionFixture,
-): Promise<FakeClaude> {
-	const dir = await mkdtemp(join(tmpdir(), "vago-fake-claude-"));
-	const program = join(dir, "claude");
+): Promise<FakeHarness> {
+	return makeFake("claude", afterFixture, fixturePath);
+}
+
+/** A fake `codex`, otherwise as `makeFakeClaude`. */
+export async function makeFakeCodex(
+	afterFixture = "exit 0",
+	fixturePath = codexSessionFixture,
+): Promise<FakeHarness> {
+	return makeFake("codex", afterFixture, fixturePath);
+}
+
+async function makeFake(
+	name: string,
+	afterFixture: string,
+	fixturePath: string,
+): Promise<FakeHarness> {
+	const dir = await mkdtemp(join(tmpdir(), `vago-fake-${name}-`));
+	const program = join(dir, name);
 	// Plain sh so the fake starts as fast as the real CLI would, and one
 	// argument per line is enough since no flag Vago passes holds a newline.
 	// Each call gets the next numbered folder, so calls never overwrite each
-	// other. The count is safe because Vago runs one Step at a time.
+	// other. The count is safe because Vago runs one Step at a time. Its
+	// folders are written into the script, so two fakes share one PATH.
 	const script = `#!/bin/sh
-call="$FAKE_CLAUDE_DIR/calls/$(ls "$FAKE_CLAUDE_DIR/calls" | wc -l | tr -d ' ')"
+call="${dir}/calls/$(ls "${dir}/calls" | wc -l | tr -d ' ')"
 mkdir "$call"
 printf '%s\\n' "$@" > "$call/argv"
 cat > "$call/stdin"
-cat "$FAKE_CLAUDE_FIXTURE"
+cat "${fixturePath}"
 ${afterFixture}
 `;
 	await Bun.write(program, script);
@@ -76,15 +109,12 @@ ${afterFixture}
 	const callsDir = join(dir, "calls");
 	await mkdir(callsDir);
 	return {
-		env: {
-			PATH: `${dir}:${process.env.PATH}`,
-			FAKE_CLAUDE_DIR: dir,
-			FAKE_CLAUDE_FIXTURE: fixturePath,
-		},
+		env: { PATH: `${dir}:${process.env.PATH}` },
+		folder: dir,
 		async calls() {
 			const names = await readdir(callsDir);
 			names.sort((a, b) => Number(a) - Number(b));
-			const calls: FakeClaudeCall[] = [];
+			const calls: FakeHarnessCall[] = [];
 			for (const name of names) {
 				const argv = await Bun.file(join(callsDir, name, "argv")).text();
 				calls.push({

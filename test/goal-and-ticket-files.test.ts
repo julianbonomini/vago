@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { mkdir, readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { makeFakeClaude } from "./fake-claude.ts";
+import { makeFakeClaude } from "./fake-harness.ts";
 import { goalText, makeProject, readTicketFile, runVago } from "./project.ts";
 
 const workflow = `

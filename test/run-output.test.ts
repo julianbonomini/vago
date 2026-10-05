@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import {
 	makeFakeClaude,
 	permissionModeFallbackFixture,
-} from "./fake-claude.ts";
+} from "./fake-harness.ts";
 import {
 	goalText,
 	goalWorktree,

@@ -85,8 +85,10 @@ export type FixtureRun = {
 	outcome?: string;
 	costUsd?: number;
 	tokens?: { input: number; output: number };
-	/** Makes the Run an agent Step's, on Claude Code, logging `.jsonl`. */
+	/** Makes the Run an agent Step's, logging `.jsonl`. */
 	model?: string;
+	/** An agent Run's Harness, Claude Code unless given. */
+	harness?: string;
 };
 
 /**
@@ -124,7 +126,10 @@ export function ticketText(
 			);
 		}
 		if (run.model !== undefined) {
-			lines.push('harness = "claude-code"', `model = "${run.model}"`);
+			lines.push(
+				`harness = "${run.harness ?? "claude-code"}"`,
+				`model = "${run.model}"`,
+			);
 		}
 		const extension = run.model === undefined ? "log" : "jsonl";
 		lines.push(`log = "logs/${run.step}-${index + 1}.${extension}"`);

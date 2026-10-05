@@ -48,7 +48,12 @@ export type HarnessEvent =
 	| { kind: "session-id"; sessionId: string; permissionModeFallback?: string }
 	/** `folder` is where the session runs, the Goal's worktree. */
 	| { kind: "session-start"; model?: string; folder?: string }
-	| { kind: "prose"; text: string }
+	/**
+	 * The agent's prose. `answer` marks prose that is the session's final
+	 * answer unless later prose replaces it, for a CLI whose end doesn't
+	 * carry the answer.
+	 */
+	| { kind: "prose"; text: string; answer?: true }
 	| {
 			kind: "tool-call";
 			callId: string;
@@ -90,8 +95,13 @@ export type HarnessEvent =
 			durationMs?: number;
 			turns?: number;
 			/** Input, cached input included, and output. */
-			tokens: { input: number; output: number };
+			tokens?: { input: number; output: number };
 			costUsd?: number;
+			/**
+			 * What the session used, for a CLI that reports no cost: the cost
+			 * is counted from it and the CLI's prices.
+			 */
+			usage?: HarnessModelUsage;
 	  };
 
 /** A tool call, by what it does rather than by the CLI's name for its tool. */
@@ -106,6 +116,8 @@ export type HarnessToolCall =
 	| { tool: "agent"; description: string }
 	| { tool: "plan"; todos: number }
 	| { tool: "fetch"; url: string }
+	/** A file a call added, updated or deleted, for a CLI that says no more. */
+	| { tool: "file-change"; path: string; change: "add" | "update" | "delete" }
 	/** Any other tool, shown by the CLI's name for it. */
 	| { tool: "other"; name: string };
 
@@ -139,6 +151,9 @@ export type HarnessDiffHunk = {
 	lines: string[];
 };
 
+/** Tokens a model used. */
+export type HarnessModelUsage = { model: string; tokens: HarnessTokenUsage };
+
 /** Input tokens are split by how the cache priced them. */
 export type HarnessTokenUsage = {
 	/** Input neither read from nor written to the cache. */
@@ -168,7 +183,8 @@ export type ModelPrice = {
 export function harnessFromCli(cli: HarnessCli): Harness {
 	return {
 		command: cli.command,
-		readLine: (line, command) => sessionReport(cli.events(line, command)),
+		readLine: (line, command) =>
+			sessionReport(cli.events(line, command), cli.prices),
 		runActivity: (lines, root) =>
 			runActivity(
 				lines.flatMap((line) => cli.events(line, [])),
@@ -179,10 +195,17 @@ export function harnessFromCli(cli: HarnessCli): Harness {
 	};
 }
 
-function sessionReport(events: HarnessEvent[]): HarnessSessionReport {
+// Fields an event doesn't carry are left out, so the kernel's spreading a
+// later line's report keeps an earlier line's answer.
+function sessionReport(
+	events: HarnessEvent[],
+	prices: ModelPrice[],
+): HarnessSessionReport {
 	let report: HarnessSessionReport = {};
 	for (const event of events) {
-		if (event.kind === "denied") {
+		if (event.kind === "prose" && event.answer) {
+			report = { ...report, resultText: event.text };
+		} else if (event.kind === "denied") {
 			report = { ...report, permissionDenied: true };
 		} else if (event.kind === "session-id") {
 			// Left out in the mode asked for, so a later event can't clear a
@@ -195,11 +218,14 @@ function sessionReport(events: HarnessEvent[]): HarnessSessionReport {
 					: { permissionModeFallback: event.permissionModeFallback }),
 			};
 		} else if (event.kind === "session-end") {
+			const costUsd = sessionCost(event, prices);
 			report = {
 				...report,
-				resultText: event.resultText,
-				costUsd: event.costUsd,
-				tokens: event.tokens,
+				...(event.resultText === undefined
+					? {}
+					: { resultText: event.resultText }),
+				...(costUsd === undefined ? {} : { costUsd }),
+				...(event.tokens === undefined ? {} : { tokens: event.tokens }),
 			};
 		}
 	}
@@ -228,10 +254,7 @@ function runActivity(
 	// Commands sent to the background, by the callId that sent them.
 	const background = new Map<string, RunBackgroundTask>();
 	// The latest usage of each message, by its id, and its model.
-	const messages = new Map<
-		string,
-		{ model: string; tokens: HarnessTokenUsage }
-	>();
+	const messages = new Map<string, HarnessModelUsage>();
 	for (const event of events) {
 		switch (event.kind) {
 			case "session-start":
@@ -296,8 +319,11 @@ function runActivity(
 					...(event.failure === undefined ? {} : { failure: event.failure }),
 					durationMs: event.durationMs,
 					turns: event.turns,
-					tokens: event.tokens.input + event.tokens.output,
-					costUsd: event.costUsd,
+					tokens:
+						event.tokens === undefined
+							? undefined
+							: event.tokens.input + event.tokens.output,
+					costUsd: sessionCost(event, prices),
 				});
 				break;
 		}
@@ -366,6 +392,12 @@ function toolCall(
 			};
 		case "fetch":
 			return { verb: "Fetch", files: false, call: { subject: use.url } };
+		case "file-change":
+			return {
+				verb: { add: "Write", update: "Edit", delete: "Delete" }[use.change],
+				files: true,
+				call: { subject: relativePath(use.path, folders) },
+			};
 		case "other":
 			return { verb: use.name, files: false, call: { subject: "" } };
 	}
@@ -468,40 +500,59 @@ function foldCalls(items: RunActivityItem[]): RunActivityItem[] {
 	return folded;
 }
 
+// The cost the session's end reports, or else the cost of the usage it
+// reports.
+function sessionCost(
+	end: { costUsd?: number; usage?: HarnessModelUsage },
+	prices: ModelPrice[],
+): number | undefined {
+	if (end.costUsd !== undefined || end.usage === undefined) return end.costUsd;
+	return usageCost(end.usage, prices);
+}
+
 // The tokens `messages` used and what they cost, the cost left out when a
 // message's model has no price.
 function spentSoFar(
-	messages: { model: string; tokens: HarnessTokenUsage }[],
+	messages: HarnessModelUsage[],
 	prices: ModelPrice[],
 ): { tokens: number; costUsd?: number } {
 	let tokens = 0;
 	let costUsd: number | undefined = 0;
-	for (const { model, tokens: used } of messages) {
+	for (const message of messages) {
+		const used = message.tokens;
 		tokens +=
 			used.input +
 			used.output +
 			used.cacheRead +
 			used.cacheWrite +
 			used.cacheWriteHour;
-		const price = prices.find(
-			(price) =>
-				model === price.model ||
-				model.startsWith(`${price.model}-`) ||
-				model.startsWith(`${price.model}[`),
-		);
-		if (price === undefined || costUsd === undefined) {
-			costUsd = undefined;
-			continue;
-		}
-		costUsd +=
-			(used.input * price.input +
-				used.output * price.output +
-				used.cacheRead * price.cacheRead +
-				used.cacheWrite * price.cacheWrite +
-				used.cacheWriteHour * price.cacheWriteHour) /
-			1_000_000;
+		const cost = usageCost(message, prices);
+		costUsd =
+			cost === undefined || costUsd === undefined ? undefined : costUsd + cost;
 	}
 	return costUsd === undefined ? { tokens } : { tokens, costUsd };
+}
+
+// What `tokens` of `model` cost, undefined when the model has no price.
+function usageCost(
+	{ model, tokens }: HarnessModelUsage,
+	prices: ModelPrice[],
+): number | undefined {
+	const price = prices.find(
+		(price) =>
+			model === price.model ||
+			model.startsWith(`${price.model}-`) ||
+			model.startsWith(`${price.model}[`),
+	);
+	if (price === undefined) return undefined;
+	return (
+		(tokens.input * price.input +
+			tokens.output * price.output +
+			tokens.cacheRead * price.cacheRead +
+			tokens.cacheWrite * price.cacheWrite +
+			tokens.cacheWriteHour * price.cacheWriteHour) /
+		1_000_000
+	);
 }
 
 // `path` relative to the first of `folders` it is under, or as it is.

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
-import { makeFakeClaude } from "./fake-claude.ts";
+import { makeFakeClaude } from "./fake-harness.ts";
 import { goalText, makeProject, runVago } from "./project.ts";
 
 const goalDir = ".vago-goals/hello";
