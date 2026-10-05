@@ -4,6 +4,7 @@
 // Harnesses exist.
 
 import { claudeCode } from "./claude-code.ts";
+import { harnessFromCli } from "./harness-session.ts";
 
 /** What a Harness session has reported about itself so far. */
 export type HarnessSessionReport = {
@@ -147,7 +148,7 @@ export type Harness = {
 };
 
 const harnesses: Record<string, Harness> = {
-	"claude-code": claudeCode,
+	"claude-code": harnessFromCli(claudeCode),
 };
 
 /** Whether a Harness is registered as `name`. */
