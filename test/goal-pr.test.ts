@@ -1,13 +1,17 @@
-import { expect, test } from "bun:test";
-import { mkdtemp } from "node:fs/promises";
+import { expect, setDefaultTimeout, test } from "bun:test";
+import { chmod, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type FakeGh, makeFakeGh } from "./fake-gh.ts";
 import { makeProject, runVago, vagoOnPath } from "./project.ts";
 
-// The starter's own branch and merge scripts around a shell Step that does a
-// Ticket's work, failing for the Ticket named in $FAIL_TICKET. Each Ticket
-// writes the files it was built on to $VAGO_TICKET.txt.
+// The starter's own branch and merge scripts around shell Steps that do a
+// Ticket's work. Each Ticket writes the files it was built on to
+// $VAGO_TICKET.txt and commits, an empty commit when run again on work
+// already merged, as an agent finding its work done would. The Ticket named
+// in $FAIL_TICKET fails; the one in $CLASH_TICKET writes clash.txt, which
+// vago/<goal> gets too after the Ticket's branch was cut; the one in
+// $LEFTOVER_TICKET leaves left.txt uncommitted.
 const workflow = `
 [[steps]]
 id   = "branch"
@@ -15,15 +19,23 @@ type = "shell"
 run  = "sh .vago/scripts/branch.sh"
 
 [[steps]]
+id   = "clash"
+type = "shell"
+run  = 'test "$VAGO_TICKET" != "$CLASH_TICKET" || { git switch -q "vago/$VAGO_GOAL" && echo goal > clash.txt && git add . && git commit -qm clash && git switch -q - && echo ticket > clash.txt; }'
+
+[[steps]]
 id   = "work"
 type = "shell"
-run  = 'test "$VAGO_TICKET" != "$FAIL_TICKET" && ls > "$VAGO_TICKET.txt" && git add . && git commit -qm "$VAGO_TICKET"'
+run  = 'test "$VAGO_TICKET" != "$FAIL_TICKET" && ls > "$VAGO_TICKET.txt" && git add . && git commit -qm "$VAGO_TICKET" --allow-empty && { test "$VAGO_TICKET" != "$LEFTOVER_TICKET" || echo left > left.txt; }'
 
 [[steps]]
 id   = "merge"
 type = "shell"
 run  = "sh .vago/scripts/merge.sh"
 `;
+
+// Each test runs whole Goals, each Step a child process, past bun's 5s.
+setDefaultTimeout(20_000);
 
 const ping = "@octo-human";
 
@@ -35,8 +47,16 @@ type GoalRepo = {
 	/** The bare origin's path. */
 	origin: string;
 	gh: FakeGh;
-	/** Runs `vago <args>` with the fake `gh` and this checkout's `vago` on `PATH`. */
-	vago(args: string[], failTicket?: string): ReturnType<typeof runVago>;
+	/**
+	 * Runs `vago <args>` with the fake `gh` and this checkout's `vago` on
+	 * `PATH`, and `env`, which names the Tickets the Workflow treats apart.
+	 */
+	vago(
+		args: string[],
+		env?: Record<string, string>,
+	): ReturnType<typeof runVago>;
+	/** The last line the latest Run of Step `merge` wrote to its log. */
+	lastMergeLine(): Promise<string>;
 };
 
 // A Project initialised from the starter, with its default branch, `main`
@@ -62,22 +82,28 @@ async function makeGoalRepo(defaultBranch = "main"): Promise<GoalRepo> {
 	// merge.sh calls `vago goal report`, so `vago` is this checkout's CLI.
 	const bin = await vagoOnPath();
 	const gh = await makeFakeGh("octo-human");
-	const vago = (args: string[], failTicket = "") =>
-		runVago(root, args, {
-			PATH: `${bin}:${gh.env.PATH}`,
-			FAIL_TICKET: failTicket,
-		});
+	const vago = (args: string[], env: Record<string, string> = {}) =>
+		runVago(root, args, { PATH: `${bin}:${gh.env.PATH}`, ...env });
+	const logs = join(root, ".vago-goals/ship/logs");
+	const lastMergeLine = async () => {
+		const runNumber = (log: string) => Number(log.match(/(\d+)\.log$/)?.[1]);
+		const [latest = ""] = [
+			...new Bun.Glob("*-merge-*.log").scanSync(logs),
+		].sort((a, b) => runNumber(b) - runNumber(a));
+		const text = await Bun.file(join(logs, latest)).text();
+		return text.trimEnd().split("\n").at(-1) ?? "";
+	};
 
 	await vago(["goal", "new", "ship", "--workflow", "ship"]);
 	await vago(["ticket", "add", "ship", "one"]);
 	await vago(["ticket", "add", "ship", "two"]);
-	return { root, origin, gh, vago };
+	return { root, origin, gh, vago, lastMergeLine };
 }
 
 test("the Goal's PR mentions the human and is labelled ready-for-review once its last Ticket is done", async () => {
 	const { gh, vago } = await makeGoalRepo();
 
-	const stuck = await vago(["run", "ship"], "02-two");
+	const stuck = await vago(["run", "ship"], { FAIL_TICKET: "02-two" });
 
 	expect(stuck.exitCode).not.toBe(0);
 	const before = (await gh.state()).pullRequests["vago/ship"];
@@ -134,4 +160,86 @@ test("each Ticket is built on vago/<goal> and lands there on origin as one commi
 		"02 two\n01 one\n",
 	);
 	expect(git(origin, "show", "vago/ship:02-two.txt")).toContain("01-one.txt");
+});
+
+test("a gh call GitHub answers with a 503 is tried again and the merge goes through", async () => {
+	const { gh, vago } = await makeGoalRepo();
+	await gh.failNext(
+		"pr create",
+		"HTTP 503: Service Unavailable (https://api.github.com/graphql)",
+	);
+
+	const run = await vago(["run", "ship"]);
+
+	expect(run.exitCode).toBe(0);
+	expect((await gh.state()).pullRequests["vago/ship"]?.body).toContain(
+		"02-two",
+	);
+});
+
+test("a merge that failed after the push finishes the PR when its Ticket runs again", async () => {
+	const { origin, gh, vago, lastMergeLine } = await makeGoalRepo();
+	await gh.failNext(
+		"pr view",
+		"HTTP 401: Bad credentials (https://api.github.com/graphql)",
+	);
+
+	const stuck = await vago(["run", "ship"]);
+
+	expect(stuck.exitCode).not.toBe(0);
+	expect(git(origin, "log", "--format=%s", "main..vago/ship")).toBe("01 one\n");
+	expect(await lastMergeLine()).toBe(
+		"The merge failed looking up the PR of vago/ship.",
+	);
+	expect((await gh.state()).pullRequests).toEqual({});
+
+	await vago(["ticket", "reset", "ship", "1"]);
+	const done = await vago(["run", "ship"]);
+
+	expect(done.exitCode).toBe(0);
+	expect(git(origin, "log", "--format=%s", "main..vago/ship")).toBe(
+		"02 two\n01 one\n",
+	);
+	expect((await gh.state()).pullRequests["vago/ship"]?.body).toContain(
+		"02-two",
+	);
+});
+
+test("changes a Step left uncommitted land with the Ticket's work", async () => {
+	const { origin, vago } = await makeGoalRepo();
+
+	const run = await vago(["run", "ship"], { LEFTOVER_TICKET: "01-one" });
+
+	expect(run.exitCode).toBe(0);
+	expect(git(origin, "log", "--format=%s", "main..vago/ship")).toBe(
+		"02 two\n01 one\n",
+	);
+	expect(git(origin, "show", "vago/ship:left.txt")).toBe("left\n");
+});
+
+test("a Ticket that conflicts with the Goal's branch goes stuck, its branch kept, and the merge says where", async () => {
+	const { root, vago, lastMergeLine } = await makeGoalRepo();
+
+	const run = await vago(["run", "ship"], { CLASH_TICKET: "01-one" });
+
+	expect(run.exitCode).not.toBe(0);
+	expect(await lastMergeLine()).toBe(
+		"ship/01-one conflicts with vago/ship in clash.txt.",
+	);
+	expect(git(root, "branch", "--list", "ship/01-one")).toContain("ship/01-one");
+});
+
+test("a Goal's branch origin refuses goes stuck, and the merge says so", async () => {
+	const { origin, gh, vago, lastMergeLine } = await makeGoalRepo();
+	const hook = join(origin, "hooks/pre-receive");
+	await Bun.write(hook, "#!/bin/sh\necho no pushes today >&2\nexit 1\n");
+	await chmod(hook, 0o755);
+
+	const run = await vago(["run", "ship"]);
+
+	expect(run.exitCode).not.toBe(0);
+	expect(await lastMergeLine()).toBe(
+		"The merge failed pushing vago/ship to origin.",
+	);
+	expect((await gh.state()).pullRequests).toEqual({});
 });
