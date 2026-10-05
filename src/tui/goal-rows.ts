@@ -1,6 +1,6 @@
 // What the Project view knows of each Goal: its standing, the "now" phrase
 // saying what it is doing or waiting for, how many Tickets it has, its
-// elapsed time, tokens and cost, the order of the rows, the header line's
+// run time, tokens and cost, the order of the rows, the header line's
 // totals, what the preview shows of the selected Goal, and the Tickets the
 // Goal view shows of it. Hides the rules behind each.
 
@@ -56,7 +56,11 @@ export type GoalRow = {
 	/** From goal.md's first heading. */
 	title: string;
 	ticketCounts: GoalTicketCounts;
-	elapsedMs: number;
+	/**
+	 * Every Ticket's `runsMs` added up: the time the Goal's Runs ran, not
+	 * the pauses between them.
+	 */
+	runMs: number;
 	/** Sum of every Run's input and output tokens, 0 with none. */
 	tokens: number;
 	/** Sum of every Run's cost, 0 with none. */
@@ -101,10 +105,9 @@ export type GoalRowRun = {
 
 /**
  * Every Goal of the Project at `root` as a row, sorted running, lost, stuck,
- * broken, ready, done, then latest activity first, then name. Elapsed time
- * runs to `now` while a Goal is running. A Goal `readGoal` can't read is a
- * broken row saying why, with paths relative to `root`. Throws what
- * `listGoals` throws.
+ * broken, ready, done, then latest activity first, then name. A live Run's
+ * time runs to `now`. A Goal `readGoal` can't read is a broken row saying
+ * why, with paths relative to `root`. Throws what `listGoals` throws.
  */
 export async function readGoalRows(
 	root: string,
@@ -230,7 +233,7 @@ function brokenRow(goal: string, message: string): GoalRow {
 		standing: "broken",
 		title: "",
 		ticketCounts: { done: 0, running: 0, stuck: 0, ready: 0 },
-		elapsedMs: 0,
+		runMs: 0,
 		tokens: 0,
 		costUsd: 0,
 		now: message.replace(/\s+/g, " "),
@@ -253,8 +256,6 @@ function goalRow(
 ): GoalRow {
 	const { standing, phrase } = goalStanding(state, claimed);
 	const runs = state.tickets.flatMap((ticket) => ticket.runs);
-	const starts = runs.map(({ started }) => started.getTime());
-	const end = standing === "running" ? now : last;
 	const count = (status: TicketStatus) =>
 		state.tickets.filter((ticket) => ticket.status === status).length;
 	return {
@@ -267,11 +268,7 @@ function goalRow(
 			stuck: count("stuck"),
 			ready: count("ready"),
 		},
-		// From the first Run's start; 0 with no Runs.
-		elapsedMs:
-			end === undefined || starts.length === 0
-				? 0
-				: end.getTime() - Math.min(...starts),
+		runMs: tickets.reduce((sum, ticket) => sum + ticket.runsMs, 0),
 		tokens: runs.reduce(
 			(sum, run) => sum + (run.tokens?.input ?? 0) + (run.tokens?.output ?? 0),
 			0,

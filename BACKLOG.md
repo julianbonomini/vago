@@ -26,7 +26,7 @@ Items marked _(grill)_ have design questions to settle before writing Tickets.
 - [x] Split tickets.ts into a folder; it's past 400 lines.
 
 UX IMPROVEMENTS
-- [ ] SIMPLE -> elapsed time in TUI should be more like run time (actively running time)
+- [x] SIMPLE -> elapsed time in TUI should be more like run time (actively running time)
 - [ ] SIMPLE -> start goal run from TUI
 - [ ] make UI match more missions -> no space between boxes, constant header across all pages
 - [ ] attach a bit more metadata to goals, like created at, size, and some stuff like that, we later might want to show it on TUI

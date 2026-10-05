@@ -253,7 +253,7 @@ export function ProjectView(props: { root: string }): JSX.Element {
 					flexShrink={0}
 				>
 					<text {...dimText} flexShrink={0} wrapMode="none">
-						{`${"  STATE".padEnd(stateWidth)}${"GOAL".padEnd(nameWidth())} ${"TICKETS".padEnd(ticketsWidth)}${wide() ? `${"ELAPSED".padEnd(timesWidth)}${"COST".padEnd(timesWidth)}` : ""}${fitText("NOW", widths().now)}${fitText("TITLE", widths().title)}`}
+						{`${"  STATE".padEnd(stateWidth)}${"GOAL".padEnd(nameWidth())} ${"TICKETS".padEnd(ticketsWidth)}${wide() ? `${"RUN TIME".padEnd(timesWidth)}${"COST".padEnd(timesWidth)}` : ""}${fitText("NOW", widths().now)}${fitText("TITLE", widths().title)}`}
 					</text>
 					<scrollbox
 						ref={(box: ScrollBoxRenderable) => {
@@ -379,9 +379,10 @@ const minShownRows = 3;
 const rowId = (goal: string) => `goal-row-${goal}`;
 // The symbol, a space and the longest standing word, then a space.
 const stateWidth = 10;
-// Below this many columns the ELAPSED and COST columns drop out.
+// Below this many columns the RUN TIME and COST columns drop out.
 const wideFrom = 100;
-// ELAPSED and COST each: `13h 36m` or `$103.70`, then a space.
+// RUN TIME and COST each: `13h 36m`, `$103.70` or the heading, then a
+// space.
 const timesWidth = 9;
 // The most NOW takes at wide sizes, where it is as wide as its longest
 // phrase and a gap before TITLE: room for `NN <step>, no vago run process
@@ -432,7 +433,7 @@ function GoalRowLine(props: {
 			<span style={dim()}>
 				{` ${`${props.row.ticketCounts.done}/${ticketTotal(props.row.ticketCounts)}`.padEnd(ticketsWidth - barWidth - 1)}`}
 				{props.wide
-					? `${duration(props.row.elapsedMs).padEnd(timesWidth)}${money(props.row.costUsd).padEnd(timesWidth)}`
+					? `${duration(props.row.runMs).padEnd(timesWidth)}${money(props.row.costUsd).padEnd(timesWidth)}`
 					: ""}
 				{fitText(props.row.now, props.widths.now)}
 			</span>

@@ -59,7 +59,8 @@ const at = (time: string) => new Date(`2026-10-01T${time}:00Z`);
 const roomy = { width: 120, height: 30 };
 
 // Goal `worktrees`, stuck on Ticket 02 after Ticket 01 is done, with its
-// Runs' times, tokens and costs.
+// Runs' times, tokens and costs. Ticket 02's Run is two days after Ticket
+// 01's, a pause the run time leaves out.
 function stuckGoal(): Promise<string> {
 	return makeProject({
 		".vago-goals/worktrees/goal.md": goalText(
@@ -83,8 +84,8 @@ function stuckGoal(): Promise<string> {
 			runs: [
 				{
 					step: "check",
-					started: at("08:30"),
-					ended: at("09:01"),
+					started: new Date("2026-10-03T08:30:00Z"),
+					ended: new Date("2026-10-03T09:01:00Z"),
 					outcome: "exit 1",
 					costUsd: 0.5,
 					tokens: { input: 250, output: 50 },
@@ -127,12 +128,12 @@ test("the header names the Goal and shows its progress and numbers, values bold"
 	expect(lines[0]).toMatch(/^┌─ Goal 1\/1 · ✗ worktrees ─+┐$/);
 	expect(lines[1]).toMatch(/█+ {2}1\/2 Tickets/);
 	expect(lines[2]).toContain(
-		"STUCK   1h 1m elapsed   1.5k tokens   $1.75   Workflow small   Each Goal runs in its own worktree",
+		"STUCK   1h 1m run time   1.5k tokens   $1.75   Workflow small   Each Goal runs in its own worktree",
 	);
 	for (const value of ["STUCK", "1h 1m", "1.5k", "$1.75", "small", "1"]) {
 		expect(isBold(spanOf(view, value))).toBe(true);
 	}
-	for (const label of ["elapsed", "tokens", "Workflow", "/2 Tickets"]) {
+	for (const label of ["run time", "tokens", "Workflow", "/2 Tickets"]) {
 		expect(isBold(spanOf(view, label))).toBe(false);
 	}
 });

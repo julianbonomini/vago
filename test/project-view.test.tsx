@@ -592,26 +592,27 @@ test("the header line counts the Goals, the running, those that need you, and th
 	expect(header).toContain("1 running · 2 need you · $6.85 spent");
 });
 
-test("at 120 wide a row shows its Goal's elapsed time and cost", async () => {
-	const run = (
-		step: string,
-		started: string,
-		ended: string,
-		costUsd: number,
-	) => ({
-		step,
-		started: at(started),
-		ended: at(ended),
+test("at 120 wide a row shows its Goal's run time, its Runs' sum across a pause, and cost", async () => {
+	const run = (started: Date, ended: Date, costUsd: number) => ({
+		step: "design",
+		started,
+		ended,
 		outcome: "ok",
 		costUsd,
 	});
 	const root = await makeProject({
 		".vago-goals/a/goal.md": goalText("w"),
 		".vago-goals/a/tickets/01-t.md": ticketText("done", {
-			runs: [run("design", "10:00", "10:20", 2)],
+			runs: [run(at("10:00"), at("10:20"), 2)],
 		}),
 		".vago-goals/a/tickets/02-t.md": ticketText("done", {
-			runs: [run("design", "10:30", "11:00", 3)],
+			runs: [
+				run(
+					new Date("2026-10-03T10:30:00Z"),
+					new Date("2026-10-03T11:00:00Z"),
+					3,
+				),
+			],
 		}),
 		".vago-goals/b/goal.md": goalText("w"),
 	});
@@ -619,8 +620,42 @@ test("at 120 wide a row shows its Goal's elapsed time and cost", async () => {
 	const view = await renderView(root, wide);
 	const frame = await frameWith(view, " b ");
 
-	expect(rowOf(frame, "a")).toMatch(/ 1h 0m +\$5\.00 /);
+	expect(lineWith(frame, "STATE")).toContain("RUN TIME");
+	expect(rowOf(frame, "a")).toMatch(/ 50m 0s +\$5\.00 /);
 	expect(rowOf(frame, "b")).toMatch(/ 0s +\$0\.00 /);
+});
+
+test("a running Goal's run time counts its open Run so far and keeps counting", async () => {
+	const ago = (ms: number) => new Date(Date.now() - ms);
+	const root = await makeProject({
+		".vago-goals/a/goal.md": goalText("w"),
+		".vago-goals/a/tickets/01-t.md": ticketText("done", {
+			runs: [
+				{
+					step: "design",
+					started: ago(3 * 3600_000),
+					ended: ago(3 * 3600_000 - 600_000),
+					outcome: "ok",
+				},
+			],
+		}),
+		".vago-goals/a/tickets/02-t.md": ticketText("running", {
+			runs: [{ step: "design", started: ago(2000) }],
+		}),
+	});
+	await heldLock(root, "a");
+
+	const view = await renderView(root, wide);
+	const first = rowOf(await frameWith(view, "● running"), "a");
+	const seconds = (row: string) => Number(row.match(/ 10m (\d+)s /)?.[1]);
+	expect(seconds(first)).toBeGreaterThanOrEqual(2);
+
+	for (let tries = 0; ; tries++) {
+		const row = rowOf(await frameWith(view, " a "), "a");
+		if (seconds(row) > seconds(first)) break;
+		if (tries === 300) throw new Error(`The run time stays put:\n${row}`);
+		await Bun.sleep(10);
+	}
 });
 
 test("titles with CJK and emoji stay aligned, and long ones are cut to their column", async () => {
@@ -667,14 +702,14 @@ test("every text is drawn in one of the theme's colours", async () => {
 	expect(untokened).toEqual([]);
 });
 
-test("at 80 wide the elapsed, cost and title columns drop out", async () => {
+test("at 80 wide the run time, cost and title columns drop out", async () => {
 	const root = await projectOfEveryStanding();
 
 	const view = await renderView(root);
 	const frame = await frameWith(view, " 6 Goals");
 
 	const headings = frame.split("\n").find((line) => line.includes("STATE"));
-	expect(headings).not.toContain("ELAPSED");
+	expect(headings).not.toContain("RUN TIME");
 	expect(headings).not.toContain("COST");
 	expect(headings).not.toContain("TITLE");
 	for (const goal of [
@@ -1159,7 +1194,7 @@ test("a resize redraws the view to the new size", async () => {
 	holdsTogether(narrow, 60);
 
 	view.resize(120, 30);
-	const wider = await frameWith(view, "ELAPSED");
+	const wider = await frameWith(view, "RUN TIME");
 	holdsTogether(wider, 120);
 	expect(wider.split("\n")).toHaveLength(31);
 });

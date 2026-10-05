@@ -374,8 +374,8 @@ function GoalHeader(props: {
 			[
 				value(props.row.standing.toUpperCase(), goalColor(props.row.standing)),
 				label("   "),
-				value(duration(props.row.elapsedMs)),
-				label(" elapsed   "),
+				value(duration(props.row.runMs)),
+				label(" run time   "),
 				value(tokenCount(props.row.tokens)),
 				label(" tokens   "),
 				value(money(props.row.costUsd)),
