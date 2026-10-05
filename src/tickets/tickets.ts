@@ -98,10 +98,12 @@ export type GoalState = {
 	 * exist.
 	 */
 	workflow: string;
+	/** Undefined for a Goal made before Vago recorded it. */
+	created: Date | undefined;
 	/**
-	 * Every Ticket of the Goal with its status, the name of the Workflow it
-	 * goes through (which might not exist) and its `[[runs]]` in the order
-	 * they ran, lowest number first.
+	 * Every Ticket of the Goal, lowest number first, with its status, the name
+	 * of the Workflow it goes through (which might not exist) and its
+	 * `[[runs]]` in the order they ran. Their count is the Goal's size.
 	 */
 	tickets: {
 		ticket: Ticket;
@@ -127,11 +129,12 @@ export type GoalState = {
 
 /**
  * Creates Goal `goal` with an empty `tickets/` and a `goal.md` whose `+++`
- * header names `workflow`, followed by `body` exactly as given, which is what
- * `{{goal}}` will be. Without `body`, the body is a `# <goal>` title. Doesn't
- * check that the Workflow exists. Returns the path of `goal.md`. Throws an
- * Error naming the problem, and creates nothing, when `body` is empty or only
- * whitespace, the Goal already exists, or `goal` isn't a valid name.
+ * header names `workflow` and when the Goal was created, followed by `body`
+ * exactly as given, which is what `{{goal}}` will be. Without `body`, the
+ * body is a `# <goal>` title. Doesn't check that the Workflow exists.
+ * Returns the path of `goal.md`. Throws an Error naming the problem, and
+ * creates nothing, when `body` is empty or only whitespace, the Goal already
+ * exists, or `goal` isn't a valid name.
  */
 export async function createGoal(
 	root: string,
@@ -146,7 +149,10 @@ export async function createGoal(
 		throw new Error(`Goal ${goal} already exists: ${goalFile}`);
 	}
 	await mkdir(join(folder, "tickets"), { recursive: true });
-	await Bun.write(goalFile, headedText({ workflow }, body ?? `# ${goal}\n`));
+	await Bun.write(
+		goalFile,
+		headedText({ workflow, created: new Date() }, body ?? `# ${goal}\n`),
+	);
 	return goalFile;
 }
 
@@ -182,7 +188,7 @@ export async function listGoals(root: string): Promise<string[]> {
  */
 export async function readGoal(root: string, goal: string): Promise<GoalState> {
 	const folder = goalFolder(root, goal);
-	const { workflow, body } = await readGoalFile(
+	const { workflow, created, body } = await readGoalFile(
 		await existingGoalFile(root, goal),
 	);
 	const ticketFolder = join(folder, "tickets");
@@ -227,6 +233,7 @@ export async function readGoal(root: string, goal: string): Promise<GoalState> {
 		title: headingTitle(body, goal),
 		description: afterHeading(body),
 		workflow,
+		created,
 		tickets,
 		nextReady:
 			nextReady === undefined
@@ -238,11 +245,11 @@ export async function readGoal(root: string, goal: string): Promise<GoalState> {
 
 /**
  * Adds a Ticket named `slug` to `goal`, numbered one past its highest
- * Ticket, with status `ready` and blocked by the Tickets numbered in
- * `blockedBy` (each once, however often it's given), going through Workflow
- * `workflow`, or the Goal's when it's undefined. Doesn't check that the
- * Workflow exists. The Ticket's body is
- * `body` exactly as given, which is what `readTicketBody` will return.
+ * Ticket, created now, with status `ready` and blocked by the Tickets
+ * numbered in `blockedBy` (each once, however often it's given), going
+ * through Workflow `workflow`, or the Goal's when it's undefined. Doesn't
+ * check that the Workflow exists. The Ticket's body is `body` exactly as
+ * given, which is what `readTicketBody` will return.
  * Without `body`, it's a `# <slug>` title for the human to fill in. Returns
  * the path of the new Ticket file. Throws an Error naming the problem, and
  * writes nothing, when `body` is empty or only whitespace, `body` starts with
@@ -280,7 +287,7 @@ export async function addTicket(
 	}
 	const number = Math.max(0, ...tickets.map(({ ticket }) => ticket.number)) + 1;
 	const ticket = { root, goal, name: ticketName(number, slug), number };
-	const header: TicketHeader = { status: "ready" };
+	const header: TicketHeader = { status: "ready", created: new Date() };
 	if (blockedBy.length > 0) header.blocked_by = [...new Set(blockedBy)];
 	if (workflow !== undefined) header.workflow = workflow;
 	const file = ticketFile(ticket);

@@ -223,7 +223,10 @@ export function runVago(
 /** A Ticket file as the tests read it: its `+++` header parsed, and its body. */
 export type TicketFile = { header: Record<string, unknown>; body: string };
 
-/** Reads the Ticket file at `path`, relative to the repo root `root`. */
+/**
+ * Reads the Ticket file at `path`, relative to the repo root `root`, or any
+ * other file opening with a `+++` header, like `goal.md`.
+ */
 export async function readTicketFile(
 	root: string,
 	path: string,

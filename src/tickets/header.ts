@@ -24,13 +24,19 @@ const TicketHeader = z.looseObject({
 	status: z.enum(["ready", "running", "done", "stuck"]),
 	blocked_by: z.array(z.number().int()).optional(),
 	workflow: z.string().optional(),
+	// Absent from a Ticket added before Vago recorded it.
+	created: z.date().optional(),
 	runs: z.array(RunEntry).optional(),
 });
 
 /** A Ticket file's header, with the fields as spelled in the file. */
 export type TicketHeader = z.infer<typeof TicketHeader>;
 
-const GoalHeader = z.looseObject({ workflow: z.string() });
+const GoalHeader = z.looseObject({
+	workflow: z.string(),
+	// Absent from a Goal made before Vago recorded it.
+	created: z.date().optional(),
+});
 
 const headerStart = "+++\n";
 const headerEnd = "\n+++\n";
@@ -52,14 +58,15 @@ export async function readTicketFile(
 }
 
 /**
- * Reads the `goal.md` at `file` and returns the Workflow its header names and
- * its body without the blank lines under the header. Throws an Error naming
- * the file and the line to add when the header is missing or names no
- * Workflow.
+ * Reads the `goal.md` at `file` and returns the Workflow its header names,
+ * when the Goal was created (undefined for a Goal made before Vago recorded
+ * it) and its body without the blank lines under the header. Throws an
+ * Error naming the file and the line to add when the header is missing or
+ * names no Workflow.
  */
 export async function readGoalFile(
 	file: string,
-): Promise<{ workflow: string; body: string }> {
+): Promise<{ workflow: string; created: Date | undefined; body: string }> {
 	const split = splitHeader(file, await Bun.file(file).text());
 	if (split === undefined) {
 		throw new Error(
@@ -75,6 +82,7 @@ export async function readGoalFile(
 	// A human editing the header by hand may leave a blank line under it.
 	return {
 		workflow: checked.data.workflow,
+		created: checked.data.created,
 		body: split.body.replace(/^\n+/, ""),
 	};
 }

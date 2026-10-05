@@ -38,9 +38,10 @@ test("goal new creates a Goal with no Tickets that vago run accepts", async () =
 	expect(created.stderr).toBe("");
 	expect(created.exitCode).toBe(0);
 	expect(created.stdout).toEndWith(`${goalDir}/goal.md\n`);
-	expect(await Bun.file(join(root, goalDir, "goal.md")).text()).toBe(
-		goalText("test", "# hello\n"),
-	);
+	expect(await readTicketFile(root, `${goalDir}/goal.md`)).toEqual({
+		header: { workflow: "test", created: expect.any(Date) },
+		body: "# hello\n",
+	});
 	expect(await readdir(join(root, goalDir, "tickets"))).toEqual([]);
 
 	const run = await runVago(root, ["run", "hello"]);
@@ -48,6 +49,39 @@ test("goal new creates a Goal with no Tickets that vago run accepts", async () =
 	expect(run.stderr).toBe("");
 	expect(run.exitCode).toBe(0);
 	expect(run.stdout).toStartWith("\nhello: 0 of 0 Tickets done\n");
+});
+
+test("goal new and ticket add record when the Goal and the Ticket were created", async () => {
+	const root = await makeProject({ ".vago/workflows/test.toml": workflow });
+	const before = new Date();
+
+	await runVago(root, ["goal", "new", "hello", "--workflow", "test"]);
+	await runVago(root, ["ticket", "add", "hello", "greet"]);
+
+	const after = new Date();
+	const goal = await readTicketFile(root, `${goalDir}/goal.md`);
+	const ticket = await readTicketFile(root, `${goalDir}/tickets/01-greet.md`);
+	for (const { header } of [goal, ticket]) {
+		expect(header.created).toBeInstanceOf(Date);
+		const created = (header.created as Date).getTime();
+		// TOML keeps milliseconds, so the time falls between the two reads.
+		expect(created).toBeGreaterThanOrEqual(before.getTime());
+		expect(created).toBeLessThanOrEqual(after.getTime());
+	}
+});
+
+test("a Goal and a Ticket written before created was recorded still run", async () => {
+	const root = await makeProject({
+		".vago/workflows/test.toml": workflow,
+		[`${goalDir}/goal.md`]: goalText("test"),
+		[`${goalDir}/tickets/01-greet.md`]: `+++\nstatus = "ready"\n+++\n`,
+	});
+
+	const run = await runVago(root, ["run", "hello"]);
+
+	expect(run.stderr).toBe("");
+	expect(run.exitCode).toBe(0);
+	expect(run.stdout).toContain("hello: 1 of 1 Tickets done\n");
 });
 
 test("goal new without --workflow prints the usage and creates no Goal", async () => {
@@ -146,11 +180,11 @@ test("ticket add numbers Tickets in order with a ready header vago run takes", a
 	expect(greet.stdout).toEndWith(`${goalDir}/tickets/01-greet.md\n`);
 	expect(wave.stdout).toEndWith(`${goalDir}/tickets/02-wave.md\n`);
 	expect(await readTicketFile(root, `${goalDir}/tickets/01-greet.md`)).toEqual({
-		header: { status: "ready" },
+		header: { status: "ready", created: expect.any(Date) },
 		body: "\n# greet\n",
 	});
 	expect(await readTicketFile(root, `${goalDir}/tickets/02-wave.md`)).toEqual({
-		header: { status: "ready" },
+		header: { status: "ready", created: expect.any(Date) },
 		body: "\n# wave\n",
 	});
 
@@ -184,7 +218,11 @@ test("ticket add numbers past the highest Ticket and writes each blocker once", 
 	expect(result.stderr).toBe("");
 	expect(result.exitCode).toBe(0);
 	const bow = await readTicketFile(root, `${goalDir}/tickets/04-bow.md`);
-	expect(bow.header).toEqual({ status: "ready", blocked_by: [3, 1] });
+	expect(bow.header).toEqual({
+		status: "ready",
+		created: expect.any(Date),
+		blocked_by: [3, 1],
+	});
 });
 
 test("ticket add --workflow names the Workflow the Ticket goes through", async () => {
@@ -206,7 +244,11 @@ test("ticket add --workflow names the Workflow the Ticket goes through", async (
 	expect(result.stderr).toBe("");
 	expect(result.exitCode).toBe(0);
 	const greet = await readTicketFile(root, `${goalDir}/tickets/01-greet.md`);
-	expect(greet.header).toEqual({ status: "ready", workflow: "other" });
+	expect(greet.header).toEqual({
+		status: "ready",
+		created: expect.any(Date),
+		workflow: "other",
+	});
 });
 
 test("ticket add refuses a Workflow vago run would refuse and writes no Ticket", async () => {
@@ -340,7 +382,7 @@ test("ticket add --body-file writes the file's text after the header", async () 
 	expect(result.exitCode).toBe(0);
 	expect(result.stdout).toEndWith(`${goalDir}/tickets/01-greet.md\n`);
 	expect(await readTicketFile(root, `${goalDir}/tickets/01-greet.md`)).toEqual({
-		header: { status: "ready" },
+		header: { status: "ready", created: expect.any(Date) },
 		body,
 	});
 });
@@ -395,11 +437,11 @@ test("ticket add takes --body-file and --blocked-by in any order", async () => {
 	expect(wave.stderr).toBe("");
 	expect(wave.exitCode).toBe(0);
 	expect(await readTicketFile(root, `${goalDir}/tickets/03-bow.md`)).toEqual({
-		header: { status: "ready", blocked_by: [1, 2] },
+		header: { status: "ready", created: expect.any(Date), blocked_by: [1, 2] },
 		body,
 	});
 	expect(await readTicketFile(root, `${goalDir}/tickets/04-wave.md`)).toEqual({
-		header: { status: "ready", blocked_by: [1] },
+		header: { status: "ready", created: expect.any(Date), blocked_by: [1] },
 		body,
 	});
 });
@@ -420,7 +462,7 @@ test("ticket add --body-file -h reads the file named -h", async () => {
 	expect(result.exitCode).toBe(0);
 	expect(result.stdout).toEndWith(`${goalDir}/tickets/01-greet.md\n`);
 	expect(await readTicketFile(root, `${goalDir}/tickets/01-greet.md`)).toEqual({
-		header: { status: "ready" },
+		header: { status: "ready", created: expect.any(Date) },
 		body,
 	});
 });
@@ -579,9 +621,10 @@ for (const flags of [
 		expect(result.stderr).toBe("");
 		expect(result.exitCode).toBe(0);
 		expect(result.stdout).toEndWith(`${goalDir}/goal.md\n`);
-		expect(await Bun.file(join(root, goalDir, "goal.md")).text()).toBe(
-			goalText("test", body),
-		);
+		expect(await readTicketFile(root, `${goalDir}/goal.md`)).toEqual({
+			header: { workflow: "test", created: expect.any(Date) },
+			body,
+		});
 		expect(await readdir(join(root, goalDir, "tickets"))).toEqual([]);
 	});
 }
@@ -598,9 +641,10 @@ test("goal new --body-file - reads the body from stdin", async () => {
 
 	expect(result.stderr).toBe("");
 	expect(result.exitCode).toBe(0);
-	expect(await Bun.file(join(root, goalDir, "goal.md")).text()).toBe(
-		goalText("test", body),
-	);
+	expect(await readTicketFile(root, `${goalDir}/goal.md`)).toEqual({
+		header: { workflow: "test", created: expect.any(Date) },
+		body,
+	});
 });
 
 test("goal report shows a goal new body without the header", async () => {
@@ -821,7 +865,8 @@ test("goal new writes a body that starts with +++ as given", async () => {
 	]);
 
 	expect(result.exitCode).toBe(0);
-	expect(await Bun.file(join(root, goalDir, "goal.md")).text()).toBe(
-		goalText("test", plusBody),
-	);
+	expect(await readTicketFile(root, `${goalDir}/goal.md`)).toEqual({
+		header: { workflow: "test", created: expect.any(Date) },
+		body: plusBody,
+	});
 });

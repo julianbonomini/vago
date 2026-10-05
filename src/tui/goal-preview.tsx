@@ -11,13 +11,13 @@ import { RunLine, runLineFieldsWidth } from "./run-line.tsx";
 import { fitText, wrapText } from "./text-fit.ts";
 import { theme } from "./theme.ts";
 import { TicketBar } from "./ticket-bar.tsx";
-import { clock, duration } from "./time-and-money.ts";
+import { clock, day, duration } from "./time-and-money.ts";
 
 /**
  * The preview of the Goal `row` shows, `width` columns wide and as tall as
  * the space its parent gives it, its top line shared with the box over it.
- * Its border names the Goal at the top, and its Workflow and last activity
- * at the bottom.
+ * Its border names the Goal at the top, and its Workflow, when it was created
+ * and its last activity at the bottom.
  */
 export function GoalPreview(props: {
 	row: GoalRow;
@@ -36,9 +36,13 @@ export function GoalPreview(props: {
 		props.row.sinceLastActivityMs === undefined
 			? "no Runs yet"
 			: `last activity ${duration(props.row.sinceLastActivityMs)} ago`;
+	const created = () =>
+		props.row.created === undefined
+			? ""
+			: ` ${symbol.sep} created ${day(props.row.created)}`;
 	const pane = usePane(() => ({
 		title: ` ${props.row.goal} `,
-		bottomTitle: ` Workflow ${props.row.workflow} ${symbol.sep} ${activity()} `,
+		bottomTitle: ` Workflow ${props.row.workflow}${created()} ${symbol.sep} ${activity()} `,
 		focused: false,
 	}));
 	return (

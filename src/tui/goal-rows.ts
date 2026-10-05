@@ -73,6 +73,11 @@ export type GoalRow = {
 	/** The Workflow the Goal's header names; `unknown` for a broken Goal. */
 	workflow: string;
 	/**
+	 * When the Goal was created; undefined for a broken Goal or one made
+	 * before Vago recorded it.
+	 */
+	created: Date | undefined;
+	/**
 	 * How long before the rows were read a Run last started or ended;
 	 * undefined with no Runs.
 	 */
@@ -238,6 +243,7 @@ function brokenRow(goal: string, message: string): GoalRow {
 		costUsd: 0,
 		now: message.replace(/\s+/g, " "),
 		workflow: "unknown",
+		created: undefined,
 		sinceLastActivityMs: undefined,
 		tickets: [],
 		latestRuns: [],
@@ -276,6 +282,7 @@ function goalRow(
 		costUsd: runs.reduce((sum, run) => sum + (run.costUsd ?? 0), 0),
 		now: phrase,
 		workflow: state.workflow,
+		created: state.created,
 		sinceLastActivityMs:
 			last === undefined ? undefined : now.getTime() - last.getTime(),
 		tickets,

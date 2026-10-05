@@ -754,6 +754,26 @@ test("the preview shows the selected Goal, and moving the selection changes it",
 	expect(second).not.toContain("About a.");
 });
 
+test("the preview shows when a Goal was created and its number of Tickets", async () => {
+	// Midday, so the date is the same in every time zone the tests run in.
+	const created = new Date("2026-09-30T12:00:00Z");
+	const root = await makeProject({
+		".vago-goals/a/goal.md": `+++\nworkflow = "w"\ncreated = ${created.toISOString()}\n+++\n# A\n`,
+		".vago-goals/a/tickets/01-one.md": ticketText("done"),
+		".vago-goals/a/tickets/02-two.md": ticketText("ready"),
+		".vago-goals/b/goal.md": goalText("w"),
+	});
+	const view = await renderView(root, wide);
+
+	const frame = await frameWith(view, "LATEST RUNS");
+	expect(lineWith(frame, "Workflow w")).toContain("created 2026-09-30");
+	expect(frame).toContain("1/2 Tickets");
+
+	view.mockInput.pressArrow("down");
+	const old = await frameWith(view, "0/0 Tickets");
+	expect(lineWith(old, "Workflow w")).not.toContain("created");
+});
+
 test("a running Goal's preview shows its latest eight Runs, newest first", async () => {
 	const runs = Array.from({ length: 9 }, (_, index) => ({
 		step: `step${index + 1}`,
