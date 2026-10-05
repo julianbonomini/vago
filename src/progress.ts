@@ -167,21 +167,22 @@ export function printWorktreeClose(close: WorktreeClose): void {
 }
 
 /**
- * Prints `goal.md` without its header, as `goalBody`, and then in Markdown
- * what each Ticket's Steps put in the Goal report, collapsed by Ticket, the
- * Workflow the Goal names and what the Goal's Runs took and cost: a table
- * with one row per Ticket and a total, and every Run in a collapsed table
- * under it. Made to be a PR description. `outputs` holds the output of each
- * Run whose Step puts it in the report, by the Run's log; a Ticket shows the
- * latest such Run of each Step that ended `ok`, and nothing when none did. A
- * Run still going counts toward neither total.
+ * Prints `goal.md` without its header, as `goalBody`, each of its paragraphs
+ * on one line, and then in Markdown what each Ticket's Steps put in the Goal
+ * report, collapsed by Ticket, the Workflow the Goal names and what the
+ * Goal's Runs took and cost: a table with one row per Ticket and a total, and
+ * every Run in a collapsed table under it. Made to be a PR description.
+ * `outputs` holds the output of each Run whose Step puts it in the report, by
+ * the Run's log; a Ticket shows the latest such Run of each Step that ended
+ * `ok`, and nothing when none did. A Run still going counts toward neither
+ * total.
  */
 export function printGoalReport(
 	goalBody: string,
 	state: GoalState,
 	outputs: ReadonlyMap<string, string>,
 ): void {
-	const lines = [goalBody.trimEnd(), ""];
+	const lines = [joinParagraphLines(goalBody.trimEnd()), ""];
 	const reported = state.tickets.flatMap(({ ticket, runs }) => {
 		const latest = new Map<string, string>();
 		for (const run of runs) {
@@ -227,6 +228,31 @@ export function printGoalReport(
 	}
 	lines.push("", "</details>");
 	console.log(lines.join("\n"));
+}
+
+// `goal.md` is hard-wrapped, and GitHub keeps every line break in a PR body,
+// so a paragraph's lines are joined. A line that starts a list item, heading,
+// quote, table row, HTML tag, rule or indented code is left as it is, and so
+// is every line of a fenced code block. A line ending in a hard break, two
+// spaces or a backslash, keeps the break after it.
+const blockLineStart = /^(\s|[-*+]\s|\d+[.)]\s|[#>|<]|[-=*_]{3,}\s*$)/;
+const hardBreakEnd = /( {2}|\\)\r?$/;
+
+function joinParagraphLines(markdown: string): string {
+	const lines: string[] = [];
+	let inFence = false;
+	let previousJoins = false;
+	for (const line of markdown.split("\n")) {
+		const isFence = /^ {0,3}(```|~~~)/.test(line);
+		if (isFence) inFence = !inFence;
+		const isProse =
+			!isFence && !inFence && line.trim() !== "" && !blockLineStart.test(line);
+		if (isProse && previousJoins)
+			lines.push(`${(lines.pop() ?? "").trimEnd()} ${line}`);
+		else lines.push(line);
+		previousJoins = isProse && !hardBreakEnd.test(line);
+	}
+	return lines.join("\n");
 }
 
 type Colour = "dim" | "green" | "red";

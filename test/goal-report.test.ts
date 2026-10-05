@@ -185,6 +185,63 @@ test("goal report counts a Ticket with no Runs as nothing", async () => {
 `);
 });
 
+test("goal report joins each hard-wrapped paragraph of goal.md into one line", async () => {
+	const body = [
+		"# Hello",
+		"",
+		"Say hello to",
+		"everyone in",
+		"the room.",
+		"",
+		"- a list item",
+		"  wrapped under it",
+		"- another",
+		"1. first",
+		"2. second",
+		"",
+		"## Steps",
+		"",
+		"> a quote",
+		"> on two lines",
+		"",
+		"```ts",
+		"const a = 1;",
+		"const b = 2;",
+		"```",
+		"",
+		"    indented code",
+		"    more code",
+		"",
+		"| a | b |",
+		"|---|---|",
+		"| 1 | 2 |",
+		"",
+		"Two spaces break  ",
+		"this line, and a backslash\\",
+		"this one.",
+		"",
+		"Last words\r",
+		"here.",
+		"",
+	].join("\n");
+	const root = await makeProject({
+		[`${goalDir}/goal.md`]: goalText("small", body),
+	});
+
+	const result = await runVago(root, ["goal", "report", "hello"]);
+
+	expect(result.stderr).toBe("");
+	expect(result.exitCode).toBe(0);
+	expect(result.stdout).toStartWith(
+		body
+			.replace(
+				"Say hello to\neveryone in\nthe room.",
+				"Say hello to everyone in the room.",
+			)
+			.replace("Last words\r\nhere.", "Last words here."),
+	);
+});
+
 test("goal report leaves out blank lines under a hand-edited header", async () => {
 	const root = await makeProject({
 		[`${goalDir}/goal.md`]: '+++\nworkflow = "small"\n+++\n\n# Hello\n',

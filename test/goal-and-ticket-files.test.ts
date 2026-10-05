@@ -666,7 +666,10 @@ test("goal report shows a goal new body without the header", async () => {
 
 	expect(report.stderr).toBe("");
 	expect(report.exitCode).toBe(0);
-	expect(report.stdout).toStartWith(body);
+	// The report joins the paragraph's lines, `+++` ones included.
+	expect(report.stdout).toStartWith(
+		"# Greet\r\n\nSay “hi” 👋 +++ +++ not a header\n",
+	);
 	expect(report.stdout).toContain("Workflow: test\n");
 	expect(report.stdout).not.toContain('workflow = "test"');
 });
