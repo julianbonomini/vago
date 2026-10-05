@@ -28,7 +28,7 @@ Items marked _(grill)_ have design questions to settle before writing Tickets.
 UX IMPROVEMENTS
 - [x] SIMPLE -> elapsed time in TUI should be more like run time (actively running time)
 - [x] SIMPLE -> start goal run from TUI
-- [ ] make UI match more missions -> no space between boxes, constant header across all pages
+- [x] make UI match more missions -> no space between boxes, constant header across all pages
 - [ ] attach a bit more metadata to goals, like created at, size, and some stuff like that, we later might want to show it on TUI
 - [ ] workflow steps to have user specified names, then show those in the UI
 - [ ] pick up from failure... properly (resume session instead of starting from scratch) (needs grilling)

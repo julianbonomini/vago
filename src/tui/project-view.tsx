@@ -25,6 +25,7 @@ import {
 } from "./goal-rows.ts";
 import { startGoal } from "./goal-start.ts";
 import { GoalView } from "./goal-view.tsx";
+import { usePane } from "./pane-grid.ts";
 import {
 	type FooterKey,
 	type HelpKey,
@@ -32,7 +33,7 @@ import {
 	KeyHelp,
 } from "./screen-keys.tsx";
 import { fitText } from "./text-fit.ts";
-import { goalColor, paneBorder, theme } from "./theme.ts";
+import { goalColor, theme } from "./theme.ts";
 import { TicketBar } from "./ticket-bar.tsx";
 import { duration, money } from "./time-and-money.ts";
 
@@ -80,7 +81,8 @@ function liveGoalRows(root: string): () => GoalRow[] | undefined {
 
 /**
  * The Project view of the Project at `root`: a header line with the
- * Project's counts and spend, and a Goals box with one row per Goal showing
+ * Project's counts and spend, which stays on every screen, the Goal view's
+ * included, and a Goals box with one row per Goal showing
  * its standing, Tickets, time, cost, what it is doing and its title, the
  * selected one in the accent colour, moved by ↑↓ and j k, g and G, or a
  * click, with `n/N` on the box's bottom border, or a line naming
@@ -176,6 +178,11 @@ export function ProjectView(props: {
 			? " 0/0 "
 			: ` ${selectedIndex() + 1}/${list.length} `;
 	};
+	const goalsPane = usePane(() => ({
+		title: " Goals ",
+		bottomTitle: position(),
+		focused: false,
+	}));
 	const terminal = useTerminalDimensions();
 	const wide = () => terminal().width >= wideFrom;
 	// The Goals box takes what its rows need, up to its share of the screen,
@@ -219,7 +226,17 @@ export function ProjectView(props: {
 		return { name: nameWidth(), now, title: rest - now };
 	};
 	return (
-		<>
+		<box flexDirection="column" flexGrow={1}>
+			{/* One header over every screen, so it never moves. */}
+			<Show when={rows()}>
+				{(read: () => GoalRow[]) => (
+					<HeaderLine
+						root={props.root}
+						rows={read()}
+						width={terminal().width}
+					/>
+				)}
+			</Show>
 			{/* Keyed on the Goal, so another Goal opens on its own Ticket, Run
 			    and focus. */}
 			<Show when={openedRow()?.goal} keyed>
@@ -243,21 +260,9 @@ export function ProjectView(props: {
 				flexDirection="column"
 				flexGrow={1}
 			>
-				<Show when={rows()}>
-					{(read: () => GoalRow[]) => (
-						<HeaderLine
-							root={props.root}
-							rows={read()}
-							width={terminal().width}
-						/>
-					)}
-				</Show>
 				<box
+					ref={goalsPane}
 					border
-					{...paneBorder(false)}
-					title=" Goals "
-					bottomTitle={position()}
-					bottomTitleAlignment="right"
 					paddingLeft={1}
 					// The scrollbar, when there is one, takes the padding's column.
 					paddingRight={scrollbarShown() ? 0 : 1}
@@ -319,7 +324,7 @@ export function ProjectView(props: {
 					<KeyHelp keys={helpKeys(symbol.upDown)} />
 				</Show>
 			</box>
-		</>
+		</box>
 	);
 }
 
@@ -345,7 +350,7 @@ const helpKeys = (upDown: string): HelpKey[] => [
 	{ keys: "q Ctrl-C", meaning: "quit" },
 ];
 
-// The Project's name and its counts on one line above the Goals box,
+// The Project's name and its counts on one line at the top of every screen,
 // `width` columns wide, the counts on the right. The name is cut first when
 // the line is short of room. Not drawn until the Goals are read, so a slow
 // read never shows zero Goals.

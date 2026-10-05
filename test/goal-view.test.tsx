@@ -125,9 +125,9 @@ test("the header names the Goal and shows its progress and numbers, values bold"
 	const frame = await frameWith(view, "Goal 1/1");
 
 	const lines = frame.split("\n");
-	expect(lines[0]).toMatch(/^┌─ Goal 1\/1 · ✗ worktrees ─+┐$/);
-	expect(lines[1]).toMatch(/█+ {2}1\/2 Tickets/);
-	expect(lines[2]).toContain(
+	expect(lines[1]).toMatch(/^┌─ Goal 1\/1 · ✗ worktrees ─+┐$/);
+	expect(lines[2]).toMatch(/█+ {2}1\/2 Tickets/);
+	expect(lines[3]).toContain(
 		"STUCK   1h 1m run time   1.5k tokens   $1.75   Workflow small   Each Goal runs in its own worktree",
 	);
 	for (const value of ["STUCK", "1h 1m", "1.5k", "$1.75", "small", "1"]) {
@@ -174,8 +174,8 @@ async function openFirstGoal(
 	const view = await renderView(root, size);
 	await frameWith(view, "─ 1/");
 	view.mockInput.pressEnter();
-	// The Runs pane, whose border the focus never starts on.
-	return { view, frame: await frameWith(view, "─ Runs") };
+	// The Runs pane's title.
+	return { view, frame: await frameWith(view, " Runs ") };
 }
 
 test("a running Goal's Tickets show the Step, the blockers waited on and nothing for ready", async () => {
@@ -281,15 +281,6 @@ test("Enter on a broken Goal keeps the Project view, whose preview says why", as
 	await Bun.sleep(50);
 
 	expect(await frameWith(view, "─ 1/1 ─")).not.toContain("Goal 1/1");
-});
-
-test("below 30 rows the header's bar is the Project view's lighter one", async () => {
-	const { frame } = await openFirstGoal(await stuckGoal(), {
-		width: 80,
-		height: 24,
-	});
-
-	expect(frame.split("\n")[1]).toMatch(/━+ {2}1\/2 Tickets/);
 });
 
 test("under NO_COLOR a blocked Ticket's mark and state word stay dim", async () => {
@@ -803,7 +794,7 @@ test("a lost Goal marks its Ticket, Step and open Run lost and says what to do",
 
 	const frame = await frameWith(view, "│ line 3 ");
 	const lines = frame.split("\n");
-	expect(lines[0]).toContain("Goal 1/1 · ? lost");
+	expect(lines[1]).toContain("Goal 1/1 · ? lost");
 	expect(lines[4]).toContain(
 		" ? No vago run process runs this Goal; the next records its open Run as lost.",
 	);
@@ -1145,23 +1136,23 @@ for (const size of [
 	{ width: 60, height: 24 },
 	{ width: 80, height: 24 },
 ]) {
-	test(`at ${size.width}×${size.height} the header loses its border and nothing overlaps`, async () => {
+	test(`at ${size.width}×${size.height} the Goal box keeps its border and nothing overlaps`, async () => {
 		const { view } = await openFirstGoal(await lostGoalWithLongTitles(), size);
 		const frame = await frameWith(view, "│ line 60 ");
 
 		const lines = frame.split("\n");
-		expect(lines[0]).toMatch(/^ Goal 1\/1 · \? small +$/);
-		expect(lines[1]).toMatch(/^ ━+ {2}0\/2 Tickets $/);
-		expect(lines[2]).toMatch(/^ LOST {3}/);
-		expect(lines[3]).toContain("No vago run process runs this Goal");
-		expect(lines[4]).toMatch(/^┌─ Tickets ─+┐┌─ Ticket 01 ─+┐$/);
+		expect(lines[1]).toMatch(/^┌─ Goal 1\/1 · \? small ─+┐$/);
+		expect(lines[2]).toMatch(/^│ █+ {2}0\/2 Tickets │$/);
+		expect(lines[3]).toMatch(/^│ LOST {3}/);
+		expect(lines[4]).toContain("No vago run process runs this Goal");
+		expect(lines[5]).toMatch(/^├─ Tickets ─+┬─ Ticket 01 ─+┤$/);
 		expect(frame).toContain("02 after 01");
 		expect(frame).toContain("· merge");
 		expect(frame).toContain("─ Runs of Ticket 01 ─");
 		expect(frame).toContain("─ Run 2 · 01 check ─");
-		for (const line of lines.slice(4, -2)) {
+		for (const line of lines.slice(1, -2)) {
 			expect(Bun.stringWidth(line)).toBe(size.width);
-			expect(line).toMatch(/^[│┌└].*[│┐┘]$/);
+			expect(line).toMatch(/^[│┌└├].*[│┐┘┤]$/);
 		}
 		expect(lines.at(-2)).toContain("? Help");
 	});
@@ -1232,17 +1223,17 @@ test("under NO_COLOR every text takes the terminal's own colours, and the select
 test("under NO_COLOR the focused pane's border is heavy, its only mark", async () => {
 	setEnv({ NO_COLOR: "1" });
 	const view = await openLongTicket();
-	expect(view.captureCharFrame()).toContain("┏━ Tickets ━");
+	expect(view.captureCharFrame()).toContain("┣━ Tickets ━");
 	view.mockInput.pressKey("4");
-	const frame = await frameWith(view, "┏━ Run 2 · 01 check ━");
-	expect(frame).toContain("┌─ Tickets ─");
+	const frame = await frameWith(view, "┣━ Run 2 · 01 check ━");
+	expect(frame).toContain("├─ Tickets ─");
 
 	setEnv({ VAGO_ASCII: "1" });
 	const ascii = await renderView(await stuckGoal(), roomy);
 	await frameWith(ascii, "- 1/1 -");
 	ascii.mockInput.pressEnter();
 	const asciiFrame = await frameWith(ascii, "#= Tickets =");
-	expect(asciiFrame).toContain("+- Ticket 02 -");
+	expect(asciiFrame).toContain("- Ticket 02 -");
 });
 
 test("a Runs pane too narrow for its Ticket's number is titled Runs", async () => {
@@ -1250,7 +1241,7 @@ test("a Runs pane too narrow for its Ticket's number is titled Runs", async () =
 		size: { width: 50, height: 24 },
 	});
 
-	expect(frame).toMatch(/┌─ Runs ─+┐/);
+	expect(frame).toMatch(/├─ Runs ─+ 1\/1 ─┤/);
 });
 
 test("s on a running Goal says it is running and starts nothing", async () => {

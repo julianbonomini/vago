@@ -39,7 +39,7 @@ export type ThemeColors = {
  * so `symbol[standing]` is a standing's symbol. `blocked` is a ready Ticket
  * waiting on a blocker, `pending` a Step not run yet in a Ticket's pass,
  * `bar` one cell of a progress bar, `solidBar` one cell of the heavier bar a
- * roomy Goal view's header draws, `sep` the mark between items on a line,
+ * Goal view's Goal box draws, `sep` the mark between items on a line,
  * `cut` the end of a text cut short, `prose` the mark before the agent's
  * prose, `times` the mark of a count, like `×5`, `rule` one cell of a
  * divider, and `upDown` and `leftRight` the arrow keys as a footer names
@@ -80,7 +80,7 @@ export type Theme = {
 	/** Every box's border, as a box's `customBorderChars` takes it. */
 	border: BorderCharacters;
 	/**
-	 * The focused pane's border, as `paneBorder` gives it: heavier lines
+	 * The focused pane's border, as the pane grid draws it: heavier lines
 	 * under `NO_COLOR`, where no accent tells the pane apart.
 	 */
 	focusBorder: BorderCharacters;
@@ -108,20 +108,6 @@ export function theme(): Theme {
 	const ascii = process.env.VAGO_ASCII === "1";
 	if (noColor) return ascii ? plainAscii : plain;
 	return ascii ? colouredAscii : coloured;
-}
-
-/**
- * A box's border, spread onto it: in the border colour, or while the box
- * is a `focused` pane in the accent, and under `NO_COLOR` in heavier lines.
- */
-export function paneBorder(focused: boolean): {
-	customBorderChars: BorderCharacters;
-	borderColor: ColorInput;
-} {
-	const { color, border, focusBorder } = theme();
-	return focused
-		? { customBorderChars: focusBorder, borderColor: color.accent }
-		: { customBorderChars: border, borderColor: color.border };
 }
 
 /**
@@ -344,13 +330,17 @@ const heavyLines: BorderCharacters = {
 };
 
 const heavyAsciiLines: BorderCharacters = {
-	...asciiLines,
 	topLeft: "#",
 	topRight: "#",
 	bottomLeft: "#",
 	bottomRight: "#",
 	horizontal: "=",
 	vertical: "#",
+	topT: "#",
+	bottomT: "#",
+	leftT: "#",
+	rightT: "#",
+	cross: "#",
 };
 
 const coloured: Theme = {

@@ -4,6 +4,7 @@
 
 import { type JSX, useTerminalDimensions } from "@opentui/solid";
 import { For, Show } from "solid-js";
+import { useCover } from "./pane-grid.ts";
 import { fitText } from "./text-fit.ts";
 import { theme } from "./theme.ts";
 
@@ -81,8 +82,10 @@ export function KeyHelp(props: { keys: HelpKey[] }): JSX.Element {
 	const width = () => Math.min(helpWidth, terminal().width);
 	// The border and a space on both sides.
 	const meaningWidth = () => width() - 4 - keysWidth;
+	const cover = useCover();
 	return (
 		<box
+			ref={cover}
 			position="absolute"
 			top={2}
 			left={Math.floor((terminal().width - width()) / 2)}
