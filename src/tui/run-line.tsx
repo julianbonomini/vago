@@ -9,8 +9,11 @@ import type { GoalRunState } from "./goal-tickets.ts";
 import { fitText } from "./text-fit.ts";
 import { runMarkLook, theme } from "./theme.ts";
 
-/** How a selected Run line stands out: in the selection's colours, or bold. */
-export type RunLineSelection = "filled" | "bold";
+/**
+ * How a selected Run line stands out: in the selection's colours in the
+ * focused pane, or the idle selection's in another.
+ */
+export type RunLineSelection = "focused" | "idle";
 
 import { duration, money } from "./time-and-money.ts";
 
@@ -47,8 +50,9 @@ export function RunLine(props: {
 	width: number;
 	selection?: RunLineSelection;
 }): JSX.Element {
-	const { color, dimSpan, selection } = theme();
-	const filled = () => props.selection === "filled";
+	const { color, dimSpan, selection, idleSelection } = theme();
+	const filled = () => props.selection === "focused";
+	const idle = () => props.selection === "idle";
 	// A filled line is drawn in the selection's colours throughout, so its
 	// own colours don't fight the highlight.
 	const fg = (own: ColorInput) => (filled() ? selection.fg : own);
@@ -75,13 +79,9 @@ export function RunLine(props: {
 	return (
 		<text
 			fg={fg(color.fg)}
-			bg={filled() ? selection.bg : undefined}
+			bg={filled() ? selection.bg : idle() ? idleSelection.bg : undefined}
 			attributes={
-				filled()
-					? selection.attributes
-					: props.selection === "bold"
-						? TextAttributes.BOLD
-						: 0
+				filled() ? selection.attributes : idle() ? idleSelection.attributes : 0
 			}
 			flexShrink={0}
 			wrapMode="none"

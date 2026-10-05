@@ -24,7 +24,8 @@ import { duration, money, tokenCount } from "./time-and-money.ts";
 /**
  * `activity`, a Run's, `width` columns wide, its items one after another in
  * the order they happened, each with the id `activityItemId` gives it, the
- * `selected`th in the selection's colours when `filled`, else bold. Only
+ * `selected`th in the selection's colours when `filled`, else the idle
+ * selection's. Only
  * the first 40 lines of a
  * prose message show, then how many more it has. While the Run is `live`,
  * open with a `vago run` running it, a trailing `working` line shows the
@@ -159,8 +160,9 @@ const proseEdges = 4;
 const endEdges = 2;
 
 // One item of a Run's activity, `id` its id, in the selection's colours when
-// `selected` and `filled`, and bold when only `selected`. Its running calls show their clock to `now` while the Run is
-// live, `now` undefined otherwise.
+// `selected` and `filled`, and the idle selection's when only `selected`.
+// Its running calls show their clock to `now` while the Run is live, `now`
+// undefined otherwise.
 function ActivityItem(props: {
 	id: string;
 	item: RunActivityItem;
@@ -169,19 +171,21 @@ function ActivityItem(props: {
 	now: Date | undefined;
 	width: number;
 }): JSX.Element {
-	const { color, symbol, dimText, selection } = theme();
+	const { color, symbol, dimText, selection, idleSelection } = theme();
 	const { item } = props;
 	const highlit = () => props.selected && props.filled;
 	const spansLine = (spans: () => StyledSpan[]) => (
 		<text
 			id={props.id}
 			fg={color.fg}
-			bg={highlit() ? selection.bg : undefined}
+			bg={
+				highlit() ? selection.bg : props.selected ? idleSelection.bg : undefined
+			}
 			attributes={
 				highlit()
 					? selection.attributes
 					: props.selected
-						? TextAttributes.BOLD
+						? idleSelection.attributes
 						: 0
 			}
 			flexShrink={0}

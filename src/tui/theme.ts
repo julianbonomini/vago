@@ -96,6 +96,12 @@ export type Theme = {
 	dimText: { fg: ColorInput; attributes: number };
 	dimSpan: { fg: ColorInput; dim: boolean };
 	selection: ThemeSelection;
+	/**
+	 * How the selected row of a pane without the focus is drawn, keeping
+	 * its own colours: a grey behind it, or underlined under `NO_COLOR`,
+	 * where the focused pane's is inverse.
+	 */
+	idleSelection: { bg: ColorInput | undefined; attributes: number };
 };
 
 /**
@@ -236,6 +242,9 @@ const grey = "#7a7a7a";
 // The selected row's text, dark on the accent.
 const onAccent = "#0c0c0c";
 
+// Behind the selected row of a pane without the focus.
+const idleGrey = "#3a3a3a";
+
 // Every token is the terminal's own colour, so meaning rests on the symbols,
 // DIM and INVERSE.
 const noPalette: ThemeColors = {
@@ -328,6 +337,7 @@ const coloured: Theme = {
 	dimText: { fg: grey, attributes: 0 },
 	dimSpan: { fg: grey, dim: false },
 	selection: { fg: onAccent, bg: palette.accent, attributes: 0 },
+	idleSelection: { bg: idleGrey, attributes: TextAttributes.BOLD },
 };
 
 const plain: Theme = {
@@ -342,6 +352,10 @@ const plain: Theme = {
 		fg: terminalForeground,
 		bg: undefined,
 		attributes: TextAttributes.INVERSE,
+	},
+	idleSelection: {
+		bg: undefined,
+		attributes: TextAttributes.BOLD | TextAttributes.UNDERLINE,
 	},
 };
 

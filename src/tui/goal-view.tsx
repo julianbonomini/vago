@@ -526,7 +526,7 @@ const ticketRowId = (number: string) => `ticket-row-${number}`;
 // Every Ticket of the Goal, one row each, `width` columns wide with its
 // border and as tall as its parent leaves it: its symbol, number, state word
 // and title, the `selected`th scrolled into view and in the selection's
-// colours when `focused`, else bold, the title in the focus look when
+// colours when `focused`, else the idle selection's, the title in the focus look when
 // `focused`. A click anywhere on it calls
 // `onClick`, and on a Ticket `onPick` first, with that Ticket's index.
 function TicketsPane(props: {
@@ -537,7 +537,7 @@ function TicketsPane(props: {
 	onClick: () => void;
 	onPick: (index: number) => void;
 }): JSX.Element {
-	const { color, symbol, selection } = theme();
+	const { color, symbol, selection, idleSelection } = theme();
 	let list: ScrollBoxRenderable | undefined;
 	createEffect(() => {
 		const ticket = props.tickets[props.selected];
@@ -598,12 +598,18 @@ function TicketsPane(props: {
 								id={ticketRowId(ticket.number)}
 								onMouseDown={() => props.onPick(index())}
 								fg={fg(color.fg)}
-								bg={filled() ? selection.bg : undefined}
+								bg={
+									filled()
+										? selection.bg
+										: selected()
+											? idleSelection.bg
+											: undefined
+								}
 								attributes={
 									filled()
 										? selection.attributes
 										: selected()
-											? TextAttributes.BOLD
+											? idleSelection.attributes
 											: 0
 								}
 								flexShrink={0}
@@ -766,7 +772,7 @@ const positionWidth = 3;
 // The Runs of `ticket`, `width` columns wide and `height` rows tall with its
 // border, one `RunLine` each led by its position, the title in the focus
 // look when `focused`. The `selected`th is scrolled into view, in the
-// selection's colours when `focused`, else bold. A click
+// selection's colours when `focused`, else the idle selection's. A click
 // anywhere on it calls `onClick`, and on a Run `onPick` first, with that
 // Run's index.
 function RunsPane(props: {
@@ -844,8 +850,8 @@ function RunsPane(props: {
 										index() !== props.selected
 											? undefined
 											: props.focused
-												? "filled"
-												: "bold"
+												? "focused"
+												: "idle"
 									}
 								/>
 							</box>

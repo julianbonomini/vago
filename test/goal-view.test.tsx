@@ -1029,6 +1029,36 @@ async function until(
 	}
 }
 
+// The colour behind the first cell of `text` in the frame.
+function bgAt(view: TestRendererSetup, text: string): RGBA {
+	const rows = view.captureCharFrame().split("\n");
+	const y = rows.findIndex((row) => row.includes(text));
+	const x = Bun.stringWidth((rows[y] ?? "").slice(0, rows[y]?.indexOf(text)));
+	let at = 0;
+	for (const span of view.captureSpans().lines[y]?.spans ?? []) {
+		at += Bun.stringWidth(span.text);
+		if (at > x) return span.bg;
+	}
+	throw new Error(`No cell shows ${text}`);
+}
+
+test("only the focused pane fills its selected row, and the Tickets and Runs keep theirs on grey", async () => {
+	const view = await openLongTicket();
+	const accent = RGBA.fromHex("#ff8a3d");
+	const grey = RGBA.fromHex("#3a3a3a");
+	expect(bgAt(view, "01 stuck").equals(accent)).toBe(true);
+	expect(bgAt(view, "2  check").equals(grey)).toBe(true);
+
+	view.mockInput.pressKey("3");
+	await until(view, () => accented(view).join() === "Ticket 01");
+	expect(bgAt(view, "01 stuck").equals(grey)).toBe(true);
+	expect(bgAt(view, "2  check").equals(grey)).toBe(true);
+
+	view.mockInput.pressKey("2");
+	await until(view, () => bgAt(view, "2  check").equals(accent));
+	expect(bgAt(view, "01 stuck").equals(grey)).toBe(true);
+});
+
 test("Tab, Shift+Tab and 1-4 move focus, and only the focused pane is in the accent", async () => {
 	const view = await openLongTicket();
 	const focusIs = (title: string) =>
