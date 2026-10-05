@@ -149,10 +149,10 @@ export async function initProject(root: string): Promise<void> {
  * binary ships: writes every starter file in `.vago/`, `.claude/skills/` and
  * `.agents/skills/` whose text differs or is missing, and prints each path it
  * wrote, relative to `root`. Files that aren't the starter's, and
- * `.vago-goals/`, stay as they are. It keeps the commit answer `.git/info/exclude` records, adding any
- * exclude line a newer starter needs and printing `.git/info/exclude` when it
- * does; it asks, as init does, only when the exclude names neither `.vago/`
- * nor the Goals folder. Prints nothing when the Project already matches.
+ * `.vago-goals/`, stay as they are. It keeps the commit answer
+ * `.git/info/exclude` records, adding any exclude line a newer starter needs
+ * and printing `.git/info/exclude` when it does; it asks, as init does, only
+ * when the exclude names neither `.vago/` nor the Goals folder. Prints nothing when the Project already matches.
  * Throws an Error naming the problem, before changing anything, when `root`
  * has no `.vago/` or no `.git` directory.
  */

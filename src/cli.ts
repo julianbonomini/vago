@@ -153,7 +153,8 @@ skills into .claude/skills/ for Claude Code and .agents/skills/ for Codex. It
 first asks whether you will commit the Workflow: yes leaves them to git,
 anything else adds .vago/ and each skill to .git/info/exclude. Goals stay out
 of git either way. It refuses, changing nothing, when a file it would write
-already exists or this is not the root of a git repo. To bring a set-up Project to a newer starter, run vago update.`,
+already exists or this is not the root of a git repo. To bring a set-up
+Project to a newer starter, run vago update.`,
 		operands: [],
 		flags: [],
 		example: "vago init",
@@ -170,7 +171,8 @@ that differs from the starter this vago ships, writes the ones that are
 missing, and prints the path of each file it changed. Files you added, such as
 your own Workflow, prompt or skill, and the Goals in .vago-goals/ stay as they
 are. It keeps the commit answer you gave vago init, and asks again only when
-.git/info/exclude doesn't show it. It refuses when there is no .vago/ yet: run vago init.`,
+.git/info/exclude doesn't show it. It refuses when there is no .vago/ yet:
+run vago init.`,
 		operands: [],
 		flags: [],
 		example: "vago update",

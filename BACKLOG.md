@@ -46,7 +46,7 @@ NEW FEATURES (grilling needed)
   - [ ] Creating Goals and Tickets inside Vago, and decomposing Goals automatically. _(grill)_
 - [ ] create github app so commits come from vago (maybe)
 - [ ] Notifications (ntfy, Slack, push). something to let you know if something is stuck, or what. or current progress.
-- [ ] Harnesses other than Claude Code (a Codex adapter, user-supplied Harness plugins). _(grill)_
+- [x] Harnesses other than Claude Code (a Codex adapter, user-supplied Harness plugins). _(grill)_ (Codex only)
 - [ ] Interact with agent session if you want to, like steer or correct while it runs without messing up the goal run
 - [ ] user new matpocock (or copy) of the PR skill at the end of a goal
 

@@ -49,7 +49,7 @@ A Workflow Step that pauses work until the human approves it. Not part of Alpha.
 _Avoid_: checkpoint, approval step
 
 **Harness**:
-The coding agent that does the work on a Ticket, such as Claude Code or Codex; Vago is agnostic to which.
+The coding agent that performs an agent Step: Claude Code or Codex. A Workflow names one for all its agent Steps, and a Step may name its own, so one Ticket can be built on one Harness and reviewed on the other.
 _Avoid_: runtime, worker, droid
 
 **Worktree**:
