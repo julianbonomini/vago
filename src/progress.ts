@@ -79,14 +79,19 @@ export function printStuck(
 
 /**
  * Prints why `vago run` won't start `goal`: the Tickets in `stuck`, each with
- * the command that resets it.
+ * the command that resets it and, when given, the command that resumes its
+ * last Run's Harness session.
  */
-export function printStuckRefusal(goal: string, stuck: Ticket[]): void {
+export function printStuckRefusal(
+	goal: string,
+	stuck: { ticket: Ticket; resumeHint?: string }[],
+): void {
 	console.log(
 		`${goal} has stuck Tickets. Check the Goal's worktree, then reset each one:`,
 	);
-	for (const ticket of stuck) {
+	for (const { ticket, resumeHint } of stuck) {
 		console.log(`  ${ticket.name}: ${resetCommand(ticket)}`);
+		if (resumeHint !== undefined) console.log(`    resume: ${resumeHint}`);
 	}
 }
 

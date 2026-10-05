@@ -17,6 +17,7 @@ import {
 	readTicketFile,
 	rewriteHeader,
 	type TicketHeader,
+	type TicketRunTable,
 } from "./header.ts";
 import { readTicketFolder, ticketFilePath } from "./ticket-folder.ts";
 
@@ -77,6 +78,11 @@ export type TicketRun = {
 	harness?: string;
 	/** The model an agent Step ran on. Absent like `harness`. */
 	model?: string;
+	/**
+	 * The id of an agent Run's Harness session, there from when the Harness
+	 * reported it, so a Run still going or one cut off has it too.
+	 */
+	sessionId?: string;
 	/** What the Harness reported the Run used. Absent like `costUsd`. */
 	tokens?: { input: number; output: number };
 	/** What the Harness reported the Run cost. Absent for a shell Step. */
@@ -220,6 +226,7 @@ export async function readGoal(root: string, goal: string): Promise<GoalState> {
 			log: runLogPath(ticket, run.log),
 			harness: run.harness,
 			model: run.model,
+			sessionId: run.session_id,
 			tokens: run.tokens,
 			costUsd: run.cost_usd,
 			inGoalReport: run.goal_report === true,
@@ -435,9 +442,23 @@ export async function recordRunStart(
 }
 
 /**
+ * Writes `sessionId`, the id the Run's Harness reported for its session, to
+ * `entry` while the Run is still going, so a Run that never ends still says
+ * which session to resume.
+ */
+export async function recordRunSession(
+	entry: TicketRunEntry,
+	sessionId: string,
+): Promise<void> {
+	await rewriteHeader(ticketFile(entry.ticket), (header) => {
+		runTable(header, entry).session_id = sessionId;
+	});
+}
+
+/**
  * Closes `entry` with when its Run ended, its outcome as spelled in the
- * header (`ok`, `exit 1`) and, for an agent Step, what its Harness session
- * reported.
+ * header (`ok`, `exit 1`) and, for an agent Step, the tokens and cost its
+ * Harness session reported. Its session id is `recordRunSession`'s to write.
  */
 export async function recordRunEnd(
 	entry: TicketRunEntry,
@@ -445,18 +466,25 @@ export async function recordRunEnd(
 	ended: Date,
 	session?: HarnessSessionReport,
 ): Promise<void> {
-	const file = ticketFile(entry.ticket);
-	await rewriteHeader(file, (header) => {
-		const table = header.runs?.[entry.position - 1];
-		if (table === undefined) {
-			throw new Error(`${file} has no [[runs]] entry ${entry.position}`);
-		}
+	await rewriteHeader(ticketFile(entry.ticket), (header) => {
+		const table = runTable(header, entry);
 		table.ended = ended;
 		table.outcome = outcome;
-		if (session?.sessionId !== undefined) table.session_id = session.sessionId;
 		if (session?.tokens !== undefined) table.tokens = session.tokens;
 		if (session?.costUsd !== undefined) table.cost_usd = session.costUsd;
 	});
+}
+
+// The `[[runs]]` table of `header`, the header of `entry`'s Ticket file, that
+// `entry` points at.
+function runTable(header: TicketHeader, entry: TicketRunEntry): TicketRunTable {
+	const table = header.runs?.[entry.position - 1];
+	if (table === undefined) {
+		throw new Error(
+			`${ticketFile(entry.ticket)} has no [[runs]] entry ${entry.position}`,
+		);
+	}
+	return table;
 }
 
 /**

@@ -13,7 +13,7 @@ import {
 	printWorktree,
 	printWorktreeClose,
 } from "./progress.ts";
-import { runStep, spellOutcome } from "./step-runner.ts";
+import { resumeHintFor, runStep, spellOutcome } from "./step-runner.ts";
 import {
 	addTicket,
 	closeOpenRun,
@@ -118,7 +118,13 @@ async function runClaimedGoal(root: string, goal: string): Promise<GoalEnd> {
 	state = await readGoal(root, goal);
 	const stuck = state.tickets
 		.filter(({ status }) => status === "stuck")
-		.map(({ ticket }) => ticket);
+		.map(({ ticket, runs }) => {
+			const last = runs.at(-1);
+			return {
+				ticket,
+				resumeHint: last === undefined ? undefined : resumeHintFor(last),
+			};
+		});
 	if (stuck.length > 0) {
 		printStuckRefusal(goal, stuck);
 		return "unfinished";

@@ -30,6 +30,9 @@ const TicketHeader = z.looseObject({
 	runs: z.array(RunEntry).optional(),
 });
 
+/** One `[[runs]]` table of a Ticket file's header, spelled as in the file. */
+export type TicketRunTable = z.infer<typeof RunEntry>;
+
 /** A Ticket file's header, with the fields as spelled in the file. */
 export type TicketHeader = z.infer<typeof TicketHeader>;
 

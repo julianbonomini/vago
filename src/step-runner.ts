@@ -13,9 +13,11 @@ import {
 	readRunLog,
 	readTicketBody,
 	recordRunEnd,
+	recordRunSession,
 	recordRunStart,
 	type Ticket,
 	type TicketRun,
+	type TicketRunEntry,
 } from "./tickets/tickets.ts";
 import { type AgentStep, buildPrompt, type Step } from "./workflow.ts";
 
@@ -92,7 +94,7 @@ export async function runStep(
 		if (step.type === "agent") {
 			({ outcome, session, resumeHint } = await runAgent(
 				step,
-				ticket,
+				entry,
 				worktree,
 				stepOutputs,
 				fd,
@@ -157,11 +159,23 @@ export async function readAgentRunOutput(run: TicketRun): Promise<string> {
 	return resultText ?? "";
 }
 
+/**
+ * The command that resumes `run`'s Harness session, or undefined for a shell
+ * Run and for a session that never reported its id.
+ */
+export function resumeHintFor(run: TicketRun): string | undefined {
+	if (run.harness === undefined || run.sessionId === undefined)
+		return undefined;
+	return findHarness(run.harness).resumeHint(run.sessionId);
+}
+
 // The log gets the raw stream and stderr together, so a Harness that fails
 // before streaming (bad login, unknown model) still leaves its reason there.
+// The session id goes to `entry` as soon as the Harness reports it, so a Run
+// still going, or one whose `vago` died, can be resumed.
 async function runAgent(
 	step: AgentStep,
-	ticket: Ticket,
+	entry: TicketRunEntry,
 	worktree: string,
 	stepOutputs: ReadonlyMap<string, string>,
 	fd: number,
@@ -171,6 +185,7 @@ async function runAgent(
 	session: HarnessSessionReport;
 	resumeHint?: string;
 }> {
+	const { ticket } = entry;
 	const prompt = buildPrompt(step, {
 		ticket: await readTicketBody(ticket),
 		goal: await readGoalBody(ticket.root, ticket.goal),
@@ -190,6 +205,16 @@ async function runAgent(
 	const exit = exitCodeOf(child, AbortSignal.any([interrupt, idle.signal]));
 	const idleTimer = setTimeout(() => idle.abort(), step.idleTimeoutMs);
 	let session: HarnessSessionReport = {};
+	const readLine = async (line: string) => {
+		const report = harness.readLine(line, command);
+		if (
+			report.sessionId !== undefined &&
+			report.sessionId !== session.sessionId
+		) {
+			await recordRunSession(entry, report.sessionId);
+		}
+		session = { ...session, ...report };
+	};
 	const decoder = new TextDecoder();
 	let partial = "";
 	for await (const chunk of child.stdout) {
@@ -200,15 +225,10 @@ async function runAgent(
 			"\n",
 		);
 		partial = lines.pop() ?? "";
-		for (const line of lines) {
-			session = { ...session, ...harness.readLine(line, command) };
-		}
+		for (const line of lines) await readLine(line);
 	}
 	clearTimeout(idleTimer);
-	session = {
-		...session,
-		...harness.readLine(partial + decoder.decode(), command),
-	};
+	await readLine(partial + decoder.decode());
 	const code = await exit;
 	// A session out of the mode asked for is why its calls were denied, so
 	// the fallback is the reason to name.
