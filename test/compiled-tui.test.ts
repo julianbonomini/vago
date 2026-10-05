@@ -69,12 +69,19 @@ function openVago(cwd: string, env: Record<string, string> = {}): TerminalVago {
 const rowOf = (lines: string[], text: string) =>
 	lines.findIndex((line) => line.includes(text));
 
+// The row of the Goals box's title with the selected Goal's `position` on its
+// right, like `2/3`.
+const goalsAt = (lines: string[], position: string) =>
+	lines.findIndex(
+		(line) => line.startsWith("  Goals ") && line.endsWith(` ${position}`),
+	);
+
 test("↓ moves the selection and no row shifts", async () => {
 	const tui = openVago(await projectWithGoals(["alpha", "beta", "gamma"]));
-	const first = await tui.screen.frameWhere((lines) =>
-		["alpha", "beta", "gamma", " 1/3 "].every(
-			(text) => rowOf(lines, text) !== -1,
-		),
+	const first = await tui.screen.frameWhere(
+		(lines) =>
+			["alpha", "beta", "gamma"].every((text) => rowOf(lines, text) !== -1) &&
+			goalsAt(lines, "1/3") !== -1,
 	);
 
 	tui.press("\x1b[B");
@@ -82,7 +89,7 @@ test("↓ moves the selection and no row shifts", async () => {
 		(lines) => lines.join("\n") !== first.join("\n"),
 	);
 
-	expect(rowOf(second, " 2/3 ")).not.toBe(-1);
+	expect(goalsAt(second, "2/3")).not.toBe(-1);
 	for (const name of ["alpha", "beta", "gamma"]) {
 		expect(rowOf(second, name)).toBe(rowOf(first, name));
 	}
@@ -93,7 +100,7 @@ test("↓ moves the selection and no row shifts", async () => {
 // Opens `vago` on a Project of three Goals and waits for its first frame.
 async function openOnGoals(): Promise<TerminalVago> {
 	const tui = openVago(await projectWithGoals(["alpha", "beta", "gamma"]));
-	await tui.screen.frameWhere((lines) => rowOf(lines, " 1/3 ") !== -1);
+	await tui.screen.frameWhere((lines) => goalsAt(lines, "1/3") !== -1);
 	return tui;
 }
 
@@ -173,8 +180,8 @@ test("a Ticket changed on disk shows in the next frame, redrawing only its row",
 	const ticket = join(root, ".vago-goals/gamma/tickets/01-first.md");
 	await Bun.write(ticket, ticketText("ready"));
 	const tui = openVago(root);
-	const first = await tui.screen.frameWhere((lines) =>
-		[" 1/3 ", "gamma"].every((text) => rowOf(lines, text) !== -1),
+	const first = await tui.screen.frameWhere(
+		(lines) => goalsAt(lines, "1/3") !== -1 && rowOf(lines, "gamma") !== -1,
 	);
 	const noted = tui.screen.printed().length;
 
@@ -202,17 +209,17 @@ test("with nothing changing vago writes nothing, and a key lands at once", async
 
 	tui.press("\x1b[B");
 	// The quiet window of `frameWhere` and less than a quarter of a re-read.
-	await tui.screen.frameWhere((lines) => rowOf(lines, " 2/3 ") !== -1, 200);
+	await tui.screen.frameWhere((lines) => goalsAt(lines, "2/3") !== -1, 200);
 	tui.kill("SIGKILL");
 });
 
 test("under NO_COLOR vago prints no RGB colour, scrollbar and keys included", async () => {
 	const names = Array.from({ length: 20 }, (_, index) => `goal-${index}`);
 	const tui = openVago(await projectWithGoals(names), { NO_COLOR: "1" });
-	await tui.screen.frameWhere((lines) => rowOf(lines, " 1/20 ") !== -1);
+	await tui.screen.frameWhere((lines) => goalsAt(lines, "1/20") !== -1);
 
 	tui.press("G");
-	await tui.screen.frameWhere((lines) => rowOf(lines, " 20/20 ") !== -1);
+	await tui.screen.frameWhere((lines) => goalsAt(lines, "20/20") !== -1);
 	tui.press("?");
 	await tui.screen.frameWhere((lines) => rowOf(lines, " Keys ") !== -1);
 
@@ -233,7 +240,7 @@ test("vago started in a Goal's worktree shows the main checkout's Goals", async 
 	const tui = openVago(worktree);
 
 	const frame = await tui.screen.frameWhere(
-		(lines) => rowOf(lines, " 1/2 ") !== -1,
+		(lines) => goalsAt(lines, "1/2") !== -1,
 	);
 	expect(rowOf(frame, " alpha ")).not.toBe(-1);
 	expect(rowOf(frame, " beta ")).not.toBe(-1);
@@ -257,13 +264,13 @@ test("an open Goal shows what its open Run's log adds in the next frame", async 
 	const { root, log } = await goalOnOpenRun();
 	await heldLock(root, "live");
 	const tui = openVago(root);
-	await tui.screen.frameWhere((lines) => rowOf(lines, " 1/1 ") !== -1);
+	await tui.screen.frameWhere((lines) => goalsAt(lines, "1/1") !== -1);
 	tui.press("\r");
-	await tui.screen.frameWhere((lines) => rowOf(lines, "│ first line") !== -1);
+	await tui.screen.frameWhere((lines) => rowOf(lines, "  first line") !== -1);
 
 	await Bun.write(log, "first line\nsecond line\n");
 
-	await tui.screen.frameWhere((lines) => rowOf(lines, "│ second line") !== -1);
+	await tui.screen.frameWhere((lines) => rowOf(lines, "  second line") !== -1);
 	expect(tui.screen.scrolls()).toBe(0);
 	tui.kill("SIGKILL");
 });
@@ -272,9 +279,9 @@ test("with nothing changing the Goal view writes nothing", async () => {
 	// No `vago run` holds the Goal, so its open Run is lost and no clock runs.
 	const { root } = await goalOnOpenRun();
 	const tui = openVago(root);
-	await tui.screen.frameWhere((lines) => rowOf(lines, " 1/1 ") !== -1);
+	await tui.screen.frameWhere((lines) => goalsAt(lines, "1/1") !== -1);
 	tui.press("\r");
-	await tui.screen.frameWhere((lines) => rowOf(lines, "│ first line") !== -1);
+	await tui.screen.frameWhere((lines) => rowOf(lines, "  first line") !== -1);
 	const drawn = tui.screen.printed().length;
 
 	await Bun.sleep(2500);
@@ -290,7 +297,7 @@ test("a Goal started with s keeps running after q, and its output stays off the 
 		".vago-goals/a/tickets/01-t.md": ticketText("ready"),
 	});
 	const tui = openVago(root);
-	await tui.screen.frameWhere((lines) => rowOf(lines, " 1/1 ") !== -1);
+	await tui.screen.frameWhere((lines) => goalsAt(lines, "1/1") !== -1);
 
 	tui.press("s");
 	await tui.screen.frameWhere((lines) => rowOf(lines, "01 work") !== -1);

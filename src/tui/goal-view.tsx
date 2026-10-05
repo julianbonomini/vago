@@ -33,6 +33,7 @@ import type {
 	GoalTicketStep,
 } from "./goal-tickets.ts";
 import { sharedLine, usePane } from "./pane-grid.ts";
+import { PaneTitle } from "./pane-title.tsx";
 import {
 	activityItemId,
 	editIndexes,
@@ -245,9 +246,15 @@ export function GoalView(props: {
 		else if (key.name === "]") props.onNeighbour(1);
 		else if (key.name === "s")
 			setNotice(startGoal(props.vago, props.root, props.row));
-		else if (key.name === "e") moveEdit(key.shift ? 1 : -1);
-		else if (key.name === "d") showDiff(!diffOpen());
-		else if (key.name === "t") openFullScreen("ticket");
+		// The selected edit is filled only in the focused pane, so picking
+		// one focuses the Run.
+		else if (key.name === "e") {
+			setFocus("run");
+			moveEdit(key.shift ? 1 : -1);
+		} else if (key.name === "d") {
+			setFocus("run");
+			showDiff(!diffOpen());
+		} else if (key.name === "t") openFullScreen("ticket");
 		else if (key.name === "r") openFullScreen("run");
 		else if (key.name === "up" || key.name === "k") moveInFocus(-1);
 		else if (key.name === "down" || key.name === "j") moveInFocus(1);
@@ -272,12 +279,16 @@ export function GoalView(props: {
 				sharedLine) *
 				topShare,
 		);
-	// Enough rows for every Run, between 3 and 8, and at most a third of the
-	// top's, so the Tickets keep the most.
+	// Enough rows for every Run, between 4 and 9, and at most a third of the
+	// top's and the title row, so the Tickets keep the most.
 	const runsRows = () =>
 		Math.max(
-			3,
-			Math.min((ticket()?.runs.length ?? 0) + 2, 8, Math.floor(topRows() / 3)),
+			4,
+			Math.min(
+				(ticket()?.runs.length ?? 0) + 3,
+				9,
+				Math.floor(topRows() / 3) + 1,
+			),
 		);
 	return (
 		<box flexDirection="column" flexGrow={1}>
@@ -431,12 +442,12 @@ const paneEdges = 4;
 const headerRows = 1;
 const footerRows = 1;
 
-// The Goal box's rows: its border, its bar and numbers, and, while the Goal
-// is lost, the line saying so.
-const goalBoxRows = (lost: boolean) => (lost ? 5 : 4);
+// The Goal box's rows: its border, its title, its bar and numbers, and,
+// while the Goal is lost, the line saying so.
+const goalBoxRows = (lost: boolean) => (lost ? 6 : 5);
 
-// The Goal box, `width` columns wide, titled with the Goal's place in the
-// Project list, its symbol and its name, over its progress bar and a line of
+// The Goal box, `width` columns wide, titled with the Goal's symbol and name
+// and its place in the Project list, over its progress bar and a line of
 // its numbers, labels dim and values bold, and for a lost Goal a line saying
 // no `vago run` runs it. The Goal's title takes what the numbers leave.
 function GoalBox(props: {
@@ -454,8 +465,6 @@ function GoalBox(props: {
 		style: { fg, bold: true },
 	});
 	const label = (text: string) => ({ text, style: dimSpan });
-	const title = () =>
-		`Goal ${props.position}/${props.count} ${symbol.sep} ${symbol[props.row.standing]} ${props.row.goal}`;
 	const numbers = () =>
 		fitSpans(
 			[
@@ -473,13 +482,16 @@ function GoalBox(props: {
 			],
 			inner(),
 		);
-	const pane = usePane(() => ({
-		title: ` ${title()} `,
-		titleColor: goalColor(props.row.standing),
-		focused: false,
-	}));
+	const pane = usePane();
 	return (
 		<box ref={pane} border paddingLeft={1} paddingRight={1} flexShrink={0}>
+			<PaneTitle
+				title={`${symbol[props.row.standing]} ${props.row.goal}`}
+				aside={`Goal ${props.position}/${props.count}`}
+				titleColor={goalColor(props.row.standing)}
+				focused={false}
+				width={inner()}
+			/>
 			<text fg={color.fg} flexShrink={0} wrapMode="none">
 				<TicketBar
 					tickets={props.row.ticketCounts}
@@ -513,8 +525,9 @@ const ticketRowId = (number: string) => `ticket-row-${number}`;
 
 // Every Ticket of the Goal, one row each, `width` columns wide with its
 // border and as tall as its parent leaves it: its symbol, number, state word
-// and title, the `selected`th in the selection's colours and scrolled into
-// view, its border in the accent when `focused`. A click anywhere on it calls
+// and title, the `selected`th scrolled into view and in the selection's
+// colours when `focused`, else the idle selection's, the title in the focus look when
+// `focused`. A click anywhere on it calls
 // `onClick`, and on a Ticket `onPick` first, with that Ticket's index.
 function TicketsPane(props: {
 	tickets: GoalTicket[];
@@ -524,18 +537,14 @@ function TicketsPane(props: {
 	onClick: () => void;
 	onPick: (index: number) => void;
 }): JSX.Element {
-	const { color, symbol, selection } = theme();
+	const { color, symbol, selection, idleSelection } = theme();
 	let list: ScrollBoxRenderable | undefined;
 	createEffect(() => {
 		const ticket = props.tickets[props.selected];
 		if (ticket !== undefined)
 			list?.scrollChildIntoView(ticketRowId(ticket.number));
 	});
-	const pane = usePane(() => ({
-		title: " Tickets ",
-		bottomTitle: ` ${props.selected + 1}/${props.tickets.length} `,
-		focused: props.focused,
-	}));
+	const pane = usePane();
 	return (
 		<box
 			ref={pane}
@@ -545,6 +554,12 @@ function TicketsPane(props: {
 			flexGrow={1}
 			onMouseDown={props.onClick}
 		>
+			<PaneTitle
+				title="Tickets"
+				aside={`${props.selected + 1}/${props.tickets.length}`}
+				focused={props.focused}
+				width={props.width - paneEdges}
+			/>
 			<scrollbox
 				ref={(box: ScrollBoxRenderable) => {
 					list = box;
@@ -555,11 +570,12 @@ function TicketsPane(props: {
 				<For each={props.tickets}>
 					{(ticket, index) => {
 						const selected = () => index() === props.selected;
-						// The selected row is drawn in the selection's colours
+						const filled = () => selected() && props.focused;
+						// The filled row is drawn in the selection's colours
 						// throughout, so its own colours don't fight the highlight.
-						const fg = (own: ColorInput) => (selected() ? selection.fg : own);
+						const fg = (own: ColorInput) => (filled() ? selection.fg : own);
 						const markStyle = () =>
-							selected() ? { fg: selection.fg } : ticketMarkStyle(ticket.mark);
+							filled() ? { fg: selection.fg } : ticketMarkStyle(ticket.mark);
 						const spans = () =>
 							fitSpans(
 								[
@@ -582,8 +598,20 @@ function TicketsPane(props: {
 								id={ticketRowId(ticket.number)}
 								onMouseDown={() => props.onPick(index())}
 								fg={fg(color.fg)}
-								bg={selected() ? selection.bg : undefined}
-								attributes={selected() ? selection.attributes : 0}
+								bg={
+									filled()
+										? selection.bg
+										: selected()
+											? idleSelection.bg
+											: undefined
+								}
+								attributes={
+									filled()
+										? selection.attributes
+										: selected()
+											? idleSelection.attributes
+											: 0
+								}
 								flexShrink={0}
 								wrapMode="none"
 							>
@@ -603,8 +631,9 @@ function TicketsPane(props: {
 // the Tickets' right one when `besideTickets`: its title,
 // the Tickets it comes after, its Workflow's Steps marked, or why the
 // Workflow can't be read, and its text wrapped to the pane, scrolled by the
-// wheel and in `scrollRef`'s scrollbox. Its Runs' totals sit on its border,
-// in the accent when `focused`. A click on it calls `onClick`.
+// wheel and in `scrollRef`'s scrollbox. Its Runs' totals sit on its title
+// row, the title in the focus look when `focused`. A click on it calls
+// `onClick`.
 function TicketPane(props: {
 	ticket: GoalTicket;
 	width: number;
@@ -621,11 +650,7 @@ function TicketPane(props: {
 			duration(props.ticket.runsMs),
 			money(props.ticket.costUsd),
 		].join(` ${symbol.sep} `);
-	const pane = usePane(() => ({
-		title: ` Ticket ${props.ticket.number} `,
-		bottomTitle: ` ${totals()} `,
-		focused: props.focused,
-	}));
+	const pane = usePane();
 	return (
 		<box
 			ref={pane}
@@ -636,6 +661,12 @@ function TicketPane(props: {
 			flexGrow={1}
 			onMouseDown={props.onClick}
 		>
+			<PaneTitle
+				title={`Ticket ${props.ticket.number}`}
+				aside={totals()}
+				focused={props.focused}
+				width={inner()}
+			/>
 			<For each={wrapText(props.ticket.title, inner())}>
 				{(line) => (
 					<text
@@ -739,8 +770,9 @@ const runRowId = (index: number) => `run-row-${index}`;
 const positionWidth = 3;
 
 // The Runs of `ticket`, `width` columns wide and `height` rows tall with its
-// border, one `RunLine` each led by its position, the border in the accent
-// when `focused`. The `selected`th is bold and scrolled into view. A click
+// border, one `RunLine` each led by its position, the title in the focus
+// look when `focused`. The `selected`th is scrolled into view, in the
+// selection's colours when `focused`, else the idle selection's. A click
 // anywhere on it calls `onClick`, and on a Run `onPick` first, with that
 // Run's index.
 function RunsPane(props: {
@@ -758,15 +790,14 @@ function RunsPane(props: {
 		list?.scrollChildIntoView(runRowId(props.selected));
 	createEffect(showSelected);
 	const runs = () => props.ticket?.runs ?? [];
-	// The grid drops a title too long for its border, so a narrow pane says
-	// only Runs.
+	// A narrow pane says only Runs.
 	const title = () => {
-		const long = ` Runs of Ticket ${props.ticket?.number} `;
+		const long = `Runs of Ticket ${props.ticket?.number}`;
 		return props.ticket === undefined || long.length > props.width - paneEdges
-			? " Runs "
+			? "Runs"
 			: long;
 	};
-	const pane = usePane(() => ({ title: title(), focused: props.focused }));
+	const pane = usePane();
 	return (
 		<box
 			ref={pane}
@@ -778,6 +809,11 @@ function RunsPane(props: {
 			flexShrink={0}
 			onMouseDown={props.onClick}
 		>
+			<PaneTitle
+				title={title()}
+				focused={props.focused}
+				width={props.width - paneEdges}
+			/>
 			<Show
 				when={runs().length > 0}
 				fallback={
@@ -810,7 +846,13 @@ function RunsPane(props: {
 									lead={`${index() + 1}`.padEnd(positionWidth)}
 									run={run}
 									width={props.width - paneEdges}
-									bold={index() === props.selected}
+									selection={
+										index() !== props.selected
+											? undefined
+											: props.focused
+												? "focused"
+												: "idle"
+									}
 								/>
 							</box>
 						)}
@@ -874,15 +916,16 @@ function liveRunLog(
 
 // The `selected`th Run of `ticket` across the screen, `width` columns wide
 // with its border, titled with its position, Ticket and Step, its outcome,
-// duration and, for an agent Step, cost on its border, or while it is open
-// its tokens and cost so far. An agent Step's Run shows its `activity`, the
+// duration and, for an agent Step, cost beside the title, or while it is
+// open its tokens and cost so far. An agent Step's Run shows its `activity`, the
 // `selectedEdit`th item selected, or in its place the edit `diff`'s diff, and
 // a shell Step's Run its `log` as text, both scrolled by the wheel, and
 // both undefined until the log is first read. An open Run opens at its
 // bottom and follows what it adds until scrolled up, and `scrollRef` gets
 // each Run's scrollbox, to scroll it and to follow again by scrolling it to
-// its bottom, and `diffRef` each diff's. The border is in the accent when
-// `focused`, and a click on it calls `onClick`.
+// its bottom, and `diffRef` each diff's. The title is in the focus look and
+// the selected edit filled when `focused`, and a click on it calls
+// `onClick`.
 function RunPane(props: {
 	ticket: GoalTicket | undefined;
 	selected: number;
@@ -902,8 +945,8 @@ function RunPane(props: {
 	const title = () => {
 		const shown = run();
 		return shown === undefined
-			? " Run "
-			: ` Run ${props.selected + 1} ${symbol.sep} ${props.ticket?.number} ${shown.stepName} `;
+			? "Run"
+			: `Run ${props.selected + 1} ${symbol.sep} ${props.ticket?.number} ${shown.stepName}`;
 	};
 	const numbers = () => {
 		const shown = run();
@@ -912,23 +955,19 @@ function RunPane(props: {
 		if (shown.state !== "ended") {
 			const after = shown.state === "lost" ? "after " : "";
 			const spent = props.activity?.spent;
-			return ` ${[
+			return [
 				`${mark} ${after}${duration(shown.durationMs)}`,
 				...(spent === undefined ? [] : [`${tokenCount(spent.tokens)} tokens`]),
 				...(spent?.costUsd === undefined ? [] : [money(spent.costUsd)]),
-			].join(` ${symbol.sep} `)} `;
+			].join(` ${symbol.sep} `);
 		}
-		return ` ${[
+		return [
 			mark,
 			duration(shown.durationMs),
 			...(shown.costUsd === undefined ? [] : [money(shown.costUsd)]),
-		].join(` ${symbol.sep} `)} `;
+		].join(` ${symbol.sep} `);
 	};
-	const pane = usePane(() => ({
-		title: title(),
-		bottomTitle: numbers(),
-		focused: props.focused,
-	}));
+	const pane = usePane();
 	return (
 		<box
 			ref={pane}
@@ -938,6 +977,12 @@ function RunPane(props: {
 			flexGrow={1}
 			onMouseDown={props.onClick}
 		>
+			<PaneTitle
+				title={title()}
+				aside={numbers()}
+				focused={props.focused}
+				width={props.width - paneEdges}
+			/>
 			<Show
 				when={run()?.log}
 				keyed
@@ -970,6 +1015,7 @@ function RunPane(props: {
 								activity={shown()}
 								live={live()}
 								selected={props.selectedEdit}
+								filled={props.focused}
 								width={props.width - paneEdges}
 							/>
 						)}

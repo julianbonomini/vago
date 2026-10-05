@@ -26,6 +26,7 @@ import {
 import { startGoal } from "./goal-start.ts";
 import { GoalView } from "./goal-view.tsx";
 import { usePane } from "./pane-grid.ts";
+import { PaneTitle } from "./pane-title.tsx";
 import {
 	type FooterKey,
 	type HelpKey,
@@ -174,15 +175,9 @@ export function ProjectView(props: {
 	const position = () => {
 		const list = rows();
 		if (list === undefined) return undefined;
-		return list.length === 0
-			? " 0/0 "
-			: ` ${selectedIndex() + 1}/${list.length} `;
+		return list.length === 0 ? "0/0" : `${selectedIndex() + 1}/${list.length}`;
 	};
-	const goalsPane = usePane(() => ({
-		title: " Goals ",
-		bottomTitle: position(),
-		focused: false,
-	}));
+	const goalsPane = usePane();
 	const terminal = useTerminalDimensions();
 	const wide = () => terminal().width >= wideFrom;
 	// The Goals box takes what its rows need, up to its share of the screen,
@@ -269,6 +264,12 @@ export function ProjectView(props: {
 					height={goalsBoxChrome + shownRows()}
 					flexShrink={0}
 				>
+					<PaneTitle
+						title="Goals"
+						aside={position()}
+						focused={true}
+						width={terminal().width - boxEdges}
+					/>
 					<text {...dimText} flexShrink={0} wrapMode="none">
 						{`${"  STATE".padEnd(stateWidth)}${"GOAL".padEnd(nameWidth())} ${"TICKETS".padEnd(ticketsWidth)}${wide() ? `${"RUN TIME".padEnd(timesWidth)}${"COST".padEnd(timesWidth)}` : ""}${fitText("NOW", widths().now)}${fitText("TITLE", widths().title)}`}
 					</text>
@@ -388,8 +389,9 @@ function HeaderLine(props: {
 
 // The Goals box's border and padding, on both sides.
 const boxEdges = 4;
-// The Goals box's lines around its rows: its border and the column names.
-const goalsBoxChrome = 3;
+// The Goals box's lines around its rows: its border, its title and the
+// column names.
+const goalsBoxChrome = 4;
 // The most of the screen's height the Goals box takes, and the fewest rows
 // it shows, so the preview below keeps its slots.
 const goalsShare = 0.4;

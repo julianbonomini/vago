@@ -1,5 +1,5 @@
 // The TUI's look: the colour tokens every text takes, the symbols, the box
-// borders and a focused pane's, which colour each Goal standing and Ticket
+// borders, a focused pane's title, which colour each Goal standing and Ticket
 // status is drawn in, and the look of each Ticket, Step and Run mark, with
 // `NO_COLOR` and `VAGO_ASCII` already applied. No view names a colour, a
 // glyph or an environment variable of its own.
@@ -80,10 +80,10 @@ export type Theme = {
 	/** Every box's border, as a box's `customBorderChars` takes it. */
 	border: BorderCharacters;
 	/**
-	 * The focused pane's border, as the pane grid draws it: heavier lines
-	 * under `NO_COLOR`, where no accent tells the pane apart.
+	 * The focused pane's title, as a `<span>`'s style takes it: the accent,
+	 * or underlined under `NO_COLOR`, where no accent tells the pane apart.
 	 */
-	focusBorder: BorderCharacters;
+	focusTitle: { fg: ColorInput; underline: boolean };
 	/** Whether scrollbars show: their glyphs have no ASCII form. */
 	scrollbars: boolean;
 	/**
@@ -96,6 +96,12 @@ export type Theme = {
 	dimText: { fg: ColorInput; attributes: number };
 	dimSpan: { fg: ColorInput; dim: boolean };
 	selection: ThemeSelection;
+	/**
+	 * How the selected row of a pane without the focus is drawn, keeping
+	 * its own colours: a grey behind it, or underlined under `NO_COLOR`,
+	 * where the focused pane's is inverse.
+	 */
+	idleSelection: { bg: ColorInput | undefined; attributes: number };
 };
 
 /**
@@ -212,9 +218,13 @@ export function runMarkLook(
 	return { text: `${symbol.stuck} ${outcome}`, fg: color.bad };
 }
 
-// One orange accent on near-black, as the human picked in the prototype.
+const terminalForeground = RGBA.defaultForeground();
+const terminalBackground = RGBA.defaultBackground();
+
+// One orange accent on the terminal's own background, which every cell
+// shares, the panes' lines included.
 const palette: ThemeColors = {
-	bg: "#0c0c0c",
+	bg: terminalBackground,
 	fg: "#d6d6d6",
 	faint: "#4a4a4a",
 	border: "#2e2e2e",
@@ -229,8 +239,11 @@ const palette: ThemeColors = {
 // Secondary text, which takes no token of its own.
 const grey = "#7a7a7a";
 
-const terminalForeground = RGBA.defaultForeground();
-const terminalBackground = RGBA.defaultBackground();
+// The selected row's text, dark on the accent.
+const onAccent = "#0c0c0c";
+
+// Behind the selected row of a pane without the focus.
+const idleGrey = "#3a3a3a";
 
 // Every token is the terminal's own colour, so meaning rests on the symbols,
 // DIM and INVERSE.
@@ -315,50 +328,23 @@ const asciiLines: BorderCharacters = {
 	cross: "+",
 };
 
-const heavyLines: BorderCharacters = {
-	topLeft: "┏",
-	topRight: "┓",
-	bottomLeft: "┗",
-	bottomRight: "┛",
-	horizontal: "━",
-	vertical: "┃",
-	topT: "┳",
-	bottomT: "┻",
-	leftT: "┣",
-	rightT: "┫",
-	cross: "╋",
-};
-
-const heavyAsciiLines: BorderCharacters = {
-	topLeft: "#",
-	topRight: "#",
-	bottomLeft: "#",
-	bottomRight: "#",
-	horizontal: "=",
-	vertical: "#",
-	topT: "#",
-	bottomT: "#",
-	leftT: "#",
-	rightT: "#",
-	cross: "#",
-};
-
 const coloured: Theme = {
 	color: palette,
 	symbol: glyphs,
 	border: lines,
-	focusBorder: lines,
+	focusTitle: { fg: palette.accent, underline: false },
 	scrollbars: true,
 	dimText: { fg: grey, attributes: 0 },
 	dimSpan: { fg: grey, dim: false },
-	selection: { fg: palette.bg, bg: palette.accent, attributes: 0 },
+	selection: { fg: onAccent, bg: palette.accent, attributes: 0 },
+	idleSelection: { bg: idleGrey, attributes: TextAttributes.BOLD },
 };
 
 const plain: Theme = {
 	color: noPalette,
 	symbol: glyphs,
 	border: lines,
-	focusBorder: heavyLines,
+	focusTitle: { fg: terminalForeground, underline: true },
 	scrollbars: true,
 	dimText: { fg: terminalForeground, attributes: TextAttributes.DIM },
 	dimSpan: { fg: terminalForeground, dim: true },
@@ -367,13 +353,16 @@ const plain: Theme = {
 		bg: undefined,
 		attributes: TextAttributes.INVERSE,
 	},
+	idleSelection: {
+		bg: undefined,
+		attributes: TextAttributes.BOLD | TextAttributes.UNDERLINE,
+	},
 };
 
 const colouredAscii: Theme = {
 	...coloured,
 	symbol: asciiGlyphs,
 	border: asciiLines,
-	focusBorder: asciiLines,
 	scrollbars: false,
 };
 
@@ -381,6 +370,5 @@ const plainAscii: Theme = {
 	...plain,
 	symbol: asciiGlyphs,
 	border: asciiLines,
-	focusBorder: heavyAsciiLines,
 	scrollbars: false,
 };

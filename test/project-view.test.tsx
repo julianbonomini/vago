@@ -671,8 +671,7 @@ test("titles with CJK and emoji stay aligned, and long ones are cut to their col
 	const frame = await frameWith(view, "日本語");
 
 	const rows = ["a", "b", "c"].map((goal) => rowOf(frame, goal));
-	const borderAt = (row: string) => Bun.stringWidth(row.trimEnd()) - 1;
-	expect(rows.map(borderAt)).toEqual([119, 119, 119]);
+	expect(rows.map((row) => Bun.stringWidth(row))).toEqual([120, 120, 120]);
 	expect(rows[0]).toContain("日本語のタイトル 🚀");
 	expect((rows[1] ?? "").replace(/[ │]+$/, "").at(-1)).toBe("…");
 });
@@ -687,6 +686,7 @@ const tokens = [
 	"#8fae8b",
 	"#e5736b",
 	"#e0b357",
+	"#f0f0f0",
 ].map((hex) => RGBA.fromHex(hex));
 
 test("every text is drawn in one of the theme's colours", async () => {
@@ -707,7 +707,7 @@ test("every text is drawn in one of the theme's colours", async () => {
 test("at 80 wide the run time, cost and title columns drop out", async () => {
 	const root = await projectOfEveryStanding();
 
-	const view = await renderView(root);
+	const view = await renderView(root, { width: 80, height: 30 });
 	const frame = await frameWith(view, " 6 Goals");
 
 	const headings = frame.split("\n").find((line) => line.includes("STATE"));
@@ -812,7 +812,7 @@ test("a running Goal's preview shows its latest eight Runs, newest first", async
 		"● live",
 	);
 	expect(lineWith(frame, "step9")).toMatch(/✓ ok +5m 0s +\$1\.25/);
-	expect(lineWith(frame, "step8")).toMatch(/✓ ok +5m 0s +│/);
+	expect(lineWith(frame, "step8")).toMatch(/✓ ok +5m 0s +$/);
 	expect(lineWith(frame, "Workflow w")).toMatch(/last activity .+ ago/);
 	expect(frame).toContain("1/2 Tickets");
 });
@@ -880,7 +880,7 @@ test("the description reads as paragraphs and is cut to the space it has", async
 	expect(frame).toMatch(/columns line\d+ of/);
 	expect(frame).not.toContain("line39");
 	const lines = frame.trimEnd().split("\n");
-	expect(lines.at(-2)).toMatch(/^└─+ Workflow w/);
+	expect(lines.at(-2)).toMatch(/^ *$/);
 });
 
 test("moving the cursor shifts no row of the table or the preview", async () => {
@@ -1157,7 +1157,7 @@ test("under VAGO_ASCII=1 every symbol, bar and border is ASCII", async () => {
 	const frame = await frameWith(view, " 8 Goals");
 
 	expect(frame).toMatch(onlyAscii);
-	expect(rowOf(frame, "e-run")).toMatch(/^\| \* running +e-run +=+ 0\/1 /);
+	expect(rowOf(frame, "e-run")).toMatch(/^ {2}\* running +e-run +=+ 0\/1 /);
 	expect(rowOf(frame, "d-lost")).toContain("? lost");
 	expect(rowOf(frame, "c-stuck")).toContain("x stuck");
 	expect(rowOf(frame, "b-ready")).toContain("o ready");
@@ -1172,12 +1172,11 @@ test("under VAGO_ASCII=1 every symbol, bar and border is ASCII", async () => {
 // Whether no text of `frame` spills: every line inside a box ends on its
 // right border, and no row of the Goals box is drawn over.
 function holdsTogether(frame: string, width: number): void {
-	const lines = frame.split("\n").slice(0, -1);
-	const boxed = lines.filter((line) => line.startsWith("│"));
-	expect(boxed.length).toBeGreaterThan(0);
-	for (const line of boxed) {
+	const lines = frame.split("\n").slice(1, -2);
+	expect(lines.length).toBeGreaterThan(0);
+	for (const line of lines) {
 		expect(Bun.stringWidth(line)).toBe(width);
-		expect(line.at(-1)).toMatch(/[│█▀▄]/);
+		expect(line).toMatch(/^([─┬┴┼├┤]+| {2}.*[ █▀▄] )$/);
 	}
 }
 
@@ -1198,7 +1197,7 @@ for (const size of [
 		);
 		for (const goal of ["e-run", "d-lost", "c-stuck", "b-ready"]) {
 			expect(rowOf(frame, goal)).toMatch(
-				/^│ [●?✗○✓] \w+ +[\w-]+ +━+ \d+\/\d+ /,
+				/^ {2}[●?✗○✓] \w+ +[\w-]+ +━+ \d+\/\d+ /,
 			);
 		}
 		expect(frame).toContain("Workflow w");
@@ -1212,7 +1211,7 @@ test("a resize redraws the view to the new size", async () => {
 	await frameWith(view, " 6 Goals");
 
 	view.resize(60, 24);
-	const narrow = await frameWith(view, `${"─".repeat(30)}┐\n`);
+	const narrow = await frameWith(view, `\n${"─".repeat(60)}\n`);
 	holdsTogether(narrow, 60);
 
 	view.resize(120, 30);

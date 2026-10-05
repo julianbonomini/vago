@@ -24,7 +24,9 @@ import { duration, money, tokenCount } from "./time-and-money.ts";
 /**
  * `activity`, a Run's, `width` columns wide, its items one after another in
  * the order they happened, each with the id `activityItemId` gives it, the
- * `selected`th in the selection's colours. Only the first 40 lines of a
+ * `selected`th in the selection's colours when `filled`, else the idle
+ * selection's. Only
+ * the first 40 lines of a
  * prose message show, then how many more it has. While the Run is `live`,
  * open with a `vago run` running it, a trailing `working` line shows the
  * agent has the turn, and a call still running shows how long it has run,
@@ -34,6 +36,7 @@ export function RunActivityLines(props: {
 	activity: RunActivity;
 	live: boolean;
 	selected?: number;
+	filled: boolean;
 	width: number;
 }): JSX.Element {
 	const { color, symbol } = theme();
@@ -48,6 +51,7 @@ export function RunActivityLines(props: {
 						id={activityItemId(index())}
 						item={item}
 						selected={index() === props.selected}
+						filled={props.filled}
 						now={props.live ? now() : undefined}
 						width={props.width}
 					/>
@@ -156,32 +160,41 @@ const proseEdges = 4;
 const endEdges = 2;
 
 // One item of a Run's activity, `id` its id, in the selection's colours when
-// `selected`. Its running calls show their clock to `now` while the Run is
-// live, `now` undefined otherwise.
+// `selected` and `filled`, and the idle selection's when only `selected`.
+// Its running calls show their clock to `now` while the Run is live, `now`
+// undefined otherwise.
 function ActivityItem(props: {
 	id: string;
 	item: RunActivityItem;
 	selected: boolean;
+	filled: boolean;
 	now: Date | undefined;
 	width: number;
 }): JSX.Element {
-	const { color, symbol, dimText, selection } = theme();
+	const { color, symbol, dimText, selection, idleSelection } = theme();
 	const { item } = props;
+	const highlit = () => props.selected && props.filled;
 	const spansLine = (spans: () => StyledSpan[]) => (
 		<text
 			id={props.id}
 			fg={color.fg}
-			bg={props.selected ? selection.bg : undefined}
-			attributes={props.selected ? selection.attributes : 0}
+			bg={
+				highlit() ? selection.bg : props.selected ? idleSelection.bg : undefined
+			}
+			attributes={
+				highlit()
+					? selection.attributes
+					: props.selected
+						? idleSelection.attributes
+						: 0
+			}
 			flexShrink={0}
 			wrapMode="none"
 		>
 			<For each={fitSpans(spans(), props.width)}>
 				{(span) => (
 					<span
-						style={
-							props.selected ? { ...span.style, fg: selection.fg } : span.style
-						}
+						style={highlit() ? { ...span.style, fg: selection.fg } : span.style}
 					>
 						{span.text}
 					</span>

@@ -7,6 +7,7 @@ import type { JSX } from "@opentui/solid";
 import { For, Show } from "solid-js";
 import { type GoalRow, ticketTotal } from "./goal-rows.ts";
 import { sharedLine, usePane } from "./pane-grid.ts";
+import { PaneTitle } from "./pane-title.tsx";
 import { RunLine, runLineFieldsWidth } from "./run-line.tsx";
 import { fitText, wrapText } from "./text-fit.ts";
 import { theme } from "./theme.ts";
@@ -16,8 +17,8 @@ import { clock, day, duration } from "./time-and-money.ts";
 /**
  * The preview of the Goal `row` shows, `width` columns wide and as tall as
  * the space its parent gives it, its top line shared with the box over it.
- * Its border names the Goal at the top, and its Workflow, when it was created
- * and its last activity at the bottom.
+ * Its title row names the Goal, and its Workflow, when it was created and its
+ * last activity.
  */
 export function GoalPreview(props: {
 	row: GoalRow;
@@ -40,11 +41,7 @@ export function GoalPreview(props: {
 		props.row.created === undefined
 			? ""
 			: ` ${symbol.sep} created ${day(props.row.created)}`;
-	const pane = usePane(() => ({
-		title: ` ${props.row.goal} `,
-		bottomTitle: ` Workflow ${props.row.workflow}${created()} ${symbol.sep} ${activity()} `,
-		focused: false,
-	}));
+	const pane = usePane();
 	return (
 		<box
 			ref={pane}
@@ -55,6 +52,12 @@ export function GoalPreview(props: {
 			flexGrow={1}
 			overflow="hidden"
 		>
+			<PaneTitle
+				title={props.row.goal}
+				aside={`Workflow ${props.row.workflow}${created()} ${symbol.sep} ${activity()}`}
+				focused={false}
+				width={inner()}
+			/>
 			<text fg={color.fg} flexShrink={0} wrapMode="none">
 				{fitText(props.row.title, inner())}
 			</text>
