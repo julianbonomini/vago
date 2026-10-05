@@ -70,7 +70,12 @@ export type TicketRun = {
 	outcome?: string;
 	/** Absolute path of the Run's log. */
 	log: string;
-	/** The model an agent Step ran on. Absent for a shell Step. */
+	/**
+	 * The Harness an agent Step ran on, whose stream the log holds. Absent
+	 * for a shell Step, whose log is text.
+	 */
+	harness?: string;
+	/** The model an agent Step ran on. Absent like `harness`. */
 	model?: string;
 	/** What the Harness reported the Run used. Absent like `costUsd`. */
 	tokens?: { input: number; output: number };
@@ -102,6 +107,8 @@ export type GoalState = {
 		ticket: Ticket;
 		/** The first `# ` heading of the body, or the slug after `NN-`. */
 		title: string;
+		/** The body after the line of its title, or all of it with none. */
+		description: string;
 		status: TicketStatus;
 		/** The numbers of the Tickets this one waits on. */
 		blockedBy: number[];
@@ -193,6 +200,7 @@ export async function readGoal(root: string, goal: string): Promise<GoalState> {
 	const tickets = entries.map(({ ticket, header, body }) => ({
 		ticket,
 		title: headingTitle(body, ticket.name.replace(/^\d+-/, "")),
+		description: afterHeading(body),
 		status: header.status,
 		blockedBy: header.blocked_by ?? [],
 		workflow: header.workflow ?? workflow,
@@ -202,6 +210,7 @@ export async function readGoal(root: string, goal: string): Promise<GoalState> {
 			ended: run.ended,
 			outcome: run.outcome,
 			log: runLogPath(ticket, run.log),
+			harness: run.harness,
 			model: run.model,
 			tokens: run.tokens,
 			costUsd: run.cost_usd,
@@ -285,6 +294,58 @@ export async function addTicket(
  */
 export async function readTicketBody(ticket: Ticket): Promise<string> {
 	return (await readTicketFile(ticketFile(ticket))).body;
+}
+
+/** What `readRunLog` read of a Run's log. */
+export type RunLogRead = {
+	/** The text past the bytes skipped, up to the last whole character. */
+	added: string;
+	/** The bytes read up to now, to skip on the next read. */
+	end: number;
+};
+
+/**
+ * What the log at `log`, a `TicketRun`'s, holds past its first `from`
+ * bytes, so a growing log is read a piece at a time: `added` is "" when its
+ * Run hasn't written it yet or has written nothing since. A character cut
+ * by a write in progress is left for the next read.
+ */
+export async function readRunLog(log: string, from = 0): Promise<RunLogRead> {
+	const file = Bun.file(log);
+	if (!(await file.exists())) {
+		return { added: "", end: from };
+	}
+	const bytes = await file.slice(from).bytes();
+	const whole = wholeCharacters(bytes);
+	return {
+		added: new TextDecoder().decode(bytes.subarray(0, whole)),
+		end: from + whole,
+	};
+}
+
+/**
+ * When the log at `log`, a `TicketRun`'s, was last written; undefined while
+ * its Run hasn't written it yet.
+ */
+export async function runLogLastWritten(
+	log: string,
+): Promise<Date | undefined> {
+	const file = Bun.file(log);
+	return (await file.exists()) ? new Date(file.lastModified) : undefined;
+}
+
+// How many of `bytes`, UTF-8, end on a whole character: all of them, unless
+// the last character's bytes aren't all there yet.
+function wholeCharacters(bytes: Uint8Array): number {
+	// A character takes at most four bytes, the first not 10xxxxxx.
+	for (let start = bytes.length - 1; start >= bytes.length - 4; start--) {
+		const byte = bytes[start];
+		if (byte === undefined) return bytes.length;
+		if ((byte & 0xc0) === 0x80) continue;
+		const length = byte >= 0xf0 ? 4 : byte >= 0xe0 ? 3 : byte >= 0xc0 ? 2 : 1;
+		return start + length <= bytes.length ? bytes.length : start;
+	}
+	return bytes.length;
 }
 
 /**

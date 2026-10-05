@@ -84,17 +84,30 @@ export type FixtureRun = {
 	ended?: Date;
 	outcome?: string;
 	costUsd?: number;
+	tokens?: { input: number; output: number };
+	/** Makes the Run an agent Step's, on Claude Code, logging `.jsonl`. */
+	model?: string;
 };
 
 /**
- * A Ticket file with status `status` in a `+++` header, then a short body.
- * Each run gets a log path Vago never reads in these tests.
+ * A Ticket file with status `status` in a `+++` header, then `body`, a short
+ * one by default, going through `workflow` when given and the Goal's
+ * otherwise. Run N of step `s` logs to `logs/s-N.log`, or `.jsonl` for an
+ * agent Step's, in the Goal's folder.
  */
 export function ticketText(
 	status: "ready" | "running" | "done" | "stuck",
-	options: { runs?: FixtureRun[]; blockedBy?: number[] } = {},
+	options: {
+		runs?: FixtureRun[];
+		blockedBy?: number[];
+		workflow?: string;
+		body?: string;
+	} = {},
 ): string {
 	const lines = [`status = "${status}"`];
+	if (options.workflow !== undefined) {
+		lines.push(`workflow = "${options.workflow}"`);
+	}
 	if (options.blockedBy !== undefined) {
 		lines.push(`blocked_by = [${options.blockedBy.join(", ")}]`);
 	}
@@ -105,9 +118,18 @@ export function ticketText(
 			lines.push(`ended = ${run.ended.toISOString()}`);
 		if (run.outcome !== undefined) lines.push(`outcome = "${run.outcome}"`);
 		if (run.costUsd !== undefined) lines.push(`cost_usd = ${run.costUsd}`);
-		lines.push(`log = "logs/${run.step}-${index + 1}.log"`);
+		if (run.tokens !== undefined) {
+			lines.push(
+				`tokens = { input = ${run.tokens.input}, output = ${run.tokens.output} }`,
+			);
+		}
+		if (run.model !== undefined) {
+			lines.push('harness = "claude-code"', `model = "${run.model}"`);
+		}
+		const extension = run.model === undefined ? "log" : "jsonl";
+		lines.push(`log = "logs/${run.step}-${index + 1}.${extension}"`);
 	}
-	return `+++\n${lines.join("\n")}\n+++\n\n# A Ticket\n`;
+	return `+++\n${lines.join("\n")}\n+++\n\n${options.body ?? "# A Ticket\n"}`;
 }
 
 /** A `running.lock` held by a live process, until `release` is called. */

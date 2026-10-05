@@ -1,6 +1,7 @@
 // The TUI's look: the colour tokens every text takes, the symbols, the box
-// borders, and which colour each Goal standing and Ticket status is drawn in,
-// with `NO_COLOR` and `VAGO_ASCII` already applied. No view names a colour, a
+// borders and a focused pane's, which colour each Goal standing and Ticket
+// status is drawn in, and the look of each Ticket, Step and Run mark, with
+// `NO_COLOR` and `VAGO_ASCII` already applied. No view names a colour, a
 // glyph or an environment variable of its own.
 
 import {
@@ -11,6 +12,11 @@ import {
 } from "@opentui/core";
 import type { TicketStatus } from "../tickets/tickets.ts";
 import type { GoalStanding } from "./goal-rows.ts";
+import type {
+	GoalRunState,
+	GoalTicketMark,
+	GoalTicketStepMark,
+} from "./goal-tickets.ts";
 
 /** The colour tokens. */
 export type ThemeColors = {
@@ -22,14 +28,22 @@ export type ThemeColors = {
 	ok: ColorInput;
 	bad: ColorInput;
 	warn: ColorInput;
+	/** Behind a block that stands out, a step lighter than the screen. */
+	raised: ColorInput;
+	/** Text brighter than `fg`, for what the human reads first. */
+	bright: ColorInput;
 };
 
 /**
  * The symbols. The keys for the six Goal standings are the standing words,
  * so `symbol[standing]` is a standing's symbol. `blocked` is a ready Ticket
- * waiting on a blocker, `bar` one cell of a progress bar, `sep` the mark
- * between items on a line, `cut` the end of a text cut short, and `upDown`
- * the arrow keys as a footer names them.
+ * waiting on a blocker, `pending` a Step not run yet in a Ticket's pass,
+ * `bar` one cell of a progress bar, `solidBar` one cell of the heavier bar a
+ * roomy Goal view's header draws, `sep` the mark between items on a line,
+ * `cut` the end of a text cut short, `prose` the mark before the agent's
+ * prose, `times` the mark of a count, like `×5`, `rule` one cell of a
+ * divider, and `upDown` and `leftRight` the arrow keys as a footer names
+ * them.
  */
 export type ThemeSymbols = {
 	done: string;
@@ -39,10 +53,16 @@ export type ThemeSymbols = {
 	lost: string;
 	broken: string;
 	blocked: string;
+	pending: string;
 	bar: string;
+	solidBar: string;
 	sep: string;
 	cut: string;
+	prose: string;
+	times: string;
+	rule: string;
 	upDown: string;
+	leftRight: string;
 };
 
 /** How the selected row of a list is drawn. */
@@ -59,6 +79,11 @@ export type Theme = {
 	symbol: ThemeSymbols;
 	/** Every box's border, as a box's `customBorderChars` takes it. */
 	border: BorderCharacters;
+	/**
+	 * The focused pane's border, as `paneBorder` gives it: heavier lines
+	 * under `NO_COLOR`, where no accent tells the pane apart.
+	 */
+	focusBorder: BorderCharacters;
 	/** Whether scrollbars show: their glyphs have no ASCII form. */
 	scrollbars: boolean;
 	/**
@@ -83,6 +108,20 @@ export function theme(): Theme {
 	const ascii = process.env.VAGO_ASCII === "1";
 	if (noColor) return ascii ? plainAscii : plain;
 	return ascii ? colouredAscii : coloured;
+}
+
+/**
+ * A box's border, spread onto it: in the border colour, or while the box
+ * is a `focused` pane in the accent, and under `NO_COLOR` in heavier lines.
+ */
+export function paneBorder(focused: boolean): {
+	customBorderChars: BorderCharacters;
+	borderColor: ColorInput;
+} {
+	const { color, border, focusBorder } = theme();
+	return focused
+		? { customBorderChars: focusBorder, borderColor: color.accent }
+		: { customBorderChars: border, borderColor: color.border };
 }
 
 /**
@@ -128,6 +167,65 @@ export function ticketColor(
 	}
 }
 
+/**
+ * The span style of a Ticket's mark in the Goal view, its symbol and state
+ * word: `goalColor` for the words they share, and dim for a blocked Ticket.
+ */
+export function ticketMarkStyle(mark: GoalTicketMark): {
+	fg: ColorInput;
+	dim: boolean;
+} {
+	return mark === "blocked"
+		? theme().dimSpan
+		: { fg: goalColor(mark), dim: false };
+}
+
+/**
+ * The symbol and span style of a Step's mark in the Ticket pane: done `✓`
+ * ok, current `●` accent, failed `✗` bad, lost `?` warn, pending `·` dim.
+ */
+export function stepMarkLook(mark: GoalTicketStepMark): {
+	symbol: string;
+	style: { fg: ColorInput; dim: boolean };
+} {
+	const { color, symbol, dimSpan } = theme();
+	switch (mark) {
+		case "done":
+			return { symbol: symbol.done, style: { fg: color.ok, dim: false } };
+		case "current":
+			return {
+				symbol: symbol.running,
+				style: { fg: color.accent, dim: false },
+			};
+		case "failed":
+			return { symbol: symbol.stuck, style: { fg: color.bad, dim: false } };
+		case "lost":
+			return { symbol: symbol.lost, style: { fg: color.warn, dim: false } };
+		case "pending":
+			return { symbol: symbol.pending, style: dimSpan };
+	}
+}
+
+/**
+ * A Run in `state` with its symbol and colour: `● live` accent, `? lost`
+ * warn, and an ended Run by its `outcome`: `✓ ok` ok, `? lost` warn when the
+ * next `vago run` ended it lost, and `✗ exit 1` and the like bad.
+ */
+export function runMarkLook(
+	state: GoalRunState,
+	outcome: string | undefined,
+): { text: string; fg: ColorInput } {
+	const { color, symbol } = theme();
+	if (state === "live") {
+		return { text: `${symbol.running} live`, fg: color.accent };
+	}
+	if (state === "lost" || outcome === "lost") {
+		return { text: `${symbol.lost} lost`, fg: color.warn };
+	}
+	if (outcome === "ok") return { text: `${symbol.done} ok`, fg: color.ok };
+	return { text: `${symbol.stuck} ${outcome}`, fg: color.bad };
+}
+
 // One orange accent on near-black, as the human picked in the prototype.
 const palette: ThemeColors = {
 	bg: "#0c0c0c",
@@ -138,6 +236,8 @@ const palette: ThemeColors = {
 	ok: "#8fae8b",
 	bad: "#e5736b",
 	warn: "#e0b357",
+	raised: "#1b1b1b",
+	bright: "#f0f0f0",
 };
 
 // Secondary text, which takes no token of its own.
@@ -157,6 +257,8 @@ const noPalette: ThemeColors = {
 	ok: terminalForeground,
 	bad: terminalForeground,
 	warn: terminalForeground,
+	raised: terminalBackground,
+	bright: terminalForeground,
 };
 
 const glyphs: ThemeSymbols = {
@@ -167,10 +269,16 @@ const glyphs: ThemeSymbols = {
 	lost: "?",
 	broken: "!",
 	blocked: "◌",
+	pending: "·",
 	bar: "━",
+	solidBar: "█",
 	sep: "·",
 	cut: "…",
+	prose: "⁘",
+	times: "×",
+	rule: "─",
 	upDown: "↑↓",
+	leftRight: "←→",
 };
 
 const asciiGlyphs: ThemeSymbols = {
@@ -181,10 +289,16 @@ const asciiGlyphs: ThemeSymbols = {
 	lost: "?",
 	broken: "!",
 	blocked: "-",
+	pending: ".",
 	bar: "=",
+	solidBar: "#",
 	sep: "|",
 	cut: "~",
+	prose: ">",
+	times: "x",
+	rule: "-",
 	upDown: "Up Dn",
+	leftRight: "Lt Rt",
 };
 
 const lines: BorderCharacters = {
@@ -215,10 +329,35 @@ const asciiLines: BorderCharacters = {
 	cross: "+",
 };
 
+const heavyLines: BorderCharacters = {
+	topLeft: "┏",
+	topRight: "┓",
+	bottomLeft: "┗",
+	bottomRight: "┛",
+	horizontal: "━",
+	vertical: "┃",
+	topT: "┳",
+	bottomT: "┻",
+	leftT: "┣",
+	rightT: "┫",
+	cross: "╋",
+};
+
+const heavyAsciiLines: BorderCharacters = {
+	...asciiLines,
+	topLeft: "#",
+	topRight: "#",
+	bottomLeft: "#",
+	bottomRight: "#",
+	horizontal: "=",
+	vertical: "#",
+};
+
 const coloured: Theme = {
 	color: palette,
 	symbol: glyphs,
 	border: lines,
+	focusBorder: lines,
 	scrollbars: true,
 	dimText: { fg: grey, attributes: 0 },
 	dimSpan: { fg: grey, dim: false },
@@ -229,6 +368,7 @@ const plain: Theme = {
 	color: noPalette,
 	symbol: glyphs,
 	border: lines,
+	focusBorder: heavyLines,
 	scrollbars: true,
 	dimText: { fg: terminalForeground, attributes: TextAttributes.DIM },
 	dimSpan: { fg: terminalForeground, dim: true },
@@ -243,6 +383,7 @@ const colouredAscii: Theme = {
 	...coloured,
 	symbol: asciiGlyphs,
 	border: asciiLines,
+	focusBorder: asciiLines,
 	scrollbars: false,
 };
 
@@ -250,5 +391,6 @@ const plainAscii: Theme = {
 	...plain,
 	symbol: asciiGlyphs,
 	border: asciiLines,
+	focusBorder: heavyAsciiLines,
 	scrollbars: false,
 };
