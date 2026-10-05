@@ -6,10 +6,10 @@
 
 import {
 	type GoalState,
-	type TicketRun,
 	type TicketStatus,
 	ticketNumberText,
 } from "../tickets/tickets.ts";
+import type { NamedStep } from "../workflow.ts";
 import { joinParagraphs } from "./text-fit.ts";
 
 /**
@@ -66,7 +66,10 @@ export type GoalRunState = "live" | "lost" | "ended";
 
 /** One Run of a Ticket as the Runs pane lists it and the Run pane shows it. */
 export type GoalTicketRun = {
-	step: string;
+	/** The id of the Run's Step, as its Ticket's header records it. */
+	stepId: string;
+	/** The name of the Run's Step, its id when the Workflow has no such Step. */
+	stepName: string;
 	state: GoalRunState;
 	/**
 	 * The Harness an agent Step's Run ran on, whose stream its log holds;
@@ -101,14 +104,14 @@ export type GoalTicketStepMark =
 	| "pending";
 
 /** One Step of a Ticket's Workflow as the Ticket pane marks it. */
-export type GoalTicketStep = { id: string; mark: GoalTicketStepMark };
+export type GoalTicketStep = { name: string; mark: GoalTicketStepMark };
 
 /**
- * The Step ids of a Workflow in order, or, with none, why it can't be read,
+ * The Steps of a Workflow in order, or, with none, why it can't be read,
  * with paths relative to the Project.
  */
 export type GoalWorkflowSteps = {
-	stepIds: string[];
+	steps: NamedStep[];
 	problem: string | undefined;
 };
 
@@ -131,13 +134,8 @@ export function goalTickets(
 		.filter(({ status }) => status === "done")
 		.map(({ ticket }) => ticket.number);
 	return state.tickets.map((ticket) => {
-		const markAndWord = markAndStateWord(
-			ticket.status,
-			runningStep(ticket.runs),
-			claimed,
-			ticket.blockedBy.filter((blocker) => !done.includes(blocker)),
-		);
 		const workflow = workflows.get(ticket.workflow);
+		const steps = workflow?.steps ?? [];
 		const runs = ticket.runs.map((run): GoalTicketRun => {
 			const runState =
 				run.ended !== undefined ? "ended" : claimed ? "live" : "lost";
@@ -145,7 +143,8 @@ export function goalTickets(
 				run.ended ??
 				(runState === "live" ? now : (lastWritten.get(run.log) ?? run.started));
 			return {
-				step: run.step,
+				stepId: run.step,
+				stepName: steps.find(({ id }) => id === run.step)?.name ?? run.step,
 				state: runState,
 				harness: run.harness,
 				outcome: run.outcome,
@@ -158,10 +157,15 @@ export function goalTickets(
 		return {
 			number: ticketNumberText(ticket.ticket.number),
 			title: ticket.title,
-			...markAndWord,
+			...markAndStateWord(
+				ticket.status,
+				runningStep(runs),
+				claimed,
+				ticket.blockedBy.filter((blocker) => !done.includes(blocker)),
+			),
 			blockedBy: ticket.blockedBy.map(ticketNumberText),
 			description: joinParagraphs(ticket.description),
-			steps: markSteps(workflow?.stepIds ?? [], runs),
+			steps: markSteps(steps, runs),
 			workflowProblem: workflow?.problem,
 			runs,
 			runsMs: runs.reduce((sum, run) => sum + run.durationMs, 0),
@@ -170,17 +174,20 @@ export function goalTickets(
 	});
 }
 
-// Each of `stepIds` marked from the Ticket's latest pass, the Runs from the
+// Each of `steps` marked from the Ticket's latest pass, the Runs from the
 // last one of its first Step on, since a Ticket can start over from there.
-function markSteps(stepIds: string[], runs: GoalTicketRun[]): GoalTicketStep[] {
-	const passStart = runs.findLastIndex(({ step }) => step === stepIds[0]);
+function markSteps(
+	steps: NamedStep[],
+	runs: GoalTicketRun[],
+): GoalTicketStep[] {
+	const passStart = runs.findLastIndex(({ stepId }) => stepId === steps[0]?.id);
 	const pass = runs.slice(Math.max(0, passStart));
-	return stepIds.map((id) => {
-		const run = pass.findLast(({ step }) => step === id);
-		if (run === undefined) return { id, mark: "pending" };
-		if (run.state === "live") return { id, mark: "current" };
-		if (run.state === "lost") return { id, mark: "lost" };
-		return { id, mark: run.outcome === "ok" ? "done" : "failed" };
+	return steps.map(({ id, name }) => {
+		const run = pass.findLast(({ stepId }) => stepId === id);
+		if (run === undefined) return { name, mark: "pending" };
+		if (run.state === "live") return { name, mark: "current" };
+		if (run.state === "lost") return { name, mark: "lost" };
+		return { name, mark: run.outcome === "ok" ? "done" : "failed" };
 	});
 }
 
@@ -189,8 +196,8 @@ function markSteps(stepIds: string[], runs: GoalTicketRun[]): GoalTicketStep[] {
  * and the Goals table's "now" phrase spell it: its latest Run's, or
  * `starting` before its first.
  */
-export function runningStep(runs: TicketRun[]): string {
-	return runs.at(-1)?.step ?? "starting";
+export function runningStep(runs: GoalTicketRun[]): string {
+	return runs.at(-1)?.stepName ?? "starting";
 }
 
 // A Ticket's mark and state word from its status, the Step it is on while

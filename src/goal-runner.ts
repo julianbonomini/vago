@@ -183,7 +183,7 @@ async function runTicket(
 	const stepOutputs = new Map<string, string>();
 	for (const step of workflow.steps) {
 		if (step.when === "last-ticket" && !(await isLastTicket(ticket))) {
-			printStepSkipped(step.id, new Date());
+			printStepSkipped(step.name, new Date());
 			continue;
 		}
 		const run = await runStep(step, ticket, worktree, stepOutputs);
@@ -197,7 +197,7 @@ async function runTicket(
 			await setStatus(ticket, "stuck");
 			printStuck(
 				ticket,
-				step.id,
+				step.name,
 				spellOutcome(run.outcome),
 				run.log,
 				run.resumeHint,

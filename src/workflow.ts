@@ -22,6 +22,8 @@ export const vagoFolderName = ".vago";
 /** A Step that runs `run` with `sh -c` in the Goal's worktree. */
 export type ShellStep = {
 	readonly id: string;
+	/** What the TUI and the run output call the Step: its `name`, else its `id`. */
+	readonly name: string;
 	readonly type: "shell";
 	readonly run: string;
 	/**
@@ -38,6 +40,8 @@ export type ShellStep = {
  */
 export type AgentStep = {
 	readonly id: string;
+	/** What the TUI and the run output call the Step: its `name`, else its `id`. */
+	readonly name: string;
 	readonly type: "agent";
 	readonly promptTemplate: string;
 	readonly harness: string;
@@ -122,6 +126,7 @@ const WorkflowFile = z.strictObject({
 				[
 					z.strictObject({
 						id: z.string(),
+						name: z.string().optional(),
 						type: z.literal("shell"),
 						run: z.string(),
 						on_fail: z.enum(["stop", "continue"]).optional(),
@@ -129,6 +134,7 @@ const WorkflowFile = z.strictObject({
 					}),
 					z.strictObject({
 						id: z.string(),
+						name: z.string().optional(),
 						type: z.literal("agent"),
 						prompt: z.string(),
 						harness: HarnessName.optional(),
@@ -174,10 +180,12 @@ export async function loadWorkflow(
 			throw new Error(`${path}: two steps have id "${step.id}"`);
 		}
 		const when = step.when ?? "every-ticket";
+		const name = stepName(step);
 		if (step.type === "shell") {
 			steps.push(
 				Object.freeze({
 					id: step.id,
+					name,
 					type: step.type,
 					run: step.run,
 					onFail: step.on_fail ?? "stop",
@@ -222,6 +230,7 @@ export async function loadWorkflow(
 		steps.push(
 			Object.freeze({
 				id: step.id,
+				name,
 				type: step.type,
 				promptTemplate,
 				harness,
@@ -239,19 +248,26 @@ export async function loadWorkflow(
 	return Object.freeze({ steps: Object.freeze(steps) });
 }
 
+/** A Step's `id` and the `name` the TUI shows it by, its `id` without one. */
+export type NamedStep = { id: string; name: string };
+
 /**
- * The `id` of each Step of Workflow `name` of the Project at `root`, in the
- * order they run, read from its TOML alone, so it costs one small file read
- * and no prompt or include file is opened or checked. Throws what
- * `loadWorkflow` throws for a missing Workflow, bad TOML or a schema it
- * doesn't take.
+ * Each Step of Workflow `name` of the Project at `root`, in the order they
+ * run, read from its TOML alone, so it costs one small file read and no
+ * prompt or include file is opened or checked. Throws what `loadWorkflow`
+ * throws for a missing Workflow, bad TOML or a schema it doesn't take.
  */
-export async function readWorkflowStepIds(
+export async function readWorkflowStepNames(
 	root: string,
 	name: string,
-): Promise<string[]> {
+): Promise<NamedStep[]> {
 	const { checked } = await readWorkflowFile(root, name);
-	return checked.steps.map(({ id }) => id);
+	return checked.steps.map((step) => ({ id: step.id, name: stepName(step) }));
+}
+
+// A Step without a `name` goes by its `id`.
+function stepName(step: { id: string; name?: string | undefined }): string {
+	return step.name ?? step.id;
 }
 
 // The path of Workflow `name`'s TOML and its content checked against the

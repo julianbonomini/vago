@@ -25,23 +25,23 @@ export function printTicketStarted(ticket: Ticket): void {
 	console.log(ticket.name);
 }
 
-/** Prints the indented line saying Step `stepId` started at `started`. */
-export function printStepStarted(stepId: string, started: Date): void {
-	console.log(paint(stepLine(started, stepId, "started"), "dim"));
+/** Prints the indented line saying Step `stepName` started at `started`. */
+export function printStepStarted(stepName: string, started: Date): void {
+	console.log(paint(stepLine(started, stepName, "started"), "dim"));
 }
 
-/** Prints the indented line saying Step `stepId` was skipped on this Ticket. */
-export function printStepSkipped(stepId: string, at: Date): void {
-	console.log(paint(stepLine(at, stepId, "skipped"), "dim"));
+/** Prints the indented line saying Step `stepName` was skipped on this Ticket. */
+export function printStepSkipped(stepName: string, at: Date): void {
+	console.log(paint(stepLine(at, stepName, "skipped"), "dim"));
 }
 
 /**
- * Prints the indented line saying how Step `stepId` ended, with `outcome` as
+ * Prints the indented line saying how Step `stepName` ended, with `outcome` as
  * spelled in the header (`ok`, `exit 1`), how long it took and, when the
  * Harness reported one, what it cost.
  */
 export function printStepEnded(
-	stepId: string,
+	stepName: string,
 	outcome: string,
 	started: Date,
 	ended: Date,
@@ -49,24 +49,26 @@ export function printStepEnded(
 ): void {
 	const took = duration(ended.getTime() - started.getTime());
 	const colour = outcome === "ok" ? "green" : "red";
-	console.log(stepLine(ended, stepId, outcome, colour, took, dollars(costUsd)));
+	console.log(
+		stepLine(ended, stepName, outcome, colour, took, dollars(costUsd)),
+	);
 }
 
 /**
- * Prints that `ticket` went stuck after Step `stepId`, whose Run ended with
+ * Prints that `ticket` went stuck after Step `stepName`, whose Run ended with
  * `outcome` as spelled in the header, with what the human needs next: the
  * Run's log at the absolute path `log`, the command that resumes its Harness
  * session when there is one, and the command that resets the Ticket.
  */
 export function printStuck(
 	ticket: Ticket,
-	stepId: string,
+	stepName: string,
 	outcome: string,
 	log: string,
 	resumeHint?: string,
 ): void {
 	console.log(
-		paint(`${ticket.name} is stuck after ${stepId}: ${outcome}`, "red"),
+		paint(`${ticket.name} is stuck after ${stepName}: ${outcome}`, "red"),
 	);
 	// Relative to the repo root, which `vago run` runs in, so it's short
 	// enough to read and still opens from where the human is.
@@ -240,13 +242,13 @@ const durationWidth = "99h59m".length;
 const costWidth = "$99.99".length;
 
 // Indented under the Ticket's name, columns two spaces apart, the duration and
-// cost right-aligned so their units line up. The Step id and outcome vary in
+// cost right-aligned so their units line up. The Step name and outcome vary in
 // length, so they come last, where nothing after them needs aligning. A
-// started line leaves the duration and cost blank, which keeps its Step id in
+// started line leaves the duration and cost blank, which keeps its Step name in
 // line with the ended lines'.
 function stepLine(
 	at: Date,
-	stepId: string,
+	stepName: string,
 	outcome: string,
 	colour?: Colour,
 	took = "",
@@ -256,7 +258,7 @@ function stepLine(
 		timestamp(at),
 		took.padStart(durationWidth),
 		cost.padStart(costWidth),
-		`${stepId} ${paint(outcome, colour)}`,
+		`${stepName} ${paint(outcome, colour)}`,
 	];
 	return `  ${cells.join("  ")}`;
 }

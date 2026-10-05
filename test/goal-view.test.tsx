@@ -424,6 +424,36 @@ test("a Ticket with its own Workflow shows that Workflow's Steps", async () => {
 	expect(frame).toContain(" 0 Runs · 0s · $0.00 ─");
 });
 
+test("named Steps show their names in the Steps line, the Runs and the Run's title", async () => {
+	const { view } = await openTicket(
+		ticketText("running", {
+			runs: [runOf("branch", 0, 1), runOf("implement", 1)],
+		}),
+		{
+			claimed: true,
+			files: {
+				".vago/workflows/small.toml": `
+[[steps]]
+id = "branch"
+type = "shell"
+run = "true"
+
+[[steps]]
+id = "implement"
+name = "Build it"
+type = "shell"
+run = "true"
+`,
+			},
+		},
+	);
+
+	const frame = await frameWith(view, "│ 2  Build it ");
+	expect(frame).toContain("│ ✓ branch  ● Build it ");
+	expect(frame).toContain("│ ● 01 Build it  ");
+	expect(frame).toContain("─ Run 2 · 01 Build it ─");
+});
+
 test("the Steps line wraps when the Ticket pane is narrow", async () => {
 	const { frame } = await openTicket(ticketText("ready"), {
 		size: { width: 50, height: 24 },

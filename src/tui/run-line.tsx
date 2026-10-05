@@ -12,7 +12,7 @@ import { duration, money } from "./time-and-money.ts";
 
 /** What a Run line shows of a Run after its leading field. */
 export type RunLineRun = {
-	step: string;
+	stepName: string;
 	state: GoalRunState;
 	/** As spelled in the header, like `ok`; absent while the Run is open. */
 	outcome?: string;
@@ -56,7 +56,7 @@ export function RunLine(props: {
 			props.run.costUsd === undefined ? "" : money(props.run.costUsd);
 		return {
 			lead: take(props.lead, Bun.stringWidth(props.lead)),
-			step: take(props.run.step, stepWidth),
+			step: take(props.run.stepName, stepWidth),
 			outcome: take(mark().text, outcomeWidth),
 			rest: take(
 				`${duration(props.run.durationMs).padEnd(durationWidth)}${cost}`,

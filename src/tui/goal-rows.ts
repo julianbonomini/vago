@@ -12,12 +12,12 @@ import {
 	readGoal,
 	runLogLastWritten,
 	type TicketStatus,
-	ticketNumberText,
 } from "../tickets/tickets.ts";
-import { readWorkflowStepIds } from "../workflow.ts";
+import { readWorkflowStepNames } from "../workflow.ts";
 import {
 	type GoalRunState,
 	type GoalTicket,
+	type GoalTicketMark,
 	type GoalWorkflowSteps,
 	goalTickets,
 	runningStep,
@@ -98,7 +98,7 @@ export type GoalRowRun = {
 	started: Date;
 	/** The Run's Ticket number as file names spell it, like `02`. */
 	ticketNumber: string;
-	step: string;
+	stepName: string;
 	state: GoalRunState;
 	/** As spelled in the header, like `ok`; absent while the Run is open. */
 	outcome?: string;
@@ -166,10 +166,10 @@ async function readWorkflows(
 		await Promise.all(
 			names.map(async (name): Promise<[string, GoalWorkflowSteps]> => {
 				try {
-					const stepIds = await readWorkflowStepIds(root, name);
-					return [name, { stepIds, problem: undefined }];
+					const steps = await readWorkflowStepNames(root, name);
+					return [name, { steps, problem: undefined }];
 				} catch (error) {
-					return [name, { stepIds: [], problem: projectMessage(error, root) }];
+					return [name, { steps: [], problem: projectMessage(error, root) }];
 				}
 			}),
 		),
@@ -260,7 +260,7 @@ function goalRow(
 	now: Date,
 	last: Date | undefined,
 ): GoalRow {
-	const { standing, phrase } = goalStanding(state, claimed);
+	const { standing, phrase } = goalStanding(claimed, tickets);
 	const runs = state.tickets.flatMap((ticket) => ticket.runs);
 	const count = (status: TicketStatus) =>
 		state.tickets.filter((ticket) => ticket.status === status).length;
@@ -291,7 +291,7 @@ function goalRow(
 				runs.map((run) => ({
 					started: run.started,
 					ticketNumber: number,
-					step: run.step,
+					stepName: run.stepName,
 					state: run.state,
 					outcome: run.outcome,
 					durationMs: run.durationMs,
@@ -304,20 +304,20 @@ function goalRow(
 	};
 }
 
-// The Goal's standing and the "now" phrase that goes with it. The first
-// Ticket in a status is the lowest-numbered, as `readGoal` lists them in
-// number order. Done is not `GoalState.done`, which a Goal with no Tickets
-// is: such a Goal has nothing done yet and is ready to start.
+// The Goal's standing and the "now" phrase that goes with it, from its
+// Tickets as `goalTickets` gives them, lowest number first, so the first
+// Ticket found is the lowest-numbered. Done is not `GoalState.done`, which a
+// Goal with no Tickets is: such a Goal has nothing done yet and is ready to
+// start.
 function goalStanding(
-	state: GoalState,
 	claimed: boolean,
+	tickets: GoalTicket[],
 ): { standing: GoalStanding; phrase: string } {
-	const first = (status: TicketStatus) =>
-		state.tickets.find((ticket) => ticket.status === status);
-	const running = first("running");
-	const runningOn =
-		running &&
-		`${ticketNumberText(running.ticket.number)} ${runningStep(running.runs)}`;
+	const first = (...marks: GoalTicketMark[]) =>
+		tickets.find((ticket) => marks.includes(ticket.mark));
+	// A running Ticket is marked lost while no `vago run` holds the Goal.
+	const running = first("running", "lost");
+	const runningOn = running && `${running.number} ${runningStep(running.runs)}`;
 	if (claimed) {
 		return { standing: "running", phrase: runningOn ?? "between Tickets" };
 	}
@@ -329,20 +329,16 @@ function goalStanding(
 	}
 	const stuck = first("stuck");
 	if (stuck !== undefined) {
-		const number = ticketNumberText(stuck.ticket.number);
 		const last = stuck.runs.at(-1);
 		return {
 			standing: "stuck",
 			phrase:
 				last === undefined
-					? `${number} stuck`
-					: `${number} stuck after ${last.step} ${last.outcome ?? ""}`.trimEnd(),
+					? `${stuck.number} stuck`
+					: `${stuck.number} stuck after ${last.stepName} ${last.outcome ?? ""}`.trimEnd(),
 		};
 	}
-	if (
-		state.tickets.length > 0 &&
-		state.tickets.every(({ status }) => status === "done")
-	) {
+	if (tickets.length > 0 && tickets.every(({ mark }) => mark === "done")) {
 		return { standing: "done", phrase: "finished" };
 	}
 	return {

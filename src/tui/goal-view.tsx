@@ -584,7 +584,7 @@ function TicketPane(props: {
 									<>
 										<Show when={index() > 0}>{stepGap}</Show>
 										<span style={look().style}>{look().symbol}</span>
-										<span style={{ fg: color.fg }}>{` ${step.id}`}</span>
+										<span style={{ fg: color.fg }}>{` ${step.name}`}</span>
 									</>
 								);
 							}}
@@ -634,7 +634,7 @@ function stepLines(steps: GoalTicketStep[], width: number): GoalTicketStep[][] {
 	let line: GoalTicketStep[] = [];
 	let lineWidth = 0;
 	for (const step of steps) {
-		const stepWidth = 2 + Bun.stringWidth(step.id);
+		const stepWidth = 2 + Bun.stringWidth(step.name);
 		const joined =
 			line.length === 0 ? stepWidth : lineWidth + stepGap.length + stepWidth;
 		if (line.length > 0 && joined > width) {
@@ -824,7 +824,7 @@ function RunPane(props: {
 		const shown = run();
 		return shown === undefined
 			? " Run "
-			: ` Run ${props.selected + 1} ${symbol.sep} ${props.ticket?.number} ${shown.step} `;
+			: ` Run ${props.selected + 1} ${symbol.sep} ${props.ticket?.number} ${shown.stepName} `;
 	};
 	const numbers = () => {
 		const shown = run();
