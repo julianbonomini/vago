@@ -3,25 +3,79 @@
 # a PR to the repo's default branch, described by `vago goal report`, and
 # writes the report's Runs to the end of the Goal's goal.md too. After the
 # Goal's last Ticket, the PR also gets the ready-for-review label and a
-# comment mentioning the human `gh` is logged in as. Fails, and so leaves the
-# Ticket stuck, when the tree is dirty or the Ticket changed nothing.
+# comment mentioning the human `gh` is logged in as.
+#
+# Changes a Step left uncommitted go in with the Ticket's work. Calls to
+# GitHub that fail on the network or the service are tried again. Safe to run
+# again after failing partway: a Ticket already squashed into vago/<goal>
+# isn't squashed twice. Fails, and so leaves the Ticket stuck, when the
+# Ticket conflicts with vago/<goal> or changed nothing, or when a call fails
+# for good, and its last line says why.
 set -eu
 
 goal="vago/$VAGO_GOAL"
 ticket="$VAGO_GOAL/$VAGO_TICKET"
+message="$(echo "$VAGO_TICKET" | tr '-' ' ')"
+
+# What the script is doing, for the last line when a command fails.
+doing="squashing $ticket into $goal"
+trap 'status=$?; [ "$status" = 0 ] || echo "The merge failed $doing."' EXIT
+
+fail() {
+	trap - EXIT
+	echo "$1"
+	exit 1
+}
+
+# GitHub's 5xx answers and dropped connections, as gh and git print them.
+transient='HTTP 5[0-9][0-9]|status code:? 5[0-9][0-9]|returned error: 5[0-9][0-9]|service unavailable|bad gateway|gateway time-?out|timed out|connection reset|connection refused|could not resolve host|hung up unexpectedly|tls handshake'
+
+# Runs a command that talks to GitHub, and again after 1, 2 and 4 seconds
+# while it fails on the network or the service. Any other failure, and the
+# last, comes back at once with the command's stderr.
+retrying() {
+	errors="$(mktemp)"
+	for wait in 1 2 4 0; do
+		status=0
+		"$@" 2>"$errors" || status=$?
+		if [ "$status" = 0 ] || [ "$wait" = 0 ] ||
+			! grep -Eqi "$transient" "$errors"; then
+			cat "$errors" >&2
+			rm -f "$errors"
+			return "$status"
+		fi
+		echo "$(tail -n 1 "$errors"), trying again in ${wait}s." >&2
+		sleep "$wait"
+	done
+}
 
 if [ -n "$(git status --porcelain)" ]; then
-	echo "$ticket has uncommitted changes."
-	exit 1
+	git add -A
+	git commit -qm "changes left uncommitted"
 fi
 
-git switch "$goal"
-git merge --squash "$ticket"
-# Fails on an empty squash: a Ticket that changed nothing isn't done.
-git commit -m "$(echo "$VAGO_TICKET" | tr '-' ' ')"
+git switch -q "$goal"
+if ! git merge --squash "$ticket"; then
+	conflicts="$(git diff --name-only --diff-filter=U | paste -sd ' ' -)"
+	# Back to where the Ticket's Steps left the worktree, clean for a rerun.
+	git reset -q --hard
+	git switch -q "$ticket"
+	fail "$ticket conflicts with $goal in $conflicts."
+fi
+# With nothing to squash, a Ticket whose commit is already on vago/<goal> is
+# a rerun after a failure past the squash, which picks up from there.
+if ! git diff --cached --quiet; then
+	git commit -qm "$message"
+elif ! git log --format=%s "$goal" | grep -qxF "$message"; then
+	git switch -q "$ticket"
+	fail "$ticket changed nothing, so it isn't done."
+fi
 git branch -D "$ticket"
 
-git push -u origin "$goal"
+doing="pushing $goal to origin"
+retrying git push -u origin "$goal"
+
+doing="building the PR's body with vago goal report"
 # Rewritten after every Ticket, so the last merge leaves the whole Goal's
 # Runs. A body edited by hand on GitHub is replaced too.
 # The Runs written last time come off goal.md first, so the report doesn't
@@ -33,21 +87,32 @@ printf '%s\n' "$kept" >"$goal_file"
 # change how `vago` starts, as a `bunfig.toml` did.
 body="$(cd "$VAGO_PROJECT_ROOT" && vago goal report "$VAGO_GOAL")"
 printf '%s\n\n%s\n' "$kept" "$(printf '%s\n' "$body" | sed -n '/^## Runs$/,$p')" >"$goal_file"
-if gh pr view "$goal" >/dev/null 2>&1; then
-	gh pr edit "$goal" --body "$body"
+
+doing="looking up the PR of $goal"
+# Only "no pull requests found" means there is none to edit; any other
+# failure would open a second one.
+if lookup="$(retrying gh pr view "$goal" 2>&1 >/dev/null)"; then
+	doing="updating the PR of $goal"
+	retrying gh pr edit "$goal" --body "$body"
+elif printf '%s\n' "$lookup" | grep -q "no pull requests found"; then
+	doing="opening a PR for $goal"
+	retrying gh pr create --head "$goal" --title "$VAGO_GOAL" --body "$body"
 else
-	gh pr create --head "$goal" --title "$VAGO_GOAL" --body "$body"
+	printf '%s\n' "$lookup"
+	exit 1
 fi
 
 if [ "$VAGO_LAST_TICKET" = true ]; then
-	gh label create ready-for-review --force --color 0e8a16 \
+	doing="marking the PR of $goal ready for review"
+	retrying gh label create ready-for-review --force --color 0e8a16 \
 		--description "Every Ticket of the Goal is done"
-	gh pr edit "$goal" --add-label ready-for-review
+	retrying gh pr edit "$goal" --add-label ready-for-review
 	# A comment, not the body: the body is rewritten after every Ticket, and
 	# GitHub notifies a mention only when it's first posted. Posted once, so
 	# a later last merge doesn't ping the human again.
-	ping="@$(gh api user --jq .login) every Ticket of this Goal is done, it's ready for your review."
-	if ! gh pr view "$goal" --json comments --jq '.comments[].body' | grep -qxF "$ping"; then
-		gh pr comment "$goal" --body "$ping"
+	ping="@$(retrying gh api user --jq .login) every Ticket of this Goal is done, it's ready for your review."
+	comments="$(retrying gh pr view "$goal" --json comments --jq '.comments[].body')"
+	if ! printf '%s\n' "$comments" | grep -qxF "$ping"; then
+		retrying gh pr comment "$goal" --body "$ping"
 	fi
 fi
