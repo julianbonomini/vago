@@ -27,22 +27,32 @@ function stuckGoal(): Promise<string> {
 	});
 }
 
-// Each screen, opened from the Project view, with a text only it shows.
+// Each screen, opened from the Project view, with a text only it shows and
+// the rows of its header area: the Project's line, then in the Goal view the
+// Goal's name, numbers and bar.
 const screens: {
 	name: string;
 	open: (view: TestRendererSetup) => void;
 	shows: string;
+	headerRows: number;
 }[] = [
-	{ name: "the Project view", open: () => {}, shows: "Workflow small" },
+	{
+		name: "the Project view",
+		open: () => {},
+		shows: "Workflow small",
+		headerRows: 1,
+	},
 	{
 		name: "the help screen",
 		open: (view) => view.mockInput.pressKey("?"),
 		shows: "Keys",
+		headerRows: 1,
 	},
 	{
 		name: "the Goal view",
 		open: (view) => view.mockInput.pressEnter(),
-		shows: "Goal 1/1",
+		shows: "1/2 Tickets",
+		headerRows: 4,
 	},
 	{
 		name: "the Ticket full screen",
@@ -51,6 +61,7 @@ const screens: {
 			view.mockInput.pressKey("t");
 		},
 		shows: "Ticket 02",
+		headerRows: 4,
 	},
 	{
 		name: "the Run full screen",
@@ -59,6 +70,7 @@ const screens: {
 			view.mockInput.pressKey("r");
 		},
 		shows: "Run 1",
+		headerRows: 4,
 	},
 ];
 
@@ -89,13 +101,14 @@ for (const size of [
 				);
 				header ??= lines[0];
 				expect(lines[0]).toBe(header ?? "");
-				// A line under the header and one over the footer frame the panes.
-				expect(lines[1]).toMatch(divider);
+				// A line under the header area and one over the footer frame the
+				// panes.
+				expect(lines[screen.headerRows]).toMatch(divider);
 				expect(lines.at(-2)).toMatch(divider);
-				// Between the header and the footer every row spans the screen, no
-				// pane sits empty between two lines, and no two lines sit side by
-				// side.
-				const body = lines.slice(1, -1);
+				// Between the header area and the footer every row spans the
+				// screen, no pane sits empty between two lines, and no two lines
+				// sit side by side.
+				const body = lines.slice(screen.headerRows, -1);
 				for (const line of body) {
 					expect(Bun.stringWidth(line)).toBe(size.width);
 				}
@@ -118,9 +131,9 @@ test("panes share one line, joined where lines meet, and each title is a row of 
 	expect(project).toMatch(/\n─+\n {2}worktrees +Workflow small/);
 
 	view.mockInput.pressEnter();
-	const goal = await frameWith(view, "Goal 1/1");
-	// The Goal's box over the Tickets and the Ticket, the Tickets over their
-	// Runs, and both over the Run.
+	const goal = await frameWith(view, "Goal 1 of 1");
+	// The header area's line over the Tickets and the Ticket, the Tickets
+	// over their Runs, and both over the Run.
 	expect(goal).toMatch(
 		/\n─+┬─+\n {2}Tickets +2\/2 │ Ticket 02 +1 Run · 30m 0s · \$1\.25 {2}\n/,
 	);

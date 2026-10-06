@@ -78,7 +78,6 @@ export function GoalPreview(props: {
 					standing={props.row.standing}
 					width={Math.max(0, inner() - ticketsLabel().length)}
 					selected={false}
-					solid={false}
 				/>
 				{ticketsLabel()}
 			</text>

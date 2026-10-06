@@ -38,8 +38,7 @@ export type ThemeColors = {
  * The symbols. The keys for the six Goal standings are the standing words,
  * so `symbol[standing]` is a standing's symbol. `blocked` is a ready Ticket
  * waiting on a blocker, `pending` a Step not run yet in a Ticket's pass,
- * `bar` one cell of a progress bar, `solidBar` one cell of the heavier bar a
- * Goal view's Goal box draws, `sep` the mark between items on a line,
+ * `bar` one cell of a progress bar, `sep` the mark between items on a line,
  * `cut` the end of a text cut short, `prose` the mark before the agent's
  * prose, `times` the mark of a count, like `×5`, `rule` one cell of a
  * divider, and `upDown` and `leftRight` the arrow keys as a footer names
@@ -55,7 +54,6 @@ export type ThemeSymbols = {
 	blocked: string;
 	pending: string;
 	bar: string;
-	solidBar: string;
 	sep: string;
 	cut: string;
 	prose: string;
@@ -273,7 +271,6 @@ const glyphs: ThemeSymbols = {
 	blocked: "◌",
 	pending: "·",
 	bar: "━",
-	solidBar: "█",
 	sep: "·",
 	cut: "…",
 	prose: "⁘",
@@ -293,7 +290,6 @@ const asciiGlyphs: ThemeSymbols = {
 	blocked: "-",
 	pending: ".",
 	bar: "=",
-	solidBar: "#",
 	sep: "|",
 	cut: "~",
 	prose: ">",

@@ -477,7 +477,6 @@ function GoalRowLine(props: {
 				standing={props.row.standing}
 				width={barWidth}
 				selected={props.selected}
-				solid={false}
 			/>
 			<span style={dim()}>
 				{` ${`${props.row.ticketCounts.done}/${ticketTotal(props.row.ticketCounts)}`.padEnd(ticketsWidth - barWidth - 1)}`}
