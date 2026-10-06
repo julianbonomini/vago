@@ -126,7 +126,7 @@ export async function runStep(
 			outcome = outcomeOf(code);
 			// Read back from the log, so a review prompt sees stdout and stderr
 			// interleaved the way the Step wrote them.
-			output = `exit code ${code}\n${await Bun.file(entry.log).text()}`;
+			output = shellOutput(code, await Bun.file(entry.log).text());
 		}
 	} finally {
 		process.off("SIGINT", interruptRun);
@@ -142,14 +142,21 @@ export async function runStep(
 }
 
 /**
- * The output an agent Run gave later Steps, its session's final answer, read
- * back from the Run's log. "" for a shell Run and for a session that ended
- * without an answer, or whose log is gone.
+ * The output `run` gave later Steps, rebuilt from its log and its
+ * `[[runs]]` entry: an agent Run's final result text, "" when its session
+ * gave none, and for a shell Run `exit code N` and its log. Undefined when
+ * the log is gone, or for a shell Run whose outcome isn't `ok` or `exit N`.
  */
-export async function readAgentRunOutput(run: TicketRun): Promise<string> {
-	if (run.harness === undefined) return "";
-	const harness = findHarness(run.harness);
+export async function readRunOutput(
+	run: TicketRun,
+): Promise<string | undefined> {
+	if (!(await Bun.file(run.log).exists())) return undefined;
 	const { added } = await readRunLog(run.log);
+	if (run.harness === undefined) {
+		const code = shellExitCode(run.outcome);
+		return code === undefined ? undefined : shellOutput(code, added);
+	}
+	const harness = findHarness(run.harness);
 	let resultText: string | undefined;
 	for (const line of added.split("\n")) {
 		// The command only tells a permission mode fallback apart, which the
@@ -157,16 +164,6 @@ export async function readAgentRunOutput(run: TicketRun): Promise<string> {
 		resultText = harness.readLine(line, []).resultText ?? resultText;
 	}
 	return resultText ?? "";
-}
-
-/**
- * The command that resumes `run`'s Harness session, or undefined for a shell
- * Run and for a session that never reported its id.
- */
-export function resumeHintFor(run: TicketRun): string | undefined {
-	if (run.harness === undefined || run.sessionId === undefined)
-		return undefined;
-	return findHarness(run.harness).resumeHint(run.sessionId);
 }
 
 // The log gets the raw stream and stderr together, so a Harness that fails
@@ -263,6 +260,21 @@ export function spellOutcome(outcome: RunOutcome): string {
 		return `permission-mode ${outcome.mode}`;
 	}
 	return outcome.kind;
+}
+
+/**
+ * The exit code of a shell Run whose outcome, as `spellOutcome` spelled it,
+ * is `outcome`: 0 for `ok`, N for `exit N`, and undefined for any other.
+ */
+export function shellExitCode(outcome: string | undefined): number | undefined {
+	if (outcome === "ok") return 0;
+	const exit = /^exit (\d+)$/.exec(outcome ?? "");
+	return exit?.[1] === undefined ? undefined : Number(exit[1]);
+}
+
+// A shell Run's output for later Steps' prompts.
+function shellOutput(code: number, log: string): string {
+	return `exit code ${code}\n${log}`;
 }
 
 // Stops the child's group when `stop` aborts, at once if it already has, as

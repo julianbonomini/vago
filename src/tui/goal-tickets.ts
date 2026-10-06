@@ -6,6 +6,7 @@
 
 import {
 	type GoalState,
+	latestPassStart,
 	type TicketStatus,
 	ticketNumberText,
 } from "../tickets/tickets.ts";
@@ -136,6 +137,10 @@ export function goalTickets(
 	return state.tickets.map((ticket) => {
 		const workflow = workflows.get(ticket.workflow);
 		const steps = workflow?.steps ?? [];
+		const [first] = steps;
+		// `runs` holds one entry per Run of `ticket.runs`, in the same order.
+		const passStart =
+			first === undefined ? 0 : latestPassStart(ticket.runs, first.id);
 		const runs = ticket.runs.map((run): GoalTicketRun => {
 			const runState =
 				run.ended !== undefined ? "ended" : claimed ? "live" : "lost";
@@ -165,7 +170,7 @@ export function goalTickets(
 			),
 			blockedBy: ticket.blockedBy.map(ticketNumberText),
 			description: joinParagraphs(ticket.description),
-			steps: markSteps(steps, runs),
+			steps: markSteps(steps, runs.slice(passStart)),
 			workflowProblem: workflow?.problem,
 			runs,
 			runsMs: runs.reduce((sum, run) => sum + run.durationMs, 0),
@@ -174,14 +179,11 @@ export function goalTickets(
 	});
 }
 
-// Each of `steps` marked from the Ticket's latest pass, the Runs from the
-// last one of its first Step on, since a Ticket can start over from there.
+// Each of `steps` marked from `pass`, the Runs of the Ticket's latest pass.
 function markSteps(
 	steps: NamedStep[],
-	runs: GoalTicketRun[],
+	pass: GoalTicketRun[],
 ): GoalTicketStep[] {
-	const passStart = runs.findLastIndex(({ stepId }) => stepId === steps[0]?.id);
-	const pass = runs.slice(Math.max(0, passStart));
 	return steps.map(({ id, name }) => {
 		const run = pass.findLast(({ stepId }) => stepId === id);
 		if (run === undefined) return { name, mark: "pending" };

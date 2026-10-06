@@ -11,6 +11,7 @@ import {
 import {
 	goalText,
 	makeProject,
+	oneStep,
 	readTicketFile,
 	runsOf,
 	runVago,
@@ -187,7 +188,7 @@ test("a failing shell Step stops the Ticket by default", async () => {
 	expect(await claude.calls()).toEqual([]);
 });
 
-test("the stuck message shows the outcome, the log, the resume command and the reset command", async () => {
+test("the stuck message shows the outcome, the log, the resume command, the command that goes on and the reset command", async () => {
 	const root = await stuckProject(agentWorkflow);
 	const claude = await makeFakeClaude("exit 3");
 
@@ -196,6 +197,7 @@ test("the stuck message shows the outcome, the log, the resume command and the r
 	expect(result.stdout).toContain(`01-greet is stuck after implement: exit 3
   log:    .vago-goals/hello/logs/01-implement-1.jsonl
   resume: claude --resume f679b9c4-e75a-4f73-affd-0dedfe161e0d
+  again:  vago run hello
   reset:  vago ticket reset hello 01
 `);
 });
@@ -224,29 +226,27 @@ test("a stuck shell Step's message has no resume command", async () => {
 
 	expect(result.stdout).toContain(`01-greet is stuck after check: exit 4
   log:    .vago-goals/hello/logs/01-check-1.log
+  again:  vago run hello
   reset:  vago ticket reset hello 01
 `);
 });
 
-test("vago run refuses while a Ticket is stuck, names it and runs nothing", async () => {
+test("vago run doesn't refuse a Goal with a stuck Ticket, and runs it and the next", async () => {
 	const root = await makeProject({
-		".vago/workflows/test.toml": checkWorkflow(""),
-		".vago/prompts/review.md": "Review it.\n",
+		".vago/workflows/test.toml": oneStep("true"),
 		[`${goalDir}/goal.md`]: goalText("test"),
 		[`${goalDir}/tickets/01-greet.md`]: ticket(`status = "stuck"`, "Greet"),
-		// Not blocked by the stuck Ticket, so only the refusal keeps it unrun.
 		[`${goalDir}/tickets/02-wave.md`]: ticket(`status = "ready"`, "Wave"),
 	});
 
 	const result = await runVago(root, ["run", "hello"]);
 
-	expect(result.exitCode).not.toBe(0);
-	expect(
-		result.stdout,
-	).toBe(`hello has stuck Tickets. Check the Goal's worktree, then reset each one:
-  01-greet: vago ticket reset hello 01
-`);
-	expect(runsOf(await headerOf(root, "02-wave"))).toEqual([]);
+	expect(result.exitCode).toBe(0);
+	for (const name of ["01-greet", "02-wave"]) {
+		const header = await headerOf(root, name);
+		expect(header.status).toBe("done");
+		expect(runsOf(header).map((run) => run.outcome)).toEqual(["ok"]);
+	}
 });
 
 test("a reset Ticket is ready again, keeps its runs and logs, and runs with new logs", async () => {
@@ -285,6 +285,35 @@ test("a reset Ticket is ready again, keeps its runs and logs, and runs with new 
 		Bun.file(join(root, goalDir, "logs", name)).text();
 	expect(await log("01-check-1.log")).toBe("2 tests failed\n");
 	expect(await log("01-check-2.log")).toBe("2 tests failed\n");
+});
+
+test("a reset Ticket stuck at a later Step starts over from its first Step", async () => {
+	const root = await makeProject({
+		".vago/workflows/test.toml": `${agentWorkflow}
+[[steps]]
+id   = "check"
+type = "shell"
+run  = "exit 4"
+`,
+		".vago/prompts/implement.md": "Implement it.\n",
+		[`${goalDir}/goal.md`]: goalText("test"),
+		[`${goalDir}/tickets/01-greet.md`]: ticket(`status = "ready"`, "Greet"),
+	});
+	const claude = await makeFakeClaude();
+	await runVago(root, ["run", "hello"], claude.env);
+	await runVago(root, ["ticket", "reset", "hello", "01"]);
+
+	const rerun = await runVago(root, ["run", "hello"], claude.env);
+
+	expect(rerun.stdout).toContain("\n01-greet\n");
+	expect(await claude.calls()).toHaveLength(2);
+	const runs = runsOf(await headerOf(root, "01-greet"));
+	expect(runs.map((run) => [run.step, run.outcome, run.log])).toEqual([
+		["implement", "ok", "logs/01-implement-1.jsonl"],
+		["check", "exit 4", "logs/01-check-2.log"],
+		["implement", "ok", "logs/01-implement-3.jsonl"],
+		["check", "exit 4", "logs/01-check-4.log"],
+	]);
 });
 
 test("resetting a Ticket that isn't stuck fails and leaves it as it was", async () => {

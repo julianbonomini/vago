@@ -126,14 +126,37 @@ export type GoalState = {
 		runs: TicketRun[];
 	}[];
 	/**
-	 * The lowest-numbered Ticket that is `ready` and whose blockers are all
-	 * `done`, with the name of the Workflow it goes through, or undefined
-	 * when there is none.
+	 * The lowest-numbered Ticket that is `ready` or `stuck` and whose
+	 * blockers are all `done`, with its status, the name of the Workflow it
+	 * goes through and its Runs, or undefined when there is none.
 	 */
-	nextReady: { ticket: Ticket; workflow: string } | undefined;
+	next:
+		| {
+				ticket: Ticket;
+				workflow: string;
+				status: "ready" | "stuck";
+				runs: TicketRun[];
+		  }
+		| undefined;
 	/** Whether every Ticket is `done`, which a Goal with no Tickets is. */
 	done: boolean;
 };
+
+/**
+ * The index in `runs`, a Ticket's `[[runs]]` in the order they ran, where
+ * its latest pass through its Workflow starts: its last Run of Step
+ * `firstStepId`, the Workflow's first, since a Ticket that starts over
+ * starts there. 0 when no Run is of that Step.
+ */
+export function latestPassStart(
+	runs: TicketRun[],
+	firstStepId: string,
+): number {
+	return Math.max(
+		0,
+		runs.findLastIndex(({ step }) => step === firstStepId),
+	);
+}
 
 /**
  * Creates Goal `goal` with an empty `tickets/` and a `goal.md` whose `+++`
@@ -232,9 +255,9 @@ export async function readGoal(root: string, goal: string): Promise<GoalState> {
 			inGoalReport: run.goal_report === true,
 		})),
 	}));
-	const nextReady = tickets.find(
+	const next = tickets.find(
 		({ ticket, status }) =>
-			status === "ready" &&
+			(status === "ready" || status === "stuck") &&
 			(byNumber.get(ticket.number)?.header.blocked_by ?? []).every(
 				(blocker) => byNumber.get(blocker)?.header.status === "done",
 			),
@@ -245,10 +268,16 @@ export async function readGoal(root: string, goal: string): Promise<GoalState> {
 		workflow,
 		created,
 		tickets,
-		nextReady:
-			nextReady === undefined
+		// The status is checked again only so its type is `ready` or `stuck`.
+		next:
+			next === undefined || (next.status !== "ready" && next.status !== "stuck")
 				? undefined
-				: { ticket: nextReady.ticket, workflow: nextReady.workflow },
+				: {
+						ticket: next.ticket,
+						workflow: next.workflow,
+						status: next.status,
+						runs: next.runs,
+					},
 		done: entries.every(({ header }) => header.status === "done"),
 	};
 }

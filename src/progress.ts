@@ -1,9 +1,10 @@
 // Everything `vago run` prints to stdout while it runs: the Goal's worktree,
 // one line naming each Ticket as it starts, and under it a line when each
 // Step starts and one when it ends, where to look when a Ticket goes stuck,
-// the Goal summary table on exit, and what became of the Goal's worktree,
-// after the summary. Also the Goal report `vago goal report` prints. Hides the
-// line formats, columns and colours, and how durations and costs read.
+// why a stuck Ticket can't be picked up, the Goal summary table on exit, and
+// what became of the Goal's worktree, after the summary. Also the Goal report
+// `vago goal report` prints. Hides the line formats, columns and colours, and
+// how durations and costs read.
 
 import { relative } from "node:path";
 import { joinParagraphLines } from "./markdown-paragraphs.ts";
@@ -21,9 +22,16 @@ export function printWorktree(path: string): void {
 	console.log(`Worktree ${path}`);
 }
 
-/** Prints the line naming `ticket`, under which its Step lines follow, indented. */
-export function printTicketStarted(ticket: Ticket): void {
-	console.log(ticket.name);
+/**
+ * Prints the line naming `ticket`, under which its Step lines follow,
+ * indented, saying it was picked up at Step `pickedUpAt` when given.
+ */
+export function printTicketStarted(ticket: Ticket, pickedUpAt?: string): void {
+	console.log(
+		pickedUpAt === undefined
+			? ticket.name
+			: `${ticket.name}, picked up at ${pickedUpAt}`,
+	);
 }
 
 /** Prints the indented line saying Step `stepName` started at `started`. */
@@ -59,7 +67,8 @@ export function printStepEnded(
  * Prints that `ticket` went stuck after Step `stepName`, whose Run ended with
  * `outcome` as spelled in the header, with what the human needs next: the
  * Run's log at the absolute path `log`, the command that resumes its Harness
- * session when there is one, and the command that resets the Ticket.
+ * session when there is one, the `vago run` that picks the Ticket up at that
+ * Step again, and the command that resets the Ticket.
  */
 export function printStuck(
 	ticket: Ticket,
@@ -75,25 +84,25 @@ export function printStuck(
 	// enough to read and still opens from where the human is.
 	console.log(`  log:    ${relative(ticket.root, log)}`);
 	if (resumeHint !== undefined) console.log(`  resume: ${resumeHint}`);
+	console.log(`  again:  vago run ${ticket.goal}`);
 	console.log(`  reset:  ${resetCommand(ticket)}`);
 }
 
 /**
- * Prints why `vago run` won't start `goal`: the Tickets in `stuck`, each with
- * the command that resets it and, when given, the command that resumes its
- * last Run's Harness session.
+ * Prints that `ticket` can't be picked up because of Step `stepName`, with
+ * `reason` saying why after the Step's name, as in `implement has no log
+ * left to rebuild its output from`, and the command that makes it start
+ * over.
  */
-export function printStuckRefusal(
-	goal: string,
-	stuck: { ticket: Ticket; resumeHint?: string }[],
+export function printPickUpRefusal(
+	ticket: Ticket,
+	stepName: string,
+	reason: string,
 ): void {
 	console.log(
-		`${goal} has stuck Tickets. Check the Goal's worktree, then reset each one:`,
+		paint(`${ticket.name} can't be picked up: ${stepName} ${reason}`, "red"),
 	);
-	for (const { ticket, resumeHint } of stuck) {
-		console.log(`  ${ticket.name}: ${resetCommand(ticket)}`);
-		if (resumeHint !== undefined) console.log(`    resume: ${resumeHint}`);
-	}
+	console.log(`  reset:  ${resetCommand(ticket)}`);
 }
 
 /**

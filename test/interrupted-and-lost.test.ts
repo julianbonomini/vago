@@ -34,7 +34,7 @@ type   = "agent"
 prompt = "prompts/implement.md"
 `;
 
-test("a Ticket left running goes stuck with outcome lost, and nothing runs", async () => {
+test("a Ticket left running has its open Run ended lost, then runs again, and so do later Tickets", async () => {
 	const root = await makeProject({
 		".vago/workflows/test.toml": agentWorkflow,
 		".vago/prompts/implement.md": "Implement it.\n",
@@ -52,22 +52,22 @@ started = 2026-10-01T09:12:03Z
 log = "logs/01-implement-1.jsonl"`,
 			"Greet",
 		),
-		// Not blocked by the lost Ticket, so only the stop keeps it unrun.
 		[`${goalDir}/tickets/02-wave.md`]: ticket(`status = "ready"`, "Wave"),
 	});
 	const claude = await makeFakeClaude();
 
 	const result = await runVago(root, ["run", "hello"], claude.env);
 
-	expect(result.exitCode).not.toBe(0);
+	expect(result.exitCode).toBe(0);
 	const greet = await headerOf(root, "01-greet");
-	expect(greet.status).toBe("stuck");
-	const [lost] = runsOf(greet);
+	expect(greet.status).toBe("done");
+	const [lost, again] = runsOf(greet);
 	expect(lost?.outcome).toBe("lost");
 	expect(lost?.ended).toBeInstanceOf(Date);
-	expect(result.stdout).toContain("01-greet: vago ticket reset hello 01");
-	expect(await claude.calls()).toEqual([]);
-	expect(runsOf(await headerOf(root, "02-wave"))).toEqual([]);
+	expect(again?.outcome).toBe("ok");
+	expect(
+		runsOf(await headerOf(root, "02-wave")).map((run) => run.outcome),
+	).toEqual(["ok"]);
 });
 
 // Two Tickets, the second not blocked by the first, so only the interrupt
@@ -196,7 +196,7 @@ test("a running agent Run's [[runs]] entry already holds its session_id", async 
 	await vago.exited;
 });
 
-test("a vago run killed mid-Run keeps the session_id, and the next run's stuck message resumes it", async () => {
+test("a vago run killed mid-Run keeps the session_id in its lost Run", async () => {
 	const root = await twoTickets(agentWorkflow);
 	const claude = await makeFakeClaude("echo $$ > claude.pid; sleep 60");
 	const vago = startVago(root, ["run", "hello"], claude.env);
@@ -207,12 +207,9 @@ test("a vago run killed mid-Run keeps the session_id, and the next run's stuck m
 	await vago.exited;
 	process.kill(-group, "SIGKILL");
 
-	const result = await runVago(root, ["run", "hello"], claude.env);
+	await runVago(root, ["run", "hello"], (await makeFakeClaude()).env);
 
 	const [lost] = runsOf(await headerOf(root, "01-greet"));
 	expect(lost?.outcome).toBe("lost");
 	expect(lost?.session_id).toBe(fixtureSessionId);
-	expect(result.stdout).toContain(`  01-greet: vago ticket reset hello 01
-    resume: claude --resume ${fixtureSessionId}
-`);
 });
