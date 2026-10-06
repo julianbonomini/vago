@@ -593,11 +593,13 @@ test("an agent Run's border has its cost", async () => {
 });
 
 // The Goal view of Goal `agent`, `size`, whose only Ticket's one implement
-// Run ended `outcome` and logged the recorded Claude Code stream `fixture`,
-// rewritten by `edit` with the Project's root.
+// Run ended `outcome` and logged the stream `fixture` recorded from
+// `harness`, Claude Code unless given, rewritten by `edit` with the
+// Project's root.
 async function openAgentRun(
 	fixture: string,
 	options: {
+		harness?: string;
 		outcome?: string;
 		size?: { width: number; height: number };
 		edit?: (log: string, root: string) => string;
@@ -611,6 +613,7 @@ async function openAgentRun(
 					...runOf("implement", 0, 9, options.outcome),
 					costUsd: 0.09,
 					model: "opus",
+					harness: options.harness,
 				},
 			],
 		}),
@@ -686,6 +689,37 @@ test("a refused tool call shows the tool and why", async () => {
 
 	expect(await frameWith(view, "Denied")).toContain(
 		"       ✗ Denied Bash: This shell -c script runs rm and could not be checked ",
+	);
+});
+
+test("a Codex Run shows its prose, its commands folded, its edits, failures, refusals and its end", async () => {
+	const edited = await openAgentRun("codex-edit.jsonl", {
+		harness: "codex",
+		size: { width: 140, height: 60 },
+		edit: (log, root) =>
+			log.replaceAll(
+				"/home/user/.vago/worktrees/project-1a2b3c4d/hello/greet.ts",
+				`${root}/greet.ts`,
+			),
+	});
+	const refused = await openAgentRun("codex-refused.jsonl", {
+		harness: "codex",
+		outcome: "permission-denied",
+		size: { width: 140, height: 60 },
+	});
+
+	const frame = await frameWith(edited.view, "Run finished");
+	expect(frame).toContain(
+		"  ⁘ I’ll update greet.ts, check the diff, and commit it as say hi. ",
+	);
+	expect(frame).toContain(
+		"     Execute ×2 cat greet.ts && git status --porcelain=v1 ",
+	);
+	expect(frame).toContain("     Edit greet.ts ");
+	expect(frame).toContain("       ✗ Exit code 128 ");
+	expect(frame).toContain("  ✓ Run finished   120.2k tokens ");
+	expect(await frameWith(refused.view, "Denied")).toContain(
+		"       ✗ Denied shell: Codex's automatic review declined it ",
 	);
 });
 

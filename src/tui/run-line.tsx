@@ -3,7 +3,7 @@
 // duration and cost in fixed columns. Hides the columns' widths and how a
 // narrow line is cut.
 
-import { type ColorInput, TextAttributes } from "@opentui/core";
+import type { ColorInput } from "@opentui/core";
 import type { JSX } from "@opentui/solid";
 import type { GoalRunState } from "./goal-tickets.ts";
 import { fitText } from "./text-fit.ts";

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
-import { makeFakeClaude } from "./fake-claude.ts";
+import { makeFakeClaude } from "./fake-harness.ts";
 import {
 	goalText,
 	goalWorktree,

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
-import { makeFakeClaude } from "./fake-claude.ts";
+import { makeFakeClaude } from "./fake-harness.ts";
 import {
 	goalText,
 	goalWorktree,
@@ -257,8 +257,8 @@ test.each([
 	},
 	{
 		problem: "an unknown Step harness",
-		workflow: agentWorkflow('harness = "codex"'),
-		message: 'unknown harness "codex"\n  → at steps[0].harness',
+		workflow: agentWorkflow('harness = "aider"'),
+		message: 'unknown harness "aider"\n  → at steps[0].harness',
 	},
 	{
 		problem: "a missing prompt file",

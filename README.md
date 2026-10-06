@@ -1,6 +1,6 @@
 # Vago
 
-Vago builds a Goal in your repo while you're away. You write the Goal and split it into Tickets, and `vago run` takes each Ticket through a Workflow: a list of Steps, some run by a coding agent (Claude Code) and some by shell commands. Each Ticket ends as one commit on the Goal's branch, and the Goal ends as one pull request for you to review and merge.
+Vago builds a Goal in your repo while you're away. You write the Goal and split it into Tickets, and `vago run` takes each Ticket through a Workflow: a list of Steps, some run by a coding agent (Claude Code or Codex) and some by shell commands. Each Ticket ends as one commit on the Goal's branch, and the Goal ends as one pull request for you to review and merge.
 
 The words Vago uses (Goal, Ticket, Workflow, Step, Run, Harness) are defined in [`CONTEXT.md`](CONTEXT.md). How Vago is built is in [`docs/architecture.md`](docs/architecture.md).
 
@@ -10,6 +10,7 @@ You need:
 
 - [Bun](https://bun.sh), to build `vago`.
 - [Claude Code](https://claude.com/claude-code), logged in, with `claude` on your `PATH`. Agent Steps run `claude -p` in its `auto` permission mode.
+- [Codex](https://developers.openai.com/codex/cli), only for Steps you run on it: logged in with `codex login`, with `codex` on your `PATH`, at a version whose `codex exec` has `--approve-for-me` (0.160.0 has it). See [Run Steps on Codex](#run-steps-on-codex).
 - [`gh`](https://cli.github.com), logged in with `gh auth login`. The starter Workflows push the Goal's branch and open its PR with it.
 
 Build the binary from a clone of this repo:
@@ -44,24 +45,24 @@ vago init
 - `prompts/`, the prompt of each agent Step.
 - `scripts/branch.sh` and `scripts/merge.sh`, the git work of the `branch` and `merge` Steps.
 
-It also puts five skills into `.claude/skills/`, where Claude Code finds them:
+It also puts five skills into `.claude/skills/`, where Claude Code finds them, and the same five into `.agents/skills/`, where Codex finds them, so the starter prompts work on either Harness:
 
 - `vago-write-code`, `vago-check-red-flags` and `vago-design-module` hold the design and code rules, from John Ousterhout's *A Philosophy of Software Design*. Each starter prompt names the ones its Step runs, and you can use them in your own sessions too.
 - `vago-to-goal` and `vago-to-tickets` are for you, after a planning conversation: `/vago-to-goal` writes the conversation up as a Goal, and `/vago-to-tickets` slices that Goal into Tickets. They run only when you type their name.
 
-Before it writes anything, it asks `Commit the Workflow? [y/N]`. Answer `y` to leave `.vago/` and the skills for git, so everyone who clones the repo gets your Workflows. Any other answer adds `.vago/` and each skill's folder to `.git/info/exclude`, so they stay in your checkout. Anything else in `.claude/` stays as git saw it. Either way it adds `.vago-goals/`, where Goals and Tickets live, to `.git/info/exclude`.
+Before it writes anything, it asks `Commit the Workflow? [y/N]`. Answer `y` to leave `.vago/` and the skills for git, so everyone who clones the repo gets your Workflows. Any other answer adds `.vago/` and each skill's folder, in both places, to `.git/info/exclude`, so they stay in your checkout. Anything else in `.claude/` and `.agents/` stays as git saw it. Either way it adds `.vago-goals/`, where Goals and Tickets live, to `.git/info/exclude`.
 
-`vago init` refuses, and changes nothing, when the directory has no `.git` or a file it would write already exists in `.vago/` or `.claude/skills/`.
+`vago init` refuses, and changes nothing, when the directory has no `.git` or a file it would write already exists in `.vago/`, `.claude/skills/` or `.agents/skills/`.
 
 ### Update a Project
 
-After installing a newer `vago`, run `vago update` to bring `.vago/` and the skills to the starter it ships:
+After installing a newer `vago`, run `vago update` to bring `.vago/` and both copies of the skills to the starter it ships:
 
 ```sh
 vago update
 ```
 
-It overwrites each starter file that differs, writes any that are missing, and prints the path of every file it changed, so you see which tuned prompt it replaced. Files you added, like your own Workflow or prompt, stay as they are, and so does every Goal in `.vago-goals/`. It keeps your commit answer: if `.git/info/exclude` lists `.vago/`, the Workflow stays private and any new skill is excluded too. It asks again only when the exclude lists neither `.vago/` nor `.vago-goals/`. Run it twice and the second run prints nothing.
+It overwrites each starter file that differs, writes any that are missing, and prints the path of every file it changed, so you see which tuned prompt it replaced. Files you added, like your own Workflow, prompt or skill, stay as they are, and so does every Goal in `.vago-goals/`. It keeps your commit answer: if `.git/info/exclude` lists `.vago/`, the Workflow stays private and any new skill is excluded too. It asks again only when the exclude lists neither `.vago/` nor `.vago-goals/`. Run it twice and the second run prints nothing.
 
 ### Pick a Workflow
 
@@ -77,6 +78,33 @@ The starter files are yours to change, and a few of them assume things about the
 - The `check` Step runs `bun run check`, and the prompts tell every agent Step to make it pass before it finishes. In a Project without that script, change the command in `.vago/workflows/*.toml` and the prompts that name it.
 - `merge.sh` pushes the Goal's branch to `origin` and opens its PR with `gh`, against the repo's default branch.
 - The prompts send agents to the docs that the Project's `AGENTS.md` names.
+
+### Run Steps on Codex
+
+Each agent Step runs on a Harness, the coding agent that performs it. There are two: `claude-code`, which the starter Workflows use, and `codex`. The Workflow's top-level `harness` and `model` apply to every agent Step, and a Step may set its own. To run a whole Workflow on Codex, change the top of its file:
+
+```toml
+harness = "codex"
+model   = "gpt-6-sol"
+```
+
+To mix Harnesses, set them on one Step. This keeps Claude Code building and has Codex review:
+
+```toml
+[[steps]]
+id      = "review"
+name    = "Review"
+type    = "agent"
+prompt  = "prompts/small-review.md"
+harness = "codex"
+model   = "gpt-6-sol"
+```
+
+A Step that changes `harness` sets `model` too, since the Workflow's model belongs to the other Harness. `args` are appended to the Harness's command, so a Step that changes Harness also needs its own `args` when the Workflow sets any.
+
+Vago runs Codex as `codex exec --json --approve-for-me --model <model>`. Commands run in Codex's `workspace-write` sandbox, and each request to leave it, such as `git commit` writing to the worktree's git folder, goes to Codex's automatic review instead of to you, so a Run never stops to ask. Vago never passes `--dangerously-bypass-approvals-and-sandbox`, as it never passes Claude Code's `--dangerously-skip-permissions`. A command the review declines ends the Step `permission-denied`.
+
+Codex reports no cost, so Vago prices a Codex Run from its tokens and the model's list price, and shows no cost for a model it has no price for. A Codex Run's log is its `codex exec --json` stream, and its resume hint is `codex resume <session id>`.
 
 ## Write a Goal and its Tickets
 
@@ -147,7 +175,7 @@ Total                 10  39m42s  $7.02
 
 On a terminal the outcomes and statuses are coloured; set `NO_COLOR` to turn that off. `vago run` exits 0 only when every Ticket of the Goal is done.
 
-A Step ends `ok`, `exit <code>` for a shell Step or Claude Code exiting non-zero, `idle-timeout` when Claude printed nothing for the Workflow's `idle_timeout` (10 minutes in the starters), `interrupted` when you pressed Ctrl-C, `permission-denied` when Claude Code refused a tool call, or `permission-mode <mode>` when the session ran in another mode than the one its command asked for.
+A Step ends `ok`, `exit <code>` for a shell Step or a Harness exiting non-zero, `idle-timeout` when the Harness printed nothing for the Workflow's `idle_timeout` (10 minutes in the starters), `interrupted` when you pressed Ctrl-C, `permission-denied` when Claude Code refused a tool call or Codex's automatic review declined a command, or `permission-mode <mode>` when a Claude Code session ran in another mode than the one its command asked for.
 
 `vago goal report search` prints the Goal's text, each paragraph on one line, then the output of each Step with `goal_report = true`, such as `try-hard`'s design choices, collapsed under its Ticket, then a Markdown table of each Ticket's Runs, time and cost, with every Run in a collapsed table below. It is the same text the PR description holds.
 
@@ -170,11 +198,11 @@ A Ticket goes stuck when one of its Steps fails. `vago run` stops there and tell
 
 To recover:
 
-1. Read the log. Each Run has one under `.vago-goals/<goal>/logs/`, named for the Ticket number, the Step and the Run's position: a `.log` with a shell Step's output, or a `.jsonl` with Claude Code's raw stream for an agent Step. `resume` opens the agent's session in Claude Code, if you want to ask it what happened.
+1. Read the log. Each Run has one under `.vago-goals/<goal>/logs/`, named for the Ticket number, the Step and the Run's position: a `.log` with a shell Step's output, or a `.jsonl` with the Harness's raw stream for an agent Step. `resume` opens the agent's session in its Harness, `claude --resume` or `codex resume`, if you want to ask it what happened.
 2. Fix the checkout. The Step stopped wherever it was, so the checkout may be on the Ticket's branch with uncommitted changes. A failed `merge` leaves it clean. `branch` refuses to start on a dirty checkout, so commit, stash or discard what's there. If the Ticket itself was the problem, edit its text below the header.
 3. Reset the Ticket with `vago ticket reset search 02`. Its status goes back to `ready`; its Runs stay in the header.
 4. Run `vago run search` again.
 
 A reset Ticket starts over: `branch` cuts its branch again from `vago/search`, so commits left on the old `search/02-ranking` branch are dropped. Tickets already merged into `vago/search` keep their work.
 
-While any Ticket of the Goal is stuck, `vago run` runs nothing and lists the reset command for each stuck one, and the resume command when its last Run was an agent's. A Ticket left `running` by a `vago run` that crashed or was killed goes stuck on the next run, with its open Run ended `lost`, because the checkout may hold that Run's partial work. An agent Run's `session_id` reaches its `[[runs]]` entry as soon as Claude Code reports it, so a lost Run can still be resumed.
+While any Ticket of the Goal is stuck, `vago run` runs nothing and lists the reset command for each stuck one, and the resume command when its last Run was an agent's. A Ticket left `running` by a `vago run` that crashed or was killed goes stuck on the next run, with its open Run ended `lost`, because the checkout may hold that Run's partial work. An agent Run's `session_id` reaches its `[[runs]]` entry as soon as its Harness reports it, so a lost Run can still be resumed.

@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { makeFakeClaude } from "./fake-claude.ts";
+import { makeFakeClaude } from "./fake-harness.ts";
 import { goalText, makeProject, readTicketFile, runVago } from "./project.ts";
 
 const starter = join(import.meta.dir, "..", "starter");
@@ -17,15 +17,24 @@ async function filesIn(dir: string): Promise<string[]> {
 	return paths.sort();
 }
 
-// Each starter file's path in a Project after init: the skills go where
-// Claude Code finds them, everything else into `.vago/`.
+// The folders a Project's skills go in after init: where Claude Code finds
+// them, and where Codex does.
+const skillFolders = [".claude/skills", ".agents/skills"];
+
+// Each starter file's installed path in a Project after init, with the starter
+// path it copies: every skill goes into each skill folder, everything else
+// into `.vago/`.
 async function starterProjectFiles(): Promise<Map<string, string>> {
 	const files = new Map<string, string>();
 	for (const path of await filesIn(starter)) {
-		const installed = path.startsWith("skills/")
-			? `.claude/${path}`
-			: `.vago/${path}`;
-		files.set(path, installed);
+		if (path.startsWith("skills/")) {
+			const skillPath = path.slice("skills/".length);
+			for (const folder of skillFolders) {
+				files.set(`${folder}/${skillPath}`, path);
+			}
+		} else {
+			files.set(`.vago/${path}`, path);
+		}
 	}
 	return files;
 }
@@ -62,18 +71,18 @@ function untrackedFiles(root: string): string[] {
 		.map((line) => line.replace(/^\?\? /, ""));
 }
 
-// Fails unless `.vago/` and `.claude/skills/` under `root` hold exactly the
+// Fails unless `.vago/` and both skill folders under `root` hold exactly the
 // starter's files, byte for byte.
 async function expectStarterIn(root: string): Promise<void> {
 	const starterFiles = await starterProjectFiles();
-	const installed = [
-		...(await filesIn(join(root, ".vago"))).map((path) => `.vago/${path}`),
-		...(await filesIn(join(root, ".claude/skills"))).map(
-			(path) => `.claude/skills/${path}`,
-		),
-	];
-	expect(installed.sort()).toEqual([...starterFiles.values()].sort());
-	for (const [path, installedPath] of starterFiles) {
+	const installed: string[] = [];
+	for (const folder of [".vago", ...skillFolders]) {
+		for (const path of await filesIn(join(root, folder))) {
+			installed.push(`${folder}/${path}`);
+		}
+	}
+	expect(installed.sort()).toEqual([...starterFiles.keys()].sort());
+	for (const [installedPath, path] of starterFiles) {
 		expect(await Bun.file(join(root, installedPath)).text()).toBe(
 			await Bun.file(join(starter, path)).text(),
 		);
@@ -89,6 +98,11 @@ const privateExcludeLines = [
 	".claude/skills/vago-to-goal/",
 	".claude/skills/vago-to-tickets/",
 	".claude/skills/vago-write-code/",
+	".agents/skills/vago-check-red-flags/",
+	".agents/skills/vago-design-module/",
+	".agents/skills/vago-to-goal/",
+	".agents/skills/vago-to-tickets/",
+	".agents/skills/vago-write-code/",
 	"",
 ];
 
@@ -158,7 +172,7 @@ test("answering commit lets git see the Workflow and skills but never the Goals"
 	await runVago(root, ["goal", "new", "hello", "--workflow", "small"]);
 	const starterFiles = await starterProjectFiles();
 	expect(untrackedFiles(root)).toEqual(
-		[".claude/settings.json", ".gitignore", ...starterFiles.values()].sort(),
+		[".claude/settings.json", ".gitignore", ...starterFiles.keys()].sort(),
 	);
 	expect(await excludeLines(root)).toEqual([".vago-goals/", ""]);
 	expect(await Bun.file(join(root, ".gitignore")).text()).toBe(
@@ -216,27 +230,29 @@ test("init refuses a Project it already set up and changes nothing", async () =>
 	expect(await Bun.file(join(root, ".git/info/exclude")).text()).toBe(exclude);
 });
 
-test("init refuses a Project that already has a vago- skill and changes nothing", async () => {
-	const root = await makeProject({
-		".claude/skills/vago-write-code/SKILL.md": "# My own\n",
+for (const folder of skillFolders) {
+	test(`init refuses a Project that already has a vago- skill in ${folder}/ and changes nothing`, async () => {
+		const root = await makeProject({
+			[`${folder}/vago-write-code/SKILL.md`]: "# My own\n",
+		});
+		const exclude = await Bun.file(join(root, ".git/info/exclude")).text();
+
+		const init = await runVago(root, ["init"], {}, "n\n");
+
+		expect(init.exitCode).not.toBe(0);
+		expect(init.stderr).toMatch(
+			new RegExp(`${folder}/vago-write-code/SKILL\\.md already exists`),
+		);
+		expect(init.stdout).toBe("");
+		expect(
+			await Bun.file(join(root, folder, "vago-write-code/SKILL.md")).text(),
+		).toBe("# My own\n");
+		expect(existsSync(join(root, ".vago"))).toBe(false);
+		expect(await Bun.file(join(root, ".git/info/exclude")).text()).toBe(
+			exclude,
+		);
 	});
-	const exclude = await Bun.file(join(root, ".git/info/exclude")).text();
-
-	const init = await runVago(root, ["init"], {}, "n\n");
-
-	expect(init.exitCode).not.toBe(0);
-	expect(init.stderr).toMatch(
-		/\S*\.claude\/skills\/vago-write-code\/SKILL\.md already exists/,
-	);
-	expect(init.stdout).toBe("");
-	expect(
-		await Bun.file(
-			join(root, ".claude/skills/vago-write-code/SKILL.md"),
-		).text(),
-	).toBe("# My own\n");
-	expect(existsSync(join(root, ".vago"))).toBe(false);
-	expect(await Bun.file(join(root, ".git/info/exclude")).text()).toBe(exclude);
-});
+}
 
 test("init refuses a Project laid out the old way and changes nothing", async () => {
 	const root = await makeProject({
@@ -295,7 +311,9 @@ test("deleting .vago/ and the skills and running init again keeps every Goal, an
 	).text();
 
 	await rm(join(root, ".vago"), { recursive: true });
-	await rm(join(root, ".claude/skills"), { recursive: true });
+	for (const folder of skillFolders) {
+		await rm(join(root, folder), { recursive: true });
+	}
 	const init = await runVago(root, ["init"], {}, "n\n");
 
 	expect(init.exitCode).toBe(0);
@@ -340,8 +358,11 @@ test("update brings a set-up Project to the starter, keeps what the human added,
 	await writeFiles(root, {
 		".vago/prompts/review.md": "Review it.\n",
 		".claude/skills/vago-write-code/SKILL.md": "# Old rules\n",
+		".agents/skills/vago-write-code/SKILL.md": "# Old rules\n",
 		".vago/workflows/mine.toml": "# my own\n",
 		".vago/prompts/mine.md": "My prompt.\n",
+		".claude/skills/mine/SKILL.md": "# My skill\n",
+		".agents/skills/mine/SKILL.md": "# My skill\n",
 	});
 	await rm(join(root, ".vago/scripts/merge.sh"));
 	// A starter from before the skill existed left it out of the exclude.
@@ -361,12 +382,19 @@ test("update brings a set-up Project to the starter, keeps what the human added,
 	expect(update.stdout.split("\n").sort()).toEqual(
 		[
 			"",
+			".agents/skills/vago-write-code/SKILL.md",
 			".claude/skills/vago-write-code/SKILL.md",
 			".git/info/exclude",
 			".vago/prompts/review.md",
 			".vago/scripts/merge.sh",
 		].sort(),
 	);
+	for (const folder of skillFolders) {
+		expect(await Bun.file(join(root, folder, "mine/SKILL.md")).text()).toBe(
+			"# My skill\n",
+		);
+		await rm(join(root, folder, "mine"), { recursive: true });
+	}
 	await rm(join(root, ".vago/workflows/mine.toml"));
 	await rm(join(root, ".vago/prompts/mine.md"));
 	await expectStarterIn(root);

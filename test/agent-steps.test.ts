@@ -3,8 +3,9 @@ import { join } from "node:path";
 import {
 	acceptEditsFixture,
 	makeFakeClaude,
+	makeFakeCodex,
 	sessionFixture,
-} from "./fake-claude.ts";
+} from "./fake-harness.ts";
 import {
 	goalText,
 	goalWorktree,
@@ -194,4 +195,98 @@ test("the end line shows the Run's cost", async () => {
 
 	const lines = result.stdout.trimEnd().split("\n");
 	expect(lines[3]).toMatch(/^ {2}\S+ +\d+\.\ds +\$0\.01 {2}implement ok$/);
+});
+
+const codexWorkflow = `
+harness = "codex"
+model   = "gpt-6-luna"
+
+[[steps]]
+id     = "implement"
+type   = "agent"
+prompt = "prompts/implement.md"
+`;
+
+async function codexProject(): Promise<string> {
+	return makeProject({
+		".vago/workflows/test.toml": codexWorkflow,
+		".vago/prompts/implement.md": prompt,
+		[`${goalDir}/goal.md`]: goalText("test"),
+		[ticketPath]: `+++\nstatus = "ready"\n+++\n${ticketBody}`,
+	});
+}
+
+test("codex runs codex exec on its JSON stream, never without a sandbox, on the Workflow's model", async () => {
+	const root = await codexProject();
+	const codex = await makeFakeCodex();
+
+	const result = await runVago(root, ["run", "hello"], codex.env);
+
+	expect(result.exitCode).toBe(0);
+	const [call] = await codex.calls();
+	expect(call?.argv).toEqual([
+		"exec",
+		"--json",
+		"--approve-for-me",
+		"--model",
+		"gpt-6-luna",
+		"-",
+	]);
+	expect(call?.stdin).toContain(ticketBody);
+});
+
+test("[[runs]] records a Codex Run's session, tokens and the cost of its model", async () => {
+	const root = await codexProject();
+	const codex = await makeFakeCodex();
+
+	await runVago(root, ["run", "hello"], codex.env);
+
+	const runs = (await readTicketFile(root, ticketPath)).header.runs as Record<
+		string,
+		unknown
+	>[];
+	expect(runs[0]).toMatchObject({
+		harness: "codex",
+		model: "gpt-6-luna",
+		outcome: "ok",
+		session_id: "01a10e32-3816-7022-9ae8-c718d8802ffe",
+		tokens: { input: 19397, output: 5 },
+		// Fresh input, cached input and output at gpt-6-luna's prices.
+		cost_usd: (11461 * 0.1 + 7936 * 0.01 + 5 * 0.5) / 1_000_000,
+	});
+});
+
+test("a Step on codex in a Claude Code Workflow gives its answer to later Steps", async () => {
+	const root = await makeProject({
+		".vago/workflows/test.toml": `${workflow}
+[[steps]]
+id      = "review"
+type    = "agent"
+harness = "codex"
+model   = "gpt-6-luna"
+prompt  = "prompts/review.md"
+
+[[steps]]
+id     = "fix"
+type   = "agent"
+prompt = "prompts/fix.md"
+`,
+		".vago/prompts/implement.md": prompt,
+		".vago/prompts/review.md": "Review it.",
+		".vago/prompts/fix.md": "The review said: {{steps.review.output}}",
+		[`${goalDir}/goal.md`]: goalText("test"),
+		[ticketPath]: `+++\nstatus = "ready"\n+++\n${ticketBody}`,
+	});
+	const claude = await makeFakeClaude();
+	const codex = await makeFakeCodex();
+
+	const result = await runVago(root, ["run", "hello"], {
+		PATH: `${codex.folder}:${claude.env.PATH}`,
+	});
+
+	expect(result.exitCode).toBe(0);
+	expect((await codex.calls()).map((call) => call.stdin)).toEqual([
+		"Review it.",
+	]);
+	expect((await claude.calls()).at(-1)?.stdin).toBe("The review said: hi");
 });
