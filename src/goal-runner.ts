@@ -85,7 +85,8 @@ export async function newTicket(
  * no such Ticket gets none. A Ticket found `running`, left so by a `vago run`
  * that crashed or was killed, goes stuck with its open Run ended `lost`. A
  * stuck Ticket continues at the Step it stopped on, its earlier Steps'
- * outputs rebuilt from its latest pass; when one can't be rebuilt, it prints
+ * outputs rebuilt from its latest pass, and an agent Step resuming the
+ * Harness session it stopped in; when an output can't be rebuilt, it prints
  * which Step, leaves the Ticket as it was and stops there. Throws an Error
  * naming the problem, before any Ticket changes, when `goal.md` names no
  * Workflow or one that doesn't exist, or when the Workflow or the Goal's
@@ -134,13 +135,14 @@ async function runClaimedGoal(root: string, goal: string): Promise<GoalEnd> {
 			const workflow = await workflowNamed(state.next.workflow);
 			let from = 0;
 			let stepOutputs = new Map<string, string>();
+			let resume: string | undefined;
 			if (status === "stuck") {
 				const pickUp = await pickUpPoint(workflow, runs);
 				if (pickUp.outcome === "refused") {
 					printPickUpRefusal(ticket, pickUp.stepName, pickUp.reason);
 					break;
 				}
-				({ from, stepOutputs } = pickUp);
+				({ from, stepOutputs, resume } = pickUp);
 			}
 			const finished = await runTicket(
 				workflow,
@@ -148,6 +150,7 @@ async function runClaimedGoal(root: string, goal: string): Promise<GoalEnd> {
 				worktree,
 				from,
 				stepOutputs,
+				resume,
 			);
 			state = await readGoal(root, goal);
 			if (!finished) break;
@@ -183,7 +186,8 @@ export async function resetTicket(
 }
 
 // Runs the Steps of `workflow` on `ticket` in `worktree` from Step `from`
-// on, with `stepOutputs` the outputs of the Steps before it, skipping a
+// on, with `stepOutputs` the outputs of the Steps before it and `resume` the
+// Harness session Step `from` resumes, if any, skipping a
 // `last-ticket` Step unless this is the Goal's last Ticket, and returns
 // whether the Ticket got to `done`. A failed Step leaves it `stuck`,
 // unless it's a shell Step whose failure the Workflow lets the Ticket go on
@@ -195,15 +199,22 @@ async function runTicket(
 	worktree: string,
 	from: number,
 	stepOutputs: Map<string, string>,
+	resume: string | undefined,
 ): Promise<boolean> {
 	await setStatus(ticket, "running");
 	printTicketStarted(ticket, from > 0 ? workflow.steps[from]?.name : undefined);
-	for (const step of workflow.steps.slice(from)) {
+	for (const [index, step] of workflow.steps.slice(from).entries()) {
 		if (step.when === "last-ticket" && !(await isLastTicket(ticket))) {
 			printStepSkipped(step.name, new Date());
 			continue;
 		}
-		const run = await runStep(step, ticket, worktree, stepOutputs);
+		const run = await runStep(
+			step,
+			ticket,
+			worktree,
+			stepOutputs,
+			index === 0 ? resume : undefined,
+		);
 		stepOutputs.set(step.id, run.output);
 		const goesOn =
 			run.outcome.kind === "ok" ||
@@ -228,7 +239,8 @@ async function runTicket(
 
 // Where a stuck Ticket whose Runs are `runs` continues in `workflow`: at the
 // Step of its last Run, with the outputs of the Steps before it rebuilt from
-// its latest pass. Refused, naming the Step and with a `reason` that goes on
+// its latest pass, resuming that Run's session when it had one on the
+// Step's Harness. Refused, naming the Step and with a `reason` that goes on
 // from its name, when an output can't be rebuilt or the Step isn't in the
 // Workflow. A Step's output counts when its
 // Run ended `ok`, or `exit N` on a shell Step the Workflow lets the Ticket
@@ -237,7 +249,12 @@ async function pickUpPoint(
 	workflow: Workflow,
 	runs: TicketRun[],
 ): Promise<
-	| { outcome: "pick-up"; from: number; stepOutputs: Map<string, string> }
+	| {
+			outcome: "pick-up";
+			from: number;
+			stepOutputs: Map<string, string>;
+			resume?: string;
+	  }
 	| { outcome: "refused"; stepName: string; reason: string }
 > {
 	const stepOutputs = new Map<string, string>();
@@ -287,5 +304,10 @@ async function pickUpPoint(
 		}
 		stepOutputs.set(step.id, output);
 	}
-	return { outcome: "pick-up", from, stepOutputs };
+	const step = workflow.steps[from];
+	const resume =
+		step?.type === "agent" && step.harness === last.harness
+			? last.sessionId
+			: undefined;
+	return { outcome: "pick-up", from, stepOutputs, resume };
 }

@@ -166,17 +166,15 @@ const ToolUseBlock = z.object({
  */
 export const claudeCode: HarnessCli = {
 	command(model, args) {
+		return ["claude", "-p", ...sessionFlags(model, args)];
+	},
+	resumeCommand(sessionId, model, args) {
 		return [
 			"claude",
 			"-p",
-			"--output-format",
-			"stream-json",
-			"--verbose",
-			"--permission-mode",
-			guardedMode,
-			"--model",
-			model,
-			...args,
+			"--resume",
+			sessionId,
+			...sessionFlags(model, args),
 		];
 	},
 	events(line, command) {
@@ -238,6 +236,20 @@ export const claudeCode: HarnessCli = {
 		return `claude --resume ${sessionId}`;
 	},
 };
+
+// What a fresh session and a resumed one both run with.
+function sessionFlags(model: string, args: readonly string[]): string[] {
+	return [
+		"--output-format",
+		"stream-json",
+		"--verbose",
+		"--permission-mode",
+		guardedMode,
+		"--model",
+		model,
+		...args,
+	];
+}
 
 // A subagent's messages count only for their tokens.
 function assistantEvents(

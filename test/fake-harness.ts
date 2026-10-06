@@ -67,13 +67,20 @@ export type FakeHarness = {
 /**
  * Writes a fake `claude` into a fresh temp directory. Each call replays
  * `fixturePath`, one of the fixtures above, then runs the shell command
- * `afterFixture`, such as `exit 3` or `sleep 30`.
+ * `afterFixture`, such as `exit 3` or `sleep 30`. With `resume` set to
+ * `refused`, a call that resumes a session fails as `claude` does when it
+ * can't find the session: an error on stderr, exit 1 and no stream.
  */
 export async function makeFakeClaude(
 	afterFixture = "exit 0",
 	fixturePath = sessionFixture,
+	resume: "accepted" | "refused" = "accepted",
 ): Promise<FakeHarness> {
-	return makeFake("claude", afterFixture, fixturePath);
+	const refusal =
+		resume === "refused"
+			? `case " $* " in *" --resume "*) echo "No conversation found with session ID" >&2; exit 1;; esac`
+			: "";
+	return makeFake("claude", afterFixture, fixturePath, refusal);
 }
 
 /** A fake `codex`, otherwise as `makeFakeClaude`. */
@@ -88,6 +95,7 @@ async function makeFake(
 	name: string,
 	afterFixture: string,
 	fixturePath: string,
+	beforeFixture = "",
 ): Promise<FakeHarness> {
 	const dir = await mkdtemp(join(tmpdir(), `vago-fake-${name}-`));
 	const program = join(dir, name);
@@ -101,6 +109,7 @@ call="${dir}/calls/$(ls "${dir}/calls" | wc -l | tr -d ' ')"
 mkdir "$call"
 printf '%s\\n' "$@" > "$call/argv"
 cat > "$call/stdin"
+${beforeFixture}
 cat "${fixturePath}"
 ${afterFixture}
 `;

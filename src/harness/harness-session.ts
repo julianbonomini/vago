@@ -17,12 +17,18 @@ import type {
 
 /**
  * What one Harness module knows of its CLI: its command, how its stream's
- * lines read as events, its models' prices and its resume hint. Turned into
- * a `Harness` by `harnessFromCli`.
+ * lines read as events, its models' prices, how it resumes a session and its
+ * resume hint. Turned into a `Harness` by `harnessFromCli`.
  */
 export type HarnessCli = {
 	/** As `Harness.command`. */
 	command(model: string, args: readonly string[]): string[];
+	/** As `Harness.resumeCommand`. */
+	resumeCommand?(
+		sessionId: string,
+		model: string,
+		args: readonly string[],
+	): string[];
 	/**
 	 * The events one stream line carries, in the order it carries them; none
 	 * for a line that isn't a whole event the CLI knows. `command` is the
@@ -183,6 +189,7 @@ export type ModelPrice = {
 export function harnessFromCli(cli: HarnessCli): Harness {
 	return {
 		command: cli.command,
+		resumeCommand: cli.resumeCommand,
 		readLine: (line, command) =>
 			sessionReport(cli.events(line, command), cli.prices),
 		runActivity: (lines, root) =>

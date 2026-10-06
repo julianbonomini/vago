@@ -434,14 +434,16 @@ export async function setStatus(
 /**
  * Appends a `[[runs]]` entry for `step`, started at `started`, naming the
  * Harness and model for an agent Step, and whether the Goal report carries
- * its output. Call it before the Step starts, so a crash mid-Step still
- * leaves a trace. Returns the entry, which carries the path the Run's log
- * must be written to.
+ * its output. For a Run that resumes Harness session `resumes`, the entry
+ * names that session and is marked `resume = "resumed"`. Call it before the
+ * Step starts, so a crash mid-Step still leaves a trace. Returns the entry,
+ * which carries the path the Run's log must be written to.
  */
 export async function recordRunStart(
 	ticket: Ticket,
 	step: Step,
 	started: Date,
+	resumes?: string,
 ): Promise<TicketRunEntry> {
 	const { position, log } = await rewriteHeader(
 		ticketFile(ticket),
@@ -456,6 +458,9 @@ export async function recordRunStart(
 							step: step.id,
 							harness: step.harness,
 							model: step.model,
+							...(resumes === undefined
+								? {}
+								: { session_id: resumes, resume: "resumed" as const }),
 							started,
 							log: `${logStem}.jsonl`,
 							// Left out when false, so most entries read as before.
@@ -481,6 +486,17 @@ export async function recordRunSession(
 ): Promise<void> {
 	await rewriteHeader(ticketFile(entry.ticket), (header) => {
 		runTable(header, entry).session_id = sessionId;
+	});
+}
+
+/**
+ * Marks `entry`, a Run that set out to resume a session, as having fallen
+ * back to a fresh one: `resume = "fell-back"`. Its new session's id is
+ * `recordRunSession`'s to write.
+ */
+export async function recordRunFellBack(entry: TicketRunEntry): Promise<void> {
+	await rewriteHeader(ticketFile(entry.ticket), (header) => {
+		runTable(header, entry).resume = "fell-back";
 	});
 }
 

@@ -309,8 +309,15 @@ test("when the Step a Ticket stopped on isn't in its Workflow, vago run refuses 
 	expect(await claude.calls()).toEqual([]);
 });
 
-test("a picked-up agent Step runs in a fresh session with its usual prompt", async () => {
-	const root = await makeProject({
+const continueMessage =
+	"You were interrupted. Continue the task from where you stopped; check the working tree first.\n";
+
+const sessionId = "f679b9c4-e75a-4f73-affd-0dedfe161e0d";
+
+// A Ticket stuck after its review was interrupted, the review Run's session
+// recorded as `reviewSession`.
+function interruptedReviewProject(reviewSession: string): Promise<string> {
+	return makeProject({
 		".vago/workflows/test.toml": implementAndReview,
 		".vago/prompts/implement.md": "Implement it.\n",
 		".vago/prompts/review.md": "Review it.\n",
@@ -331,7 +338,7 @@ log = "logs/implement-1.jsonl"
 step = "review"
 harness = "claude-code"
 model = "opus"
-session_id = "f679b9c4-e75a-4f73-affd-0dedfe161e0d"
+${reviewSession}
 started = 2026-10-01T09:02:00Z
 ended = 2026-10-01T09:03:00Z
 outcome = "interrupted"
@@ -342,6 +349,48 @@ log = "logs/review-2.jsonl"
 `,
 		[`${goalDir}/logs/implement-1.jsonl`]: agentLog("implemented"),
 	});
+}
+
+test("a picked-up Claude Code Step resumes its session with the continue message, as a new Run marked resumed", async () => {
+	const root = await makeProject({
+		".vago/workflows/test.toml": `
+harness = "claude-code"
+model   = "opus"
+
+[[steps]]
+id     = "implement"
+type   = "agent"
+prompt = "prompts/implement.md"
+`,
+		".vago/prompts/implement.md": "Implement it.\n",
+		[`${goalDir}/goal.md`]: goalText("test"),
+		[`${goalDir}/tickets/01-greet.md`]: ticketText("ready"),
+	});
+	await runVago(root, ["run", "hello"], (await makeFakeClaude("exit 1")).env);
+	expect((await headerOf(root)).status).toBe("stuck");
+	const claude = await makeFakeClaude();
+
+	const result = await runVago(root, ["run", "hello"], claude.env);
+
+	expect(result.exitCode).toBe(0);
+	const [resume, ...more] = await claude.calls();
+	expect(more).toEqual([]);
+	expect(resume?.argv.slice(0, 3)).toEqual(["-p", "--resume", sessionId]);
+	expect(resume?.argv).toContain("--model");
+	expect(resume?.stdin).toBe(continueMessage);
+	const [failed, resumed] = runsOf(await headerOf(root));
+	expect(failed).not.toHaveProperty("resume");
+	expect(resumed).toMatchObject({
+		step: "implement",
+		outcome: "ok",
+		session_id: sessionId,
+		resume: "resumed",
+	});
+	expect(resumed?.cost_usd).toBeGreaterThan(0);
+});
+
+test("a picked-up agent Step whose last Run has no session runs in a fresh session with its usual prompt", async () => {
+	const root = await interruptedReviewProject("");
 	const claude = await makeFakeClaude();
 
 	await runVago(root, ["run", "hello"], claude.env);
@@ -350,6 +399,40 @@ log = "logs/review-2.jsonl"
 	expect(more).toEqual([]);
 	expect(review?.stdin).toBe("Review it.\n");
 	expect(review?.argv).not.toContain("--resume");
+	expect(runsOf(await headerOf(root)).at(-1)).not.toHaveProperty("resume");
+});
+
+test("when the resume fails to start, the Step runs once in a fresh session, and the Run and its log say it fell back", async () => {
+	const root = await interruptedReviewProject(`session_id = "gone"`);
+	const claude = await makeFakeClaude("exit 0", undefined, "refused");
+
+	const result = await runVago(root, ["run", "hello"], claude.env);
+
+	expect(result.exitCode).toBe(0);
+	expect(
+		(await claude.calls()).map(({ argv, stdin }) => [
+			argv.includes("--resume"),
+			stdin,
+		]),
+	).toEqual([
+		[true, continueMessage],
+		[false, "Review it.\n"],
+	]);
+	const runs = runsOf(await headerOf(root));
+	expect(runs.map((run) => [run.step, run.outcome])).toEqual([
+		["implement", "ok"],
+		["review", "interrupted"],
+		["review", "ok"],
+	]);
+	const fellBack = runs.at(-1);
+	expect(fellBack).toMatchObject({
+		resume: "fell-back",
+		session_id: sessionId,
+	});
+	const log = await Bun.file(join(root, goalDir, String(fellBack?.log))).text();
+	expect(log).toContain(
+		"vago: session gone couldn't be resumed; running the Step in a fresh session\n",
+	);
 });
 
 test("a stuck Ticket with no Runs starts at its first Step", async () => {

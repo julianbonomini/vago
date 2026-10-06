@@ -131,10 +131,23 @@ export type Harness = {
 	 */
 	command(model: string, args: readonly string[]): string[];
 	/**
-	 * What one stream line of the session started with `command`, the argv
-	 * `command()` gave, carries. Fields the line doesn't carry are left out,
-	 * so the kernel spreads each result over the last; a line that isn't an
-	 * event it knows gives `{}`.
+	 * The argv that resumes session `sessionId` on `model` in guarded mode,
+	 * with the Step's `args` appended as given, and streams as `command()`'s
+	 * does. It reads the message to send on stdin, and fails without
+	 * reporting a session id when the session can't be resumed. Absent for a
+	 * Harness whose sessions Vago doesn't resume.
+	 */
+	// TODO pick-up-from-failure 05: Codex resumes too, and this is no longer optional.
+	resumeCommand?(
+		sessionId: string,
+		model: string,
+		args: readonly string[],
+	): string[];
+	/**
+	 * What one stream line of the session started with `command` or
+	 * `resumeCommand`, the argv it gave, carries. Fields the line doesn't
+	 * carry are left out, so the kernel spreads each result over the last; a
+	 * line that isn't an event it knows gives `{}`.
 	 */
 	readLine(line: string, command: readonly string[]): HarnessSessionReport;
 	/**
