@@ -41,8 +41,16 @@ A Ticket's way through its Workflow from its first Step; a reset Ticket starts a
 _Avoid_: attempt, round
 
 **Lost**:
-A Goal whose Ticket says `running` while no live `vago run` has the Goal. The next `vago run` ends that Ticket's open Run with outcome `lost`.
+A Goal whose Ticket says `running` while no live `vago run` has the Goal. The next `vago run` ends that Ticket's open Run with outcome `lost` and picks the Ticket up at that Run's Step.
 _Avoid_: crashed, orphaned
+
+**Resume**:
+A Run that continues an earlier Run's Harness session with a fixed message to continue, in place of the Step's prompt, when a Ticket is picked up at an agent Step or the Step is retried. A resume that fails to start falls back to a fresh session once.
+_Avoid_: restart, rerun
+
+**Retry**:
+A Resume that `vago run` starts by itself after an agent Step fails, waiting 1, 1 and then 5 minutes before each of the three; the Ticket goes stuck when the last one fails. Shell Steps are never retried.
+_Avoid_: attempt, rerun
 
 **Ticket**:
 One unit of work that belongs to a Goal; done when it reaches the end of its Workflow.

@@ -145,9 +145,9 @@ Vago writes a `+++` header at the top of each file. The Ticket's header holds it
 vago run search
 ```
 
-`vago run` takes the lowest-numbered Ticket that is `ready` and has every blocker `done`, runs it through each Step of the Goal's Workflow, and moves on to the next one, until no Ticket is ready or one goes stuck. With the starter Workflows, each Ticket goes like this:
+`vago run` takes the lowest-numbered Ticket that is `ready` or `stuck` and has every blocker `done`, runs it through each Step of the Goal's Workflow, and moves on to the next one, until no such Ticket is left or one goes stuck. A stuck Ticket is picked up at the Step it stopped on (see [Recover a stuck Ticket](#recover-a-stuck-ticket)). With the starter Workflows, each Ticket goes like this:
 
-1. `branch` switches the Goal's worktree to a fresh `search/01-index` branch cut from `vago/search`, the Goal's branch, which Vago cut from the repo's default branch. It fails if the worktree has uncommitted changes.
+1. `branch` switches the Goal's worktree to a fresh `search/01-index` branch cut from `vago/search`, the Goal's branch, which Vago cut from the repo's default branch. It fails if the worktree has uncommitted changes, unless the worktree is already on the Ticket's branch, where it leaves the work as it is.
 2. The agent Steps build and review the Ticket on that branch and commit there. `check` runs between them; when it fails, the Ticket goes on, and review reads the failure and fixes it.
 3. On the Goal's last Ticket, `goal-review` reads the whole Goal's diff for problems no single Ticket shows: names that disagree with the glossary, one decision owned in two places, docs that no longer match the code. It fixes the small ones on the branch. For bigger ones it adds Tickets to the Goal, so this Ticket is no longer the last and `vago run` takes them next. Only the first Goal review may add Tickets; the ones after it fix or report. Its `when = "last-ticket"` skips it on every other Ticket; a Step without `when` runs on every Ticket.
 4. `merge` commits any changes the Steps left uncommitted, squash-merges the Ticket's branch into `vago/search` as one commit, deletes the Ticket's branch, pushes `vago/search`, and creates or updates its PR to the repo's default branch. The PR description is the output of `vago goal report search`, rewritten after every Ticket. After the Goal's last Ticket, `merge` also labels the PR `ready-for-review` and comments on it mentioning you, the account `gh` is logged in as, so GitHub notifies you. A Goal that ends with a stuck Ticket gets neither. A push or `gh` call that fails on the network or with a 5xx from GitHub is tried again a few times. When `merge` fails anyway, its log's last line says why, and running the Ticket again finishes the job: a Ticket already squashed into `vago/search` isn't squashed twice.
@@ -183,26 +183,35 @@ A Step ends `ok`, `exit <code>` for a shell Step or a Harness exiting non-zero, 
 
 `vago` with no command, on a terminal, opens a full-screen view of every Goal of the Project: its state (running, lost, stuck, ready or done), a progress bar with its Tickets done of total, its run time (how long its Runs ran, pauses left out) and cost, and what it is doing or waiting for. The selected Goal's latest Runs and description show below the list. It reads `.vago-goals/` again every second, so you can leave it open while Goals run in other terminals. Its one action is `s`, which starts the selected Goal when it is ready, in a `vago run` of its own that keeps running after you quit the TUI. It stops and changes nothing.
 
-A Goal shows as lost when one of its Tickets says `running` but no live `vago run` has the Goal; the next `vago run` makes that Ticket stuck. Move with `↑↓` or `j k`, jump with `g` and `G`, open a Goal with Enter, start it with `s`, press `?` for the keys and `q` to quit. Set `NO_COLOR` to drop the colours and `VAGO_ASCII=1` for a terminal without the box and symbol glyphs. Run from inside a Goal's worktree, it shows the main checkout's Project. Without a terminal, `vago` prints the usage and exits 1.
+A Goal shows as lost when one of its Tickets says `running` but no live `vago run` has the Goal; the next `vago run` picks that Ticket up at the Step it was on. Move with `↑↓` or `j k`, jump with `g` and `G`, open a Goal with Enter, start it with `s`, press `?` for the keys and `q` to quit. Set `NO_COLOR` to drop the colours and `VAGO_ASCII=1` for a terminal without the box and symbol glyphs. Run from inside a Goal's worktree, it shows the main checkout's Project. Without a terminal, `vago` prints the usage and exits 1.
 
 ## Recover a stuck Ticket
 
-A Ticket goes stuck when one of its Steps fails. `vago run` stops there and tells you where to look:
+When an agent Step fails, whatever its outcome, `vago run` resumes its Harness session in a new Run after 1 minute, again after 1 more minute and again after 5 more, with a fixed message telling the agent it was interrupted and to continue where it stopped. Each wait prints a `retries in` line under the Step, and the TUI shows the time left. A Ticket goes stuck when those three retries fail too, when a shell Step fails, or when you press Ctrl-C, which also ends the retries. Shell Steps are never retried. `vago run` stops at a stuck Ticket and tells you where to look:
 
 ```text
 02-ranking is stuck after review: exit 1
-  log:    .vago-goals/search/logs/02-review-4.jsonl
+  log:    .vago-goals/search/logs/02-review-7.jsonl
   resume: claude --resume 3f2a9c1e-...
+  again:  vago run search
   reset:  vago ticket reset search 02
 ```
 
 To recover:
 
 1. Read the log. Each Run has one under `.vago-goals/<goal>/logs/`, named for the Ticket number, the Step and the Run's position: a `.log` with a shell Step's output, or a `.jsonl` with the Harness's raw stream for an agent Step. `resume` opens the agent's session in its Harness, `claude --resume` or `codex resume`, if you want to ask it what happened.
-2. Fix the checkout. The Step stopped wherever it was, so the checkout may be on the Ticket's branch with uncommitted changes. A failed `merge` leaves it clean. `branch` refuses to start on a dirty checkout, so commit, stash or discard what's there. If the Ticket itself was the problem, edit its text below the header.
-3. Reset the Ticket with `vago ticket reset search 02`. Its status goes back to `ready`; its Runs stay in the header.
-4. Run `vago run search` again.
+2. Fix what made it fail, if anything needs fixing. If the Ticket itself was the problem, edit its text below the header.
+3. Run `vago run search` again.
 
-A reset Ticket starts over: `branch` cuts its branch again from `vago/search`, so commits left on the old `search/02-ranking` branch are dropped. Tickets already merged into `vago/search` keep their work.
+`vago run` picks a stuck Ticket up at the Step it stopped on, and doesn't run the Steps before it again. A shell Step runs again from the start; the starter's `branch` and `merge` are safe to run twice. An agent Step resumes the session of its last Run with the same continue message, or runs its prompt in a fresh session when that Run has no session or the resume fails to start, and the Run's log says so. The later Steps still get the earlier Steps' outputs in `{{steps.<id>.output}}`, rebuilt from the Ticket's `[[runs]]` and their logs. When one can't be rebuilt, say because its log was deleted, `vago run` names the Step, leaves the Ticket as it was and stops:
 
-While any Ticket of the Goal is stuck, `vago run` runs nothing and lists the reset command for each stuck one, and the resume command when its last Run was an agent's. A Ticket left `running` by a `vago run` that crashed or was killed goes stuck on the next run, with its open Run ended `lost`, because the checkout may hold that Run's partial work. An agent Run's `session_id` reaches its `[[runs]]` entry as soon as its Harness reports it, so a lost Run can still be resumed.
+```text
+02-ranking can't be picked up: implement has no log left to rebuild its output from
+  reset:  vago ticket reset search 02
+```
+
+Each resume and retry is a Run of its own in the Ticket's header, marked `resume = "resumed"`, or `"fell-back"` when the resume failed to start and it ran in a fresh session. Its time and cost count like any Run's, and `vago goal report` and the TUI mark it.
+
+To start a Ticket over instead, reset it with `vago ticket reset search 02` and run `vago run search`. Its status goes back to `ready`; its Runs stay in the header. A reset Ticket starts at its first Step: `branch` cuts its branch again from `vago/search`, so commits left on the old `search/02-ranking` branch are dropped, and it fails if the worktree has uncommitted changes, so commit, stash or discard them first. Tickets already merged into `vago/search` keep their work.
+
+A Ticket left `running` by a `vago run` that crashed or was killed has its open Run ended `lost` by the next `vago run`, which then picks it up at that Run's Step like any stuck Ticket. An agent Run's `session_id` reaches its `[[runs]]` entry as soon as its Harness reports it, so a lost Run's session can still be resumed.

@@ -56,7 +56,7 @@ squashed() {
 }
 
 # A Ticket whose branch is gone was squashed and its branch deleted by an
-# earlier attempt that stopped after that, and this one picks up at the push.
+# earlier Run that stopped after that, and this one picks up at the push.
 if ! git rev-parse -q --verify "refs/heads/$ticket" >/dev/null; then
 	squashed || fail "$ticket has no branch, so there is nothing to merge."
 else
@@ -74,7 +74,7 @@ else
 		fail "$ticket conflicts with $goal in $conflicts."
 	fi
 	# With nothing to squash, a Ticket whose commit is already on vago/<goal>
-	# is a rerun of an attempt that stopped before deleting the branch.
+	# is a rerun after a Run that stopped before deleting the branch.
 	if ! git diff --cached --quiet; then
 		git commit -qm "$message"
 	elif ! squashed; then
