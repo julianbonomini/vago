@@ -14,4 +14,4 @@ Starting over cost work. In 10 Goals and 352 Runs, all 6 `branch` failures came 
 
 - A Step can run twice: the Step a Ticket stopped on runs again on top of whatever its first Run left in the Goal's worktree. Steps should be safe to run twice, and Vago doesn't enforce it. The starter's `branch.sh` and `merge.sh` are.
 - A Step that ended `ok` just before `vago run` died runs again, since the Ticket is picked up at the Step of its last Run.
-- A picked-up agent Step on Claude Code resumes the Harness session its last Run had, with a fixed message to continue, and starts a fresh session with its prompt when there is none or the resume fails to start.
+- A picked-up agent Step resumes the Harness session its last Run had, with a fixed message to continue, and starts a fresh session with its prompt when there is none or the resume fails to start.

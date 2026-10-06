@@ -134,11 +134,9 @@ export type Harness = {
 	 * The argv that resumes session `sessionId` on `model` in guarded mode,
 	 * with the Step's `args` appended as given, and streams as `command()`'s
 	 * does. It reads the message to send on stdin, and fails without
-	 * reporting a session id when the session can't be resumed. Absent for a
-	 * Harness whose sessions Vago doesn't resume.
+	 * reporting a session id when the session can't be resumed.
 	 */
-	// TODO pick-up-from-failure 05: Codex resumes too, and this is no longer optional.
-	resumeCommand?(
+	resumeCommand(
 		sessionId: string,
 		model: string,
 		args: readonly string[],

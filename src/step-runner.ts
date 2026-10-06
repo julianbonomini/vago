@@ -67,8 +67,8 @@ export type FinishedRun = {
  * gets `VAGO_PROJECT_ROOT`, the main checkout's path.
  * SIGINT or SIGTERM while the Step runs kills every process it started
  * and ends the Run `interrupted`, instead of ending `vago`.
- * Given `resume`, the id of an earlier Run's session of an agent Step whose
- * Harness can resume it, the Run resumes that session with a fixed message
+ * Given `resume`, the id of an earlier Run's session of an agent Step on
+ * the same Harness, the Run resumes that session with a fixed message
  * to continue, in place of the prompt, and is recorded as resuming it. When
  * the resume fails to start, the Run says so in its log and its entry, and
  * starts a fresh session with the prompt instead.
@@ -81,11 +81,7 @@ export async function runStep(
 	resume?: string,
 ): Promise<FinishedRun> {
 	const started = new Date();
-	const resumes =
-		step.type === "agent" &&
-		findHarness(step.harness).resumeCommand !== undefined
-			? resume
-			: undefined;
+	const resumes = step.type === "agent" ? resume : undefined;
 	const entry = await recordRunStart(ticket, step, started, resumes);
 	printStepStarted(step.name, started);
 	await mkdir(dirname(entry.log), { recursive: true });
@@ -201,14 +197,10 @@ async function runAgent(
 	resumeHint?: string;
 }> {
 	const harness = findHarness(step.harness);
-	const resumeCommand =
-		resumes === undefined
-			? undefined
-			: harness.resumeCommand?.(resumes, step.model, step.args);
 	let ran: HarnessSessionRun | undefined;
-	if (resumeCommand !== undefined) {
+	if (resumes !== undefined) {
 		ran = await runSession(
-			resumeCommand,
+			harness.resumeCommand(resumes, step.model, step.args),
 			continueMessage,
 			step,
 			entry,

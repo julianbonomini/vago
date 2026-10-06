@@ -24,7 +24,7 @@ export type HarnessCli = {
 	/** As `Harness.command`. */
 	command(model: string, args: readonly string[]): string[];
 	/** As `Harness.resumeCommand`. */
-	resumeCommand?(
+	resumeCommand(
 		sessionId: string,
 		model: string,
 		args: readonly string[],

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
-import { makeFakeClaude } from "./fake-harness.ts";
+import { makeFakeClaude, makeFakeCodex } from "./fake-harness.ts";
 import {
 	goalText,
 	goalWorktree,
@@ -428,6 +428,100 @@ test("when the resume fails to start, the Step runs once in a fresh session, and
 	expect(fellBack).toMatchObject({
 		resume: "fell-back",
 		session_id: sessionId,
+	});
+	const log = await Bun.file(join(root, goalDir, String(fellBack?.log))).text();
+	expect(log).toContain(
+		"vago: session gone couldn't be resumed; running the Step in a fresh session\n",
+	);
+});
+
+const codexSessionId = "01a10e32-3816-7022-9ae8-c718d8802ffe";
+
+// A Ticket on Codex stuck after its implement Run exited 1 in session
+// `implementSession`.
+function failedCodexProject(implementSession: string): Promise<string> {
+	return makeProject({
+		".vago/workflows/test.toml": `
+harness = "codex"
+model   = "gpt-6-luna"
+
+[[steps]]
+id     = "implement"
+type   = "agent"
+prompt = "prompts/implement.md"
+`,
+		".vago/prompts/implement.md": "Implement it.\n",
+		[`${goalDir}/goal.md`]: goalText("test"),
+		[`${goalDir}/tickets/01-greet.md`]: `+++
+status = "stuck"
+
+[[runs]]
+step = "implement"
+harness = "codex"
+model = "gpt-6-luna"
+session_id = "${implementSession}"
+started = 2026-10-01T09:00:00Z
+ended = 2026-10-01T09:01:00Z
+outcome = "exit 1"
+log = "logs/implement-1.jsonl"
++++
+
+# Greet
+`,
+	});
+}
+
+test("a picked-up Codex Step resumes its session with the continue message, as a new Run marked resumed", async () => {
+	const root = await failedCodexProject(codexSessionId);
+	const codex = await makeFakeCodex();
+
+	const result = await runVago(root, ["run", "hello"], codex.env);
+
+	expect(result.exitCode).toBe(0);
+	const [resume, ...more] = await codex.calls();
+	expect(more).toEqual([]);
+	expect(resume?.argv).toEqual([
+		"exec",
+		"--json",
+		"--approve-for-me",
+		"--model",
+		"gpt-6-luna",
+		"resume",
+		codexSessionId,
+		"-",
+	]);
+	expect(resume?.stdin).toBe(continueMessage);
+	const resumed = runsOf(await headerOf(root)).at(-1);
+	expect(resumed).toMatchObject({
+		step: "implement",
+		outcome: "ok",
+		session_id: codexSessionId,
+		resume: "resumed",
+	});
+	expect(resumed?.cost_usd).toBeGreaterThan(0);
+});
+
+test("when a Codex resume fails to start, the Step runs once in a fresh session, and the Run and its log say it fell back", async () => {
+	const root = await failedCodexProject("gone");
+	const codex = await makeFakeCodex("exit 0", undefined, "refused");
+
+	const result = await runVago(root, ["run", "hello"], codex.env);
+
+	expect(result.exitCode).toBe(0);
+	expect(
+		(await codex.calls()).map(({ argv, stdin }) => [
+			argv.includes("resume"),
+			stdin,
+		]),
+	).toEqual([
+		[true, continueMessage],
+		[false, "Implement it.\n"],
+	]);
+	const fellBack = runsOf(await headerOf(root)).at(-1);
+	expect(fellBack).toMatchObject({
+		outcome: "ok",
+		resume: "fell-back",
+		session_id: codexSessionId,
 	});
 	const log = await Bun.file(join(root, goalDir, String(fellBack?.log))).text();
 	expect(log).toContain(

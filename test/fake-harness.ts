@@ -83,12 +83,21 @@ export async function makeFakeClaude(
 	return makeFake("claude", afterFixture, fixturePath, refusal);
 }
 
-/** A fake `codex`, otherwise as `makeFakeClaude`. */
+/**
+ * A fake `codex`, otherwise as `makeFakeClaude`. A refused resume fails as
+ * `codex exec resume` does when it finds no session: an error on stderr,
+ * exit 1 and no stream.
+ */
 export async function makeFakeCodex(
 	afterFixture = "exit 0",
 	fixturePath = codexSessionFixture,
+	resume: "accepted" | "refused" = "accepted",
 ): Promise<FakeHarness> {
-	return makeFake("codex", afterFixture, fixturePath);
+	const refusal =
+		resume === "refused"
+			? `case " $* " in *" resume "*) echo "Error: thread/resume: thread/resume failed: no rollout found" >&2; exit 1;; esac`
+			: "";
+	return makeFake("codex", afterFixture, fixturePath, refusal);
 }
 
 async function makeFake(
