@@ -85,7 +85,7 @@ function liveGoalRows(root: string): () => GoalRow[] | undefined {
  * Project's counts and spend, which stays on every screen, the Goal view's
  * included, and a Goals box with one row per Goal showing
  * its standing, Tickets, time, cost, what it is doing and its title, the
- * selected one in the accent colour, moved by ↑↓ and j k, g and G, or a
+ * selected one in the selection colours, moved by ↑↓ and j k, g and G, or a
  * click, with `n/N` on the box's bottom border, or a line naming
  * `vago goal new` while there are none. The box scrolls, by wheel or to
  * follow the selection, once the Goals outgrow its share of the screen.

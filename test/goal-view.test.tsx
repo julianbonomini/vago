@@ -763,16 +763,16 @@ test("e selects the latest edit, E and e move between edits, and d opens its dif
 		size: { width: 120, height: 60 },
 	});
 	await frameWith(view, "Run finished");
-	// The selection's background, the accent.
-	const selected = RGBA.fromHex("#ff8a3d");
+	// The selection's background.
+	const selected = RGBA.fromHex("#a8481a");
 
 	view.mockInput.pressKey("e");
 	await view.renderOnce();
-	expect(spanOf(view, "Write").bg.equals(selected)).toBe(true);
+	expect(spanWith(view, "Write").bg.equals(selected)).toBe(true);
 	view.mockInput.pressKey("e");
 	await view.renderOnce();
-	expect(spanOf(view, "Edit 2 files").bg.equals(selected)).toBe(true);
-	expect(spanOf(view, "Write").bg.equals(selected)).toBe(false);
+	expect(spanWith(view, "Edit 2 files").bg.equals(selected)).toBe(true);
+	expect(spanWith(view, "Write").bg.equals(selected)).toBe(false);
 
 	view.mockInput.pressKey("d");
 	const diff = await frameWith(view, "notes.md (+1 −1)");
@@ -1078,9 +1078,9 @@ function bgAt(view: TestRendererSetup, text: string): RGBA {
 
 test("only the focused pane fills its selected row, and the Tickets and Runs keep theirs on grey", async () => {
 	const view = await openLongTicket();
-	const accent = RGBA.fromHex("#ff8a3d");
+	const selected = RGBA.fromHex("#a8481a");
 	const grey = RGBA.fromHex("#3a3a3a");
-	expect(bgAt(view, "01 stuck").equals(accent)).toBe(true);
+	expect(bgAt(view, "01 stuck").equals(selected)).toBe(true);
 	expect(bgAt(view, "2  check").equals(grey)).toBe(true);
 
 	view.mockInput.pressKey("3");
@@ -1089,7 +1089,7 @@ test("only the focused pane fills its selected row, and the Tickets and Runs kee
 	expect(bgAt(view, "2  check").equals(grey)).toBe(true);
 
 	view.mockInput.pressKey("2");
-	await until(view, () => bgAt(view, "2  check").equals(accent));
+	await until(view, () => bgAt(view, "2  check").equals(selected));
 	expect(bgAt(view, "01 stuck").equals(grey)).toBe(true);
 });
 

@@ -222,14 +222,15 @@ const terminalForeground = RGBA.defaultForeground();
 const terminalBackground = RGBA.defaultBackground();
 
 // One orange accent on the terminal's own background, which every cell
-// shares, the panes' lines included.
+// shares, the panes' lines included. Done is a muted blue, orange's
+// complement, so it stays apart from the warm accent, warn and bad.
 const palette: ThemeColors = {
 	bg: terminalBackground,
 	fg: "#d6d6d6",
 	faint: "#4a4a4a",
-	border: "#2e2e2e",
+	border: "#5c5c5c",
 	accent: "#ff8a3d",
-	ok: "#8fae8b",
+	ok: "#7aa6c2",
 	bad: "#e5736b",
 	warn: "#e0b357",
 	raised: "#1b1b1b",
@@ -239,8 +240,10 @@ const palette: ThemeColors = {
 // Secondary text, which takes no token of its own.
 const grey = "#7a7a7a";
 
-// The selected row's text, dark on the accent.
-const onAccent = "#0c0c0c";
+// The selected row: bold white on a deep orange, which passes WCAG AA
+// (5.8:1) where white on the accent itself would not.
+const selectedFg = "#ffffff";
+const selectedBg = "#a8481a";
 
 // Behind the selected row of a pane without the focus.
 const idleGrey = "#3a3a3a";
@@ -336,7 +339,11 @@ const coloured: Theme = {
 	scrollbars: true,
 	dimText: { fg: grey, attributes: 0 },
 	dimSpan: { fg: grey, dim: false },
-	selection: { fg: onAccent, bg: palette.accent, attributes: 0 },
+	selection: {
+		fg: selectedFg,
+		bg: selectedBg,
+		attributes: TextAttributes.BOLD,
+	},
 	idleSelection: { bg: idleGrey, attributes: TextAttributes.BOLD },
 };
 

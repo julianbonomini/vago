@@ -204,29 +204,29 @@ test("moving the selection past the Goals box's last row scrolls to it", async (
 	expect(lineOf(first, "ready   goal-00 ")).toBeGreaterThan(-1);
 });
 
-const accent = RGBA.fromHex("#ff8a3d");
+const selected = RGBA.fromHex("#a8481a");
 
-// Whether the row that shows `name` has the accent colour behind it.
-function isAccented(view: TestRendererSetup, name: string): boolean {
+// Whether the row that shows `name` has the selection colour behind it.
+function isSelected(view: TestRendererSetup, name: string): boolean {
 	for (const line of view.captureSpans().lines) {
 		const span = line.spans.find((span) => span.text.includes(name));
-		if (span !== undefined) return span.bg.equals(accent);
+		if (span !== undefined) return span.bg.equals(selected);
 	}
 	throw new Error(`No row shows ${name}`);
 }
 
-test("the selected Goal is drawn in the accent colour", async () => {
+test("the selected Goal is drawn in the selection colour", async () => {
 	const root = await projectWithGoals(["alpha", "beta"]);
 	const view = await renderView(root);
 	await frameWith(view, "1/2");
 
-	expect(isAccented(view, "alpha")).toBe(true);
-	expect(isAccented(view, "beta")).toBe(false);
+	expect(isSelected(view, "alpha")).toBe(true);
+	expect(isSelected(view, "beta")).toBe(false);
 
 	view.mockInput.pressArrow("down");
 	await frameWith(view, "2/2");
-	expect(isAccented(view, "beta")).toBe(true);
-	expect(isAccented(view, "alpha")).toBe(false);
+	expect(isSelected(view, "beta")).toBe(true);
+	expect(isSelected(view, "alpha")).toBe(false);
 });
 
 for (const [what, files] of [
@@ -426,7 +426,7 @@ test("a Goal with no Tickets is ready to start, with none done of none", async (
 	expect(row).toContain("0/0");
 });
 
-const ok = RGBA.fromHex("#8fae8b");
+const ok = RGBA.fromHex("#7aa6c2");
 const bad = RGBA.fromHex("#e5736b");
 const faint = RGBA.fromHex("#4a4a4a");
 
@@ -677,13 +677,13 @@ test("titles with CJK and emoji stay aligned, and long ones are cut to their col
 });
 
 const tokens = [
-	"#0c0c0c",
+	"#ffffff",
 	"#d6d6d6",
 	"#7a7a7a",
 	"#4a4a4a",
-	"#2e2e2e",
+	"#5c5c5c",
 	"#ff8a3d",
-	"#8fae8b",
+	"#7aa6c2",
 	"#e5736b",
 	"#e0b357",
 	"#f0f0f0",
@@ -1019,13 +1019,13 @@ test("a lock taken shows with no key pressed, and the selection stays on its Goa
 	await frameWith(view, " 1/3 ");
 	view.mockInput.pressArrow("down");
 	await frameWith(view, " 2/3 ");
-	expect(isAccented(view, "beta")).toBe(true);
+	expect(isSelected(view, "beta")).toBe(true);
 
 	await startGamma(root);
 
 	const frame = await frameWith(view, "● running");
 	expect(lineOf(frame, " gamma ")).toBeLessThan(lineOf(frame, " alpha "));
-	expect(isAccented(view, "beta")).toBe(true);
+	expect(isSelected(view, "beta")).toBe(true);
 	expect(frame).toContain(" 3/3 ");
 });
 
@@ -1033,13 +1033,13 @@ test("before any key the selection stays on the first Goal read when rows reorde
 	const root = await projectWithGoals(["alpha", "beta", "gamma"]);
 	const view = await renderView(root);
 	await frameWith(view, " 1/3 ");
-	expect(isAccented(view, "alpha")).toBe(true);
+	expect(isSelected(view, "alpha")).toBe(true);
 
 	await startGamma(root);
 
 	const frame = await frameWith(view, "● running");
 	expect(lineOf(frame, " gamma ")).toBeLessThan(lineOf(frame, " alpha "));
-	expect(isAccented(view, "alpha")).toBe(true);
+	expect(isSelected(view, "alpha")).toBe(true);
 	expect(frame).toContain(" 2/3 ");
 });
 
