@@ -133,7 +133,7 @@ test("the footer names the keys of the Project view", async () => {
 	const frame = await frameWith(view, " 1/1 ");
 
 	expect(frame.trimEnd().split("\n").at(-1)).toMatch(
-		/^ ↑↓ Goal {3}Enter Open {3}s Start {3}g G First, last {3}PgUp PgDn Scroll {3}\? Help {3}q Quit *$/,
+		/^ ↑↓ Goal {3}Enter Open {3}s Start {3}n New Goal {3}g G First, last {3}PgUp PgDn Scroll {3}\? Help {3}q Quit *$/,
 	);
 });
 
@@ -171,8 +171,8 @@ test("a list longer than the Goals box keeps the preview and footer on screen", 
 
 	const frame = await frameWith(view, " 1/20 ");
 
-	expect(lineOf(frame, "ready   goal-00 ")).toBeGreaterThan(-1);
-	expect(lineOf(frame, "ready   goal-19 ")).toBe(-1);
+	expect(lineOf(frame, "ready    goal-00 ")).toBeGreaterThan(-1);
+	expect(lineOf(frame, "ready    goal-19 ")).toBe(-1);
 	expect(frame).toContain("Workflow w");
 	expect(frame).toContain("q Quit");
 });
@@ -186,7 +186,7 @@ test("the wheel scrolls the Goals and leaves the selection where it was", async 
 	for (const _ of manyGoals) await view.mockMouse.scroll(20, row, "down");
 
 	const scrolled = await frameWith(view, " goal-19 ");
-	expect(lineOf(scrolled, "ready   goal-00 ")).toBe(-1);
+	expect(lineOf(scrolled, "ready    goal-00 ")).toBe(-1);
 	expect(scrolled).toContain(" 1/20 ");
 });
 
@@ -198,10 +198,10 @@ test("moving the selection past the Goals box's last row scrolls to it", async (
 	view.mockInput.pressKey("G");
 
 	const last = await frameWith(view, " 20/20 ");
-	expect(lineOf(last, "ready   goal-19 ")).toBeGreaterThan(-1);
+	expect(lineOf(last, "ready    goal-19 ")).toBeGreaterThan(-1);
 	view.mockInput.pressKey("g");
 	const first = await frameWith(view, " 1/20 ");
-	expect(lineOf(first, "ready   goal-00 ")).toBeGreaterThan(-1);
+	expect(lineOf(first, "ready    goal-00 ")).toBeGreaterThan(-1);
 });
 
 const selected = RGBA.fromHex("#a8481a");
@@ -233,15 +233,13 @@ for (const [what, files] of [
 	["an empty .vago-goals", { ".vago-goals/.keep": "" }],
 	["no .vago-goals at all", {}],
 ] as const) {
-	test(`a Project with ${what} says it has none and names vago goal new`, async () => {
+	test(`a Project with ${what} says it has none and names the New Goal key`, async () => {
 		const root = await makeProject(files);
 		const view = await renderView(root);
 
 		const frame = await frameWith(view, " 0/0 ");
 
-		expect(frame).toContain(
-			"No Goals yet. Start one with vago goal new <goal>.",
-		);
+		expect(frame).toContain("No Goals yet. Press n for a New Goal.");
 	});
 }
 

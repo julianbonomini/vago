@@ -121,6 +121,22 @@ test("q quits and gives the terminal back", async () => {
 	expect(restoresTerminal(tui.screen.printed(), drawn)).toBe(true);
 });
 
+test("q types in a name's field, and quits again once the field closes", async () => {
+	const tui = await openOnGoals();
+
+	tui.press("n");
+	await tui.screen.frameWhere((lines) => rowOf(lines, "New Goal name:") !== -1);
+	tui.press("quick");
+	await tui.screen.frameWhere(
+		(lines) => rowOf(lines, "New Goal name: quick") !== -1,
+	);
+	tui.press("\x1b");
+	await tui.screen.frameWhere((lines) => rowOf(lines, "New Goal name:") === -1);
+	tui.press("q");
+
+	expect(await tui.exited).toBe(0);
+});
+
 test("Ctrl-C quits and gives the terminal back", async () => {
 	const tui = await openOnGoals();
 	const drawn = tui.screen.printed().length;

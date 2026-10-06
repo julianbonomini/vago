@@ -3,10 +3,11 @@
 // naming the Goal's Workflow, the Workflow a Ticket names in place of it,
 // Goal and Ticket titles, status, blockers, the `[[runs]]` history of each
 // Ticket and of the Goal's Goal Steps and where each Run's log goes, how a
-// Ticket number is spelled, and the lock that marks a Goal as taken by a
-// `vago run`. Only this file is imported from outside `tickets/`.
+// Ticket number is spelled, the lock that marks a Goal as taken by a
+// `vago run`, and the planning items that share `.vago-goals/` with the
+// Goals. Only this file is imported from outside `tickets/`.
 
-import { mkdir, readdir } from "node:fs/promises";
+import { mkdir, readdir, rename, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { HarnessSessionReport } from "../harness/registry.ts";
 import type { GoalStepGroup, Step } from "../workflow.ts";
@@ -328,14 +329,94 @@ export async function createGoal(
 
 /**
  * The name of every Goal of the Project at `root`, in name order, without
- * reading or checking any of them. None when the Project has no Goals yet.
- * Throws an Error naming the path when `.vago-goals` isn't a folder.
+ * reading or checking any of them. A planning item isn't one. None when the
+ * Project has no Goals yet. Throws an Error naming the path when
+ * `.vago-goals` isn't a folder.
  */
 export async function listGoals(root: string): Promise<string[]> {
+	const folders = await readGoalsFolder(root);
+	return folders
+		.filter(({ kind }) => kind !== "planning")
+		.map(({ name }) => name);
+}
+
+/**
+ * The name of every planning item of the Project at `root`, in name order,
+ * none when it has none. Throws what `listGoals` throws.
+ */
+export async function listPlanningItems(root: string): Promise<string[]> {
+	const folders = await readGoalsFolder(root);
+	return folders
+		.filter(({ kind }) => kind === "planning")
+		.map(({ name }) => name);
+}
+
+/**
+ * Makes planning item `name` in the Project at `root`, a Goal still being
+ * planned, and returns its folder. It is no Goal: `readGoal` and `vago run`
+ * don't find it. Throws an Error naming the problem, and makes nothing,
+ * when a Goal or planning item already has the name or it isn't a valid
+ * name.
+ */
+export async function createPlanningItem(
+	root: string,
+	name: string,
+): Promise<string> {
+	const folder = goalFolder(root, name);
+	await mkdir(join(root, goalsFolderName), { recursive: true });
+	try {
+		// Not recursive, so a Goal or item already there makes it fail.
+		await mkdir(folder);
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+			throw new Error(alreadyExists(name, folder));
+		}
+		throw error;
+	}
+	await mkdir(planningFolder(folder));
+	return folder;
+}
+
+/**
+ * Gives planning item `name` of the Project at `root` the name `newName`,
+ * with everything it holds. Throws an Error naming the problem, and changes
+ * nothing, when there is no such item, `name` is a Goal, a Goal or planning
+ * item already has `newName`, or `newName` isn't a valid name.
+ */
+export async function renamePlanningItem(
+	root: string,
+	name: string,
+	newName: string,
+): Promise<void> {
+	const folder = await existingPlanningItem(root, name);
+	const newFolder = goalFolder(root, newName);
+	if (await exists(newFolder)) {
+		throw new Error(alreadyExists(newName, newFolder));
+	}
+	await rename(folder, newFolder);
+}
+
+/**
+ * Removes planning item `name` of the Project at `root` and everything it
+ * holds. Throws an Error naming the problem, and removes nothing, when
+ * there is no such item or `name` is a Goal.
+ */
+export async function discardPlanningItem(
+	root: string,
+	name: string,
+): Promise<void> {
+	await rm(await existingPlanningItem(root, name), { recursive: true });
+}
+
+// Every folder in `.vago-goals`, in name order, with what it holds.
+async function readGoalsFolder(
+	root: string,
+): Promise<{ name: string; kind: GoalFolderKind }[]> {
 	const path = join(root, goalsFolderName);
+	let names: string[];
 	try {
 		const entries = await readdir(path, { withFileTypes: true });
-		return entries
+		names = entries
 			.filter((entry) => entry.isDirectory())
 			.map((entry) => entry.name)
 			.sort();
@@ -344,6 +425,57 @@ export async function listGoals(root: string): Promise<string[]> {
 		if (code === "ENOENT") return [];
 		if (code === "ENOTDIR") throw new Error(`${path} isn't a folder`);
 		throw error;
+	}
+	return Promise.all(
+		names.map(async (name) => ({
+			name,
+			kind: await goalFolderKind(join(path, name)),
+		})),
+	);
+}
+
+// What a folder of `.vago-goals` holds: a Goal once it has a `goal.md`, a
+// planning item while it has only a `planning/` folder, and otherwise
+// neither, which reads as a Goal whose `goal.md` is missing.
+type GoalFolderKind = "goal" | "planning" | "neither";
+
+async function goalFolderKind(folder: string): Promise<GoalFolderKind> {
+	if (await exists(goalFileIn(folder))) return "goal";
+	return (await exists(planningFolder(folder))) ? "planning" : "neither";
+}
+
+// The folder of planning item `name`, checked to be one.
+async function existingPlanningItem(
+	root: string,
+	name: string,
+): Promise<string> {
+	const folder = goalFolder(root, name);
+	const kind = await goalFolderKind(folder);
+	if (kind === "goal") {
+		throw new Error(`${name} is a Goal, not a planning item: ${folder}`);
+	}
+	if (kind === "neither") {
+		throw new Error(`No planning item ${name}: ${folder} isn't one`);
+	}
+	return folder;
+}
+
+// Goals and planning items share `.vago-goals`, so one name can't be both.
+function alreadyExists(name: string, folder: string): string {
+	return `A Goal or planning item named ${name} already exists: ${folder}`;
+}
+
+// Where a planning item, `folder` of `.vago-goals`, keeps what it holds.
+function planningFolder(folder: string): string {
+	return join(folder, "planning");
+}
+
+async function exists(path: string): Promise<boolean> {
+	try {
+		await stat(path);
+		return true;
+	} catch {
+		return false;
 	}
 }
 
@@ -805,7 +937,12 @@ function goalFolder(root: string, goal: string): string {
 }
 
 function goalFilePath(root: string, goal: string): string {
-	return join(goalFolder(root, goal), "goal.md");
+	return goalFileIn(goalFolder(root, goal));
+}
+
+// The `goal.md` of `folder` of `.vago-goals`, there or not.
+function goalFileIn(folder: string): string {
+	return join(folder, "goal.md");
 }
 
 // The log path, as the header spells it and without its extension, of a Run

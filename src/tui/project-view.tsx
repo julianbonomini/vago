@@ -1,11 +1,12 @@
-// The Project view: the Goals table, one row per Goal in the order
-// `goal-rows.ts` gives, with the selection moved by keys and the mouse, and
-// the screen's keys. Hides the columns, their widths, which drop out on a
-// narrow terminal, how much of the screen the table takes, and when the
-// Goals are read again.
+// The Project view: the Goals table, one row per Goal or planning item in
+// the order `goal-rows.ts` gives, with the selection moved by keys and the
+// mouse, what comes of the answer to a planning question, and the screen's
+// keys. Hides the columns, their widths, which drop out on a narrow
+// terminal, how much of the screen the table takes, and when the Goals are
+// read again.
 
 import { basename } from "node:path";
-import type { ColorInput, ScrollBoxRenderable } from "@opentui/core";
+import type { ColorInput, KeyEvent, ScrollBoxRenderable } from "@opentui/core";
 import { type JSX, useKeyboard, useTerminalDimensions } from "@opentui/solid";
 import {
 	createEffect,
@@ -16,9 +17,16 @@ import {
 	Show,
 } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
+import {
+	createPlanningItem,
+	discardPlanningItem,
+	renamePlanningItem,
+} from "../tickets/tickets.ts";
 import { GoalPreview } from "./goal-preview.tsx";
 import {
 	type GoalRow,
+	type GoalStanding,
+	projectMessage,
 	projectTotals,
 	readGoalRows,
 	ticketTotal,
@@ -27,6 +35,12 @@ import { startGoal } from "./goal-start.ts";
 import { GoalView } from "./goal-view.tsx";
 import { usePane } from "./pane-grid.ts";
 import { PaneTitle } from "./pane-title.tsx";
+import {
+	type PlanningQuestion,
+	QuestionLine,
+	questionKeys,
+} from "./planning-question.tsx";
+import { PlanningView } from "./planning-view.tsx";
 import {
 	type FooterKey,
 	type HelpKey,
@@ -41,13 +55,17 @@ import { duration, money } from "./time-and-money.ts";
 // How often the Goals are read again: a change on disk shows within this.
 const refreshMs = 1000;
 
-// The rows of every Goal of the Project at `root`, undefined until the
-// first read ends, then read again every `refreshMs` for as long as the
-// calling component lives. A row that didn't change keeps its object, so
-// its line in the table isn't drawn again. The accessor throws the first
-// read's error. A later read that fails keeps the last rows: a broken Goal
-// is a row of its own, so only the Project's `.vago-goals` going bad fails.
-function liveGoalRows(root: string): () => GoalRow[] | undefined {
+// The rows of every Goal and planning item of the Project at `root`,
+// undefined until the first read ends, then read again every `refreshMs` for
+// as long as the calling component lives, and on `refresh`, after the view
+// changes them. A row that didn't change keeps its object, so its line in
+// the table isn't drawn again. The accessor throws the first read's error.
+// A later read that fails keeps the last rows: a broken Goal is a row of its
+// own, so only the Project's `.vago-goals` going bad fails.
+function liveGoalRows(root: string): {
+	rows: () => GoalRow[] | undefined;
+	refresh: () => void;
+} {
 	const [store, setStore] = createStore<{ rows: GoalRow[] | undefined }>({
 		rows: undefined,
 	});
@@ -73,11 +91,12 @@ function liveGoalRows(root: string): () => GoalRow[] | undefined {
 	refresh();
 	const timer = setInterval(refresh, refreshMs);
 	onCleanup(() => clearInterval(timer));
-	return () => {
+	const rows = () => {
 		const failure = failed();
 		if (failure !== undefined) throw failure.error;
 		return store.rows;
 	};
+	return { rows, refresh };
 }
 
 /**
@@ -106,7 +125,7 @@ export function ProjectView(props: {
 	vago: string[];
 }): JSX.Element {
 	const { color, symbol, scrollbars, dimText } = theme();
-	const rows = liveGoalRows(props.root);
+	const { rows, refresh } = liveGoalRows(props.root);
 	const [chosen, setChosen] = createSignal<string>();
 	// Pinned on the first read, so the selection follows its Goal from the
 	// start, not the top row.
@@ -124,8 +143,10 @@ export function ProjectView(props: {
 	}, 0);
 	const [helpShown, setHelpShown] = createSignal(false);
 	const [notice, setNotice] = createSignal<string>();
-	// The Goal open in the Goal view, which takes the whole screen; undefined
-	// on the Goals table.
+	const [asking, setAsking] = createSignal<PlanningQuestion>();
+	// The Goal open in the Goal view, or the planning item open in the
+	// planning view, which takes the whole screen; undefined on the Goals
+	// table.
 	const [opened, setOpened] = createSignal<string>();
 	const openedRow = () => rows()?.find(({ goal }) => goal === opened());
 	// Clamped, not wrapped, so holding a key stops at the end of the list.
@@ -137,8 +158,9 @@ export function ProjectView(props: {
 		const row = list[Math.max(0, Math.min(list.length - 1, index))];
 		if (row !== undefined) setChosen(row.goal);
 	};
-	// Opens the Goal `step` rows from the open one, passing over broken Goals;
-	// past either end the open Goal stays, as the selection stops there.
+	// Opens the Goal `step` rows from the open one, passing over broken Goals
+	// and planning items; past either end the open Goal stays, as the
+	// selection stops there.
 	const openNeighbour = (step: number) => {
 		const list = rows() ?? [];
 		for (
@@ -147,16 +169,67 @@ export function ProjectView(props: {
 			index += step
 		) {
 			const row = list[index];
-			if (row !== undefined && row.standing !== "broken") {
+			if (
+				row !== undefined &&
+				row.standing !== "broken" &&
+				row.standing !== "planning"
+			) {
 				setChosen(row.goal);
 				setOpened(row.goal);
 				return;
 			}
 		}
 	};
+	// Makes the planning item a name question asks for, or renames it, and
+	// opens a new one; a refusal shows in the footer and the question stays.
+	const answerName = async (question: PlanningQuestion, name: string) => {
+		try {
+			if (question.kind === "rename") {
+				await renamePlanningItem(props.root, question.item, name);
+			} else {
+				await createPlanningItem(props.root, name);
+			}
+		} catch (error) {
+			setNotice(projectMessage(error, props.root));
+			return;
+		}
+		setAsking(undefined);
+		setNotice(undefined);
+		setChosen(name);
+		if (question.kind === "new") setOpened(name);
+		refresh();
+	};
+	const discard = async (item: string) => {
+		try {
+			await discardPlanningItem(props.root, item);
+		} catch (error) {
+			setNotice(projectMessage(error, props.root));
+		}
+		refresh();
+	};
+	// A question takes every key: the name's field types them, and the keys
+	// handled here never reach it.
+	const answerKey = (question: PlanningQuestion, key: KeyEvent) => {
+		if (question.kind === "discard") {
+			key.preventDefault();
+			setAsking(undefined);
+			if (key.name === "y") discard(question.item);
+			return;
+		}
+		if (key.name === "escape") {
+			key.preventDefault();
+			setAsking(undefined);
+			setNotice(undefined);
+		}
+	};
 	let description: ScrollBoxRenderable | undefined;
 	useKeyboard((key) => {
 		if (openedRow() !== undefined) return;
+		const question = asking();
+		if (question !== undefined) {
+			answerKey(question, key);
+			return;
+		}
 		// A broken Goal has no Tickets to show; its preview says why.
 		const row = rows()?.[selectedIndex()];
 		setNotice(undefined);
@@ -165,6 +238,18 @@ export function ProjectView(props: {
 		}
 		if (key.name === "s" && !helpShown() && row !== undefined) {
 			setNotice(startGoal(props.vago, props.root, row));
+		}
+		// Kept from the field that opens next, which would type the key.
+		if (key.name === "n" && !helpShown()) {
+			key.preventDefault();
+			setAsking({ kind: "new" });
+		}
+		if (row?.standing === "planning" && !helpShown()) {
+			if (key.name === "r") {
+				key.preventDefault();
+				setAsking({ kind: "rename", item: row.goal });
+			}
+			if (key.name === "d") setAsking({ kind: "discard", item: row.goal });
 		}
 		if (key.name === "?") setHelpShown(!helpShown());
 		if (key.name === "escape") setHelpShown(false);
@@ -244,15 +329,25 @@ export function ProjectView(props: {
 			<Show when={openedRow()?.goal} keyed>
 				<Show when={openedRow()}>
 					{(row: () => GoalRow) => (
-						<GoalView
-							root={props.root}
-							vago={props.vago}
-							row={row()}
-							position={selectedIndex() + 1}
-							count={(rows() ?? []).length}
-							onClose={() => setOpened(undefined)}
-							onNeighbour={openNeighbour}
-						/>
+						<Show
+							when={row().standing === "planning"}
+							fallback={
+								<GoalView
+									root={props.root}
+									vago={props.vago}
+									row={row()}
+									position={selectedIndex() + 1}
+									count={(rows() ?? []).length}
+									onClose={() => setOpened(undefined)}
+									onNeighbour={openNeighbour}
+								/>
+							}
+						>
+							<PlanningView
+								name={row().goal}
+								onClose={() => setOpened(undefined)}
+							/>
+						</Show>
 					)}
 				</Show>
 			</Show>
@@ -309,7 +404,7 @@ export function ProjectView(props: {
 						<Show when={rows()?.length === 0}>
 							<text {...dimText} flexShrink={0} wrapMode="none">
 								{fitText(
-									"No Goals yet. Start one with vago goal new <goal>.",
+									"No Goals yet. Press n for a New Goal.",
 									terminal().width - boxEdges,
 								)}
 							</text>
@@ -327,9 +422,21 @@ export function ProjectView(props: {
 						/>
 					)}
 				</Show>
+				<Show when={asking()}>
+					{(question: () => PlanningQuestion) => (
+						<QuestionLine
+							question={question()}
+							onName={(name) => answerName(question(), name)}
+						/>
+					)}
+				</Show>
 				<box flexShrink={0} paddingLeft={1} paddingRight={1}>
 					<KeyFooter
-						keys={footerKeys(symbol.upDown)}
+						keys={footerKeys(
+							symbol.upDown,
+							asking(),
+							rows()?.[selectedIndex()]?.standing,
+						)}
 						width={terminal().width - 2}
 						notice={notice()}
 					/>
@@ -342,22 +449,42 @@ export function ProjectView(props: {
 	);
 }
 
-// `q` and Ctrl-C belong to `tui.tsx`, which quits on them on every screen.
-// `upDown` names the arrow keys.
-const footerKeys = (upDown: string): FooterKey[] => [
-	{ keys: upDown, label: "Goal", use: 6 },
-	{ keys: "Enter", label: "Open", use: 5 },
-	{ keys: "s", label: "Start", use: 2 },
-	{ keys: "g G", label: "First, last", use: 1 },
-	{ keys: "PgUp PgDn", label: "Scroll", use: 2 },
-	{ keys: "?", label: "Help", use: 3 },
-	{ keys: "q", label: "Quit", use: 2 },
-];
+// `q` and Ctrl-C belong to `tui.tsx`, which quits on them on every screen
+// but a name's field. `upDown` names the arrow keys. While a question is
+// asked, the footer names the keys that answer it, and otherwise those of
+// the selected row, whose standing is `selected`.
+const footerKeys = (
+	upDown: string,
+	question: PlanningQuestion | undefined,
+	selected: GoalStanding | undefined,
+): FooterKey[] => {
+	if (question !== undefined) return questionKeys(question);
+	const rowKeys =
+		selected === "planning"
+			? [
+					{ keys: "r", label: "Rename", use: 2 },
+					{ keys: "d", label: "Discard", use: 1 },
+				]
+			: [{ keys: "s", label: "Start", use: 2 }];
+	return [
+		{ keys: upDown, label: "Goal", use: 6 },
+		{ keys: "Enter", label: "Open", use: 5 },
+		...rowKeys,
+		{ keys: "n", label: "New Goal", use: 2 },
+		{ keys: "g G", label: "First, last", use: 1 },
+		{ keys: "PgUp PgDn", label: "Scroll", use: 2 },
+		{ keys: "?", label: "Help", use: 3 },
+		{ keys: "q", label: "Quit", use: 2 },
+	];
+};
 
 const helpKeys = (upDown: string): HelpKey[] => [
 	{ keys: `${upDown} j k`, meaning: "select the Goal above, below" },
 	{ keys: "Enter", meaning: "open the selected Goal" },
 	{ keys: "s", meaning: "start the selected Goal in vago run" },
+	{ keys: "n", meaning: "plan a New Goal, named first" },
+	{ keys: "r", meaning: "rename the selected planning item" },
+	{ keys: "d", meaning: "discard the selected planning item" },
 	{ keys: "g G", meaning: "select the first, the last Goal" },
 	{ keys: "click", meaning: "select the Goal clicked" },
 	{ keys: "Space PgDn", meaning: "page the Goal's description" },
@@ -426,8 +553,9 @@ const minShownRows = 3;
 
 // The id of Goal `goal`'s row, which the Goals box scrolls to.
 const rowId = (goal: string) => `goal-row-${goal}`;
-// The symbol, a space and the longest standing word, then a space.
-const stateWidth = 10;
+// The symbol, a space and the longest standing word, `planning`, then a
+// space.
+const stateWidth = 11;
 // Below this many columns the RUN TIME and COST columns drop out.
 const wideFrom = 100;
 // RUN TIME and COST each: `13h 36m`, `$103.70` or the heading, then a

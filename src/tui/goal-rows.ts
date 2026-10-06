@@ -1,14 +1,16 @@
-// What the Project view knows of each Goal: its standing, the "now" phrase
-// saying what it is doing or waiting for, how many Tickets it has, its
-// run time, tokens and cost, the order of the rows, the header line's
-// totals, what the preview shows of the selected Goal, and the Tickets the
-// Goal view shows of it. Hides the rules behind each.
+// What the Project view knows of each Goal and planning item: its
+// standing, the "now" phrase saying what it is doing or waiting for, how
+// many Tickets it has, its run time, tokens and cost, the order of the
+// rows, the header line's totals, what the preview shows of the selected
+// Goal, and the Tickets the Goal view shows of it. Hides the rules behind
+// each.
 
 import { sep } from "node:path";
 import {
 	type GoalState,
 	isGoalClaimed,
 	listGoals,
+	listPlanningItems,
 	readGoal,
 	runLogLastWritten,
 	type TicketRun,
@@ -25,13 +27,14 @@ import { joinParagraphs } from "./text-fit.ts";
 
 /**
  * A Goal's state as the Goals list shows it. `broken` is a Goal whose files
- * can't be read.
+ * can't be read, and `planning` a planning item, a Goal still being planned.
  */
 export type GoalStanding =
 	| "running"
 	| "lost"
 	| "stuck"
 	| "broken"
+	| "planning"
 	| "ready"
 	| "done";
 
@@ -50,6 +53,7 @@ export function ticketTotal(tickets: GoalTicketCounts): number {
 
 /** One row of the Goals table, with what the preview shows of its Goal. */
 export type GoalRow = {
+	/** The Goal's name, or the planning item's. */
 	goal: string;
 	standing: GoalStanding;
 	/** From goal.md's first heading. */
@@ -69,7 +73,10 @@ export type GoalRow = {
 	 * Goal, why its files can't be read.
 	 */
 	now: string;
-	/** The Workflow the Goal's header names; `unknown` for a broken Goal. */
+	/**
+	 * The Workflow the Goal's header names; `unknown` for a broken Goal and
+	 * `not chosen` for a planning item.
+	 */
 	workflow: string;
 	/**
 	 * When the Goal was created; undefined for a broken Goal or one made
@@ -106,10 +113,11 @@ export type GoalStepTotal = {
 };
 
 /**
- * Every Goal of the Project at `root` as a row, sorted running, lost, stuck,
- * broken, ready, done, then latest activity first, then name. A live Run's
- * time runs to `now`. A Goal `readGoal` can't read is a broken row saying
- * why, with paths relative to `root`. Throws what `listGoals` throws.
+ * Every Goal and planning item of the Project at `root` as a row, sorted
+ * running, lost, stuck, broken, planning, ready, done, then latest activity
+ * first, then name. A live Run's time runs to `now`. A Goal `readGoal` can't
+ * read is a broken row saying why, with paths relative to `root`. Throws
+ * what `listGoals` throws.
  */
 export async function readGoalRows(
 	root: string,
@@ -141,6 +149,9 @@ export async function readGoalRows(
 			};
 		}),
 	);
+	for (const item of await listPlanningItems(root)) {
+		read.push({ row: planningRow(item), last: undefined });
+	}
 	// A Goal with no activity sorts after the rest of its standing, and the
 	// name breaks ties so the order holds from one read to the next.
 	read.sort(
@@ -195,9 +206,11 @@ async function readOpenLogsLastWritten(
 	return written;
 }
 
-// What `error` says, its paths relative to the Project at `root`, so it
-// fits the screen.
-function projectMessage(error: unknown, root: string): string {
+/**
+ * What `error` says, its paths relative to the Project at `root`, so it
+ * fits the screen.
+ */
+export function projectMessage(error: unknown, root: string): string {
 	return (error instanceof Error ? error.message : `${error}`)
 		.replaceAll(`${root}${sep}`, "")
 		.trim();
@@ -231,6 +244,7 @@ const standingOrder: GoalStanding[] = [
 	"lost",
 	"stuck",
 	"broken",
+	"planning",
 	"ready",
 	"done",
 ];
@@ -253,6 +267,29 @@ function brokenRow(goal: string, message: string): GoalRow {
 		tickets: [],
 		stepTotals: [],
 		description: joinParagraphs(message),
+	};
+}
+
+// The row of planning item `item`, which has no Workflow, Tickets or Runs
+// yet.
+function planningRow(item: string): GoalRow {
+	return {
+		goal: item,
+		standing: "planning",
+		title: "",
+		ticketCounts: { done: 0, running: 0, stuck: 0, ready: 0 },
+		runMs: 0,
+		tokens: 0,
+		costUsd: 0,
+		now: "no chat yet",
+		workflow: "not chosen",
+		created: undefined,
+		sinceLastActivityMs: undefined,
+		tickets: [],
+		stepTotals: [],
+		description: [
+			"A Goal still being planned, with no Workflow or Tickets yet.",
+		],
 	};
 }
 

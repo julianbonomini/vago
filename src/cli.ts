@@ -9,7 +9,13 @@ import { newGoal, newTicket, resetTicket, runGoal } from "./goal-runner.ts";
 import { initProject, updateProject } from "./init.ts";
 import { printGoalReport } from "./progress.ts";
 import { readRunOutput } from "./step-runner.ts";
-import { readGoal, readGoalBody } from "./tickets/tickets.ts";
+import {
+	createPlanningItem,
+	discardPlanningItem,
+	readGoal,
+	readGoalBody,
+	renamePlanningItem,
+} from "./tickets/tickets.ts";
 import { projectRoot } from "./worktree.ts";
 
 /** One positional argument, such as `<goal>`. */
@@ -109,6 +115,22 @@ const ticketNumber: Operand = {
 	name: "<NN>",
 	meaning: "The Ticket's number, the digits its file name starts with.",
 	digits: true,
+};
+
+const newPlanningName: Operand = {
+	name: "<name>",
+	meaning:
+		"The planning item's name, which the Goal keeps unless it is renamed.",
+};
+
+const planningName: Operand = {
+	name: "<name>",
+	meaning: "The planning item's name.",
+};
+
+const planningNewName: Operand = {
+	name: "<new-name>",
+	meaning: "The name it takes.",
 };
 
 const workflowFlag: RequiredFlag = {
@@ -238,6 +260,52 @@ how long they took and what they cost, ready to paste into a PR description.`,
 				}
 			}
 			printGoalReport(await readGoalBody(root, goal), state, outputs);
+			return 0;
+		},
+	},
+	{
+		name: "plan new",
+		summary: "Start planning a Goal",
+		description: `Makes a planning item, a Goal still being planned, and prints its folder. It
+shows in the TUI's Goals list as planning. It makes no Goal and no Ticket, so
+vago run doesn't find it. It refuses a name a Goal or planning item has.`,
+		operands: [newPlanningName],
+		flags: [],
+		example: "vago plan new search",
+		run: async (root, given) => {
+			console.log(
+				await createPlanningItem(root, given.operand(newPlanningName)),
+			);
+			return 0;
+		},
+	},
+	{
+		name: "plan rename",
+		summary: "Rename a planning item",
+		description: `Gives a planning item a new name, keeping everything it holds. It refuses a
+Goal, and a name a Goal or planning item has.`,
+		operands: [planningName, planningNewName],
+		flags: [],
+		example: "vago plan rename search ranked-search",
+		run: async (root, given) => {
+			await renamePlanningItem(
+				root,
+				given.operand(planningName),
+				given.operand(planningNewName),
+			);
+			return 0;
+		},
+	},
+	{
+		name: "plan discard",
+		summary: "Remove a planning item and everything it holds",
+		description: `Removes a planning item and everything saved with it. It refuses a Goal,
+which it never removes.`,
+		operands: [planningName],
+		flags: [],
+		example: "vago plan discard search",
+		run: async (root, given) => {
+			await discardPlanningItem(root, given.operand(planningName));
 			return 0;
 		},
 	},

@@ -44,6 +44,10 @@ _Avoid_: mission, epic, initiative
 An outcome the human wants for a Project, from a one-Ticket feature to a whole app launch; done when all its Tickets are done. Goals do not nest.
 _Avoid_: epic, mission
 
+**Planning item**:
+A Goal still being planned: a folder in `.vago-goals/` with a `planning/` folder and no `goal.md`. It shows in the Goals list as `planning`, has a name the human may change, and can be discarded. It is no Goal: `vago run` doesn't find it, and it has no Workflow, Tickets or Runs.
+_Avoid_: draft, idea, proposal
+
 **Run**:
 One Harness session performing one agent Step on one Ticket, or for the Goal in a Goal Step, such as implement, review or discuss; a Ticket usually takes several.
 _Avoid_: session, job, attempt
