@@ -1,15 +1,18 @@
 // Everything `vago run` prints to stdout while it runs: the Goal's worktree,
-// one line naming each Ticket as it starts, and under it a line when each
-// Step starts, one when it ends and one when it waits to retry, where to
-// look when a Ticket goes stuck, why a stuck Ticket can't be picked up, the
-// Goal summary table on exit, and what became of the Goal's worktree, after
-// the summary. Also the Goal report `vago goal report` prints. Hides the
-// line formats, columns and colours, and how durations and costs read.
+// one line naming each Ticket or Goal Step group as its pass starts, and
+// under it a line when each Step starts, one when it ends and one when it
+// waits to retry, where to look when a Ticket or the Goal goes stuck, why a
+// pass can't be picked up, the Goal summary table on exit, and what became
+// of the Goal's worktree, after the summary. Also the Goal report
+// `vago goal report` prints. Hides the line formats, columns and colours, and
+// how durations and costs read.
 
 import { relative } from "node:path";
 import { joinParagraphLines } from "./markdown-paragraphs.ts";
 import {
 	type GoalState,
+	type RunOwner,
+	runOwnerGoal,
 	type Ticket,
 	type TicketRun,
 	type TicketStatus,
@@ -24,14 +27,14 @@ export function printWorktree(path: string): void {
 }
 
 /**
- * Prints the line naming `ticket`, under which its Step lines follow,
- * indented, saying it was picked up at Step `pickedUpAt` when given.
+ * Prints the line naming the pass of `owner` that starts, the Ticket's name
+ * or the Goal Step group's, like `before_all`, under which its Step lines
+ * follow, indented, saying it was picked up at Step `pickedUpAt` when given.
  */
-export function printTicketStarted(ticket: Ticket, pickedUpAt?: string): void {
+export function printPassStarted(owner: RunOwner, pickedUpAt?: string): void {
+	const name = owner.kind === "ticket" ? owner.ticket.name : owner.group;
 	console.log(
-		pickedUpAt === undefined
-			? ticket.name
-			: `${ticket.name}, picked up at ${pickedUpAt}`,
+		pickedUpAt === undefined ? name : `${name}, picked up at ${pickedUpAt}`,
 	);
 }
 
@@ -79,45 +82,52 @@ export function printStepRetry(
 }
 
 /**
- * Prints that `ticket` went stuck after Step `stepName`, whose Run ended with
- * `outcome` as spelled in the header, with what the human needs next: the
- * Run's log at the absolute path `log`, the command that resumes its Harness
- * session when there is one, the `vago run` that picks the Ticket up at that
- * Step again, and the command that resets the Ticket.
+ * Prints that `owner`, a Ticket or the Goal for a Goal Step, went stuck
+ * after Step `stepName`, whose Run ended with `outcome` as spelled in the
+ * header, with what the human needs next: the Run's log at the absolute path
+ * `log`, the command that resumes its Harness session when there is one, the
+ * `vago run` that picks it up at that Step again, and for a Ticket the
+ * command that resets it. A Goal Step has no reset.
  */
 export function printStuck(
-	ticket: Ticket,
+	owner: RunOwner,
 	stepName: string,
 	outcome: string,
 	log: string,
 	resumeHint?: string,
 ): void {
-	console.log(
-		paint(`${ticket.name} is stuck after ${stepName}: ${outcome}`, "red"),
-	);
+	const { root, goal } = runOwnerGoal(owner);
+	const name = owner.kind === "ticket" ? owner.ticket.name : goal;
+	console.log(paint(`${name} is stuck after ${stepName}: ${outcome}`, "red"));
 	// Relative to the repo root, which `vago run` runs in, so it's short
 	// enough to read and still opens from where the human is.
-	console.log(`  log:    ${relative(ticket.root, log)}`);
+	console.log(`  log:    ${relative(root, log)}`);
 	if (resumeHint !== undefined) console.log(`  resume: ${resumeHint}`);
-	console.log(`  again:  vago run ${ticket.goal}`);
-	console.log(`  reset:  ${resetCommand(ticket)}`);
+	console.log(`  again:  vago run ${goal}`);
+	if (owner.kind === "ticket") {
+		console.log(`  reset:  ${resetCommand(owner.ticket)}`);
+	}
 }
 
 /**
- * Prints that `ticket` can't be picked up because of Step `stepName`, with
- * `reason` saying why after the Step's name, as in `implement has no log
- * left to rebuild its output from`, and the command that makes it start
- * over.
+ * Prints that `owner`'s pass, a Ticket's or a Goal Step group's, can't be
+ * picked up because of Step `stepName`, with `reason` saying why after the
+ * Step's name, as in `implement has no log left to rebuild its output from`,
+ * and for a Ticket the command that makes it start over. A Goal Step has no
+ * reset.
  */
 export function printPickUpRefusal(
-	ticket: Ticket,
+	owner: RunOwner,
 	stepName: string,
 	reason: string,
 ): void {
+	const name = owner.kind === "ticket" ? owner.ticket.name : owner.goal;
 	console.log(
-		paint(`${ticket.name} can't be picked up: ${stepName} ${reason}`, "red"),
+		paint(`${name} can't be picked up: ${stepName} ${reason}`, "red"),
 	);
-	console.log(`  reset:  ${resetCommand(ticket)}`);
+	if (owner.kind === "ticket") {
+		console.log(`  reset:  ${resetCommand(owner.ticket)}`);
+	}
 }
 
 /**
@@ -200,8 +210,10 @@ export function printWorktreeClose(close: WorktreeClose): void {
  * Prints `goal.md` without its header, as `goalBody`, each of its paragraphs
  * on one line, and then in Markdown what each Ticket's Steps put in the Goal
  * report, collapsed by Ticket, the Workflow the Goal names and what the
- * Goal's Runs took and cost: a table with one row per Ticket and a total, and
- * every Run in a collapsed table under it, its outcome marked when it
+ * Goal's Runs took and cost: a table with one row per Ticket, a row for the
+ * `before_all` Runs before them and one for the `after_all` Runs after them
+ * when there are any, and a total, and every Run in a collapsed table under
+ * it in the same order, its outcome marked when it
  * resumed a session or fell back to a fresh one. Made to be a PR description.
  * `outputs` holds the output of each Run whose Step puts it in the report, by
  * the Run's log; a Ticket shows the latest such Run of each Step that ended
@@ -236,12 +248,24 @@ export function printGoalReport(
 	}
 	lines.push("## Runs", "", `Workflow: ${state.workflow}`, "");
 	lines.push("| Ticket | Runs | Took | Cost |", "|---|---:|---:|---:|");
-	const { tickets, total } = goalTotals(state);
-	for (const { name, totals } of tickets) {
+	// A Goal Step group with no Runs gets no row, so a Workflow without one
+	// reads as before.
+	const group = (name: string, runs: TicketRun[]) =>
+		runs.length === 0 ? [] : [{ name, runs }];
+	const owners = [
+		...group("before_all", state.beforeAll),
+		...state.tickets.map(({ ticket, runs }) => ({ name: ticket.name, runs })),
+		...group("after_all", state.afterAll),
+	];
+	for (const { name, runs } of owners) {
+		const totals = runTotals(runs);
 		lines.push(
 			`| ${name} | ${totals.runs} | ${duration(totals.tookMs)} | ${dollars(totals.costUsd)} |`,
 		);
 	}
+	// Over every Run, not the rows' sums: floats added in another order can
+	// round the total to a different cent.
+	const total = runTotals(owners.flatMap(({ runs }) => runs));
 	lines.push(
 		`| **Total** | **${total.runs}** | **${duration(total.tookMs)}** | **${dollars(total.costUsd)}** |`,
 	);
@@ -250,7 +274,7 @@ export function printGoalReport(
 		"| Ticket | Step | Outcome | Took | Cost |",
 		"|---|---|---|---:|---:|",
 	);
-	for (const { ticket, runs } of state.tickets) {
+	for (const { name, runs } of owners) {
 		for (const run of runs) {
 			const took =
 				run.ended === undefined
@@ -261,7 +285,7 @@ export function printGoalReport(
 				...(run.resume === undefined ? [] : [ticketRunResumeWords[run.resume]]),
 			].join(", ");
 			lines.push(
-				`| ${ticket.name} | ${run.step} | ${outcome} | ${took} | ${dollars(run.costUsd)} |`,
+				`| ${name} | ${run.step} | ${outcome} | ${took} | ${dollars(run.costUsd)} |`,
 			);
 		}
 	}

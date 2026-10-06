@@ -13,7 +13,7 @@ import { makeProject, runVago, vagoOnPath } from "./project.ts";
 // vago/<goal> gets too after the Ticket's branch was cut; the one in
 // $LEFTOVER_TICKET leaves left.txt uncommitted. The one in $PICKED_UP skips
 // straight to the merge, as a Ticket picked up at its merge Step does.
-const workflow = `
+const ticketSteps = `
 [[steps]]
 id   = "branch"
 type = "shell"
@@ -62,8 +62,12 @@ type GoalRepo = {
 
 // A Project initialised from the starter, with its default branch, `main`
 // unless named, pushed to a local origin whose HEAD points to it, Goal `ship`
-// on the Workflow above and Tickets `01-one` and `02-two`.
-async function makeGoalRepo(defaultBranch = "main"): Promise<GoalRepo> {
+// and Tickets `01-one` and `02-two`. The Goal's Workflow is the Ticket Steps
+// above and the after_all of the starter Workflow `starter`.
+async function makeGoalRepo({
+	defaultBranch = "main",
+	starter = "small",
+} = {}): Promise<GoalRepo> {
 	const root = await makeProject({});
 	const origin = await mkdtemp(join(tmpdir(), "vago-origin-"));
 	git(origin, "init", "--quiet", "--bare");
@@ -78,7 +82,14 @@ async function makeGoalRepo(defaultBranch = "main"): Promise<GoalRepo> {
 	git(origin, "symbolic-ref", "HEAD", `refs/heads/${defaultBranch}`);
 	git(root, "remote", "set-head", "origin", defaultBranch);
 	await runVago(root, ["init"], {}, "n\n");
-	await Bun.write(join(root, ".vago/workflows/ship.toml"), workflow);
+	const starterText = await Bun.file(
+		join(root, `.vago/workflows/${starter}.toml`),
+	).text();
+	const afterAll = starterText.slice(starterText.indexOf("\n[[after_all]]"));
+	await Bun.write(
+		join(root, ".vago/workflows/ship.toml"),
+		`${ticketSteps}\n${afterAll}`,
+	);
 
 	// merge.sh calls `vago goal report`, so `vago` is this checkout's CLI.
 	const bin = await vagoOnPath();
@@ -101,30 +112,46 @@ async function makeGoalRepo(defaultBranch = "main"): Promise<GoalRepo> {
 	return { root, origin, gh, vago, lastMergeLine };
 }
 
-test("the Goal's PR mentions the human and is labelled ready-for-review once its last Ticket is done", async () => {
-	const { gh, vago } = await makeGoalRepo();
+test.each(["small", "try-hard"])(
+	"the starter Workflow %s's after_all mentions the human on the Goal's PR and labels it ready-for-review once its last Ticket is done",
+	async (starter) => {
+		const { gh, vago } = await makeGoalRepo({ starter });
 
-	const stuck = await vago(["run", "ship"], { FAIL_TICKET: "02-two" });
+		const stuck = await vago(["run", "ship"], { FAIL_TICKET: "02-two" });
 
-	expect(stuck.exitCode).not.toBe(0);
-	const before = (await gh.state()).pullRequests["vago/ship"];
-	expect(before?.body).toContain("01-one");
-	expect(before?.comments).toEqual([]);
-	expect(before?.labels).toEqual([]);
+		expect(stuck.exitCode).not.toBe(0);
+		const before = (await gh.state()).pullRequests["vago/ship"];
+		expect(before?.body).toContain("01-one");
+		expect(before?.comments).toEqual([]);
+		expect(before?.labels).toEqual([]);
 
-	await vago(["ticket", "reset", "ship", "2"]);
-	const done = await vago(["run", "ship"]);
+		await vago(["ticket", "reset", "ship", "2"]);
+		const done = await vago(["run", "ship"]);
 
-	expect(done.stderr).toBe("");
-	expect(done.exitCode).toBe(0);
-	const after = (await gh.state()).pullRequests["vago/ship"];
-	expect(after?.comments).toHaveLength(1);
-	expect(after?.comments[0]).toContain(ping);
-	expect(after?.body).not.toContain(ping);
-	expect(after?.labels).toEqual(["ready-for-review"]);
+		expect(done.stderr).toBe("");
+		expect(done.exitCode).toBe(0);
+		const after = (await gh.state()).pullRequests["vago/ship"];
+		expect(after?.comments).toHaveLength(1);
+		expect(after?.comments[0]).toContain(ping);
+		expect(after?.body).not.toContain(ping);
+		expect(after?.labels).toEqual(["ready-for-review"]);
+	},
+);
+
+test("merge.sh alone neither labels the PR nor mentions the human, even after the last Ticket", async () => {
+	const { root, gh, vago } = await makeGoalRepo();
+	await Bun.write(join(root, ".vago/workflows/ship.toml"), ticketSteps);
+
+	const run = await vago(["run", "ship"]);
+
+	expect(run.exitCode).toBe(0);
+	const pullRequest = (await gh.state()).pullRequests["vago/ship"];
+	expect(pullRequest?.body).toContain("02-two");
+	expect(pullRequest?.comments).toEqual([]);
+	expect(pullRequest?.labels).toEqual([]);
 });
 
-test("a later last merge rewrites the PR body but keeps the one mention and label", async () => {
+test("a later after_all, after a Ticket added to a done Goal, rewrites the PR body but keeps the one mention and label", async () => {
 	const { gh, vago } = await makeGoalRepo();
 	await vago(["run", "ship"]);
 
@@ -140,7 +167,7 @@ test("a later last merge rewrites the PR body but keeps the one mention and labe
 });
 
 test("the Goal's PR is opened from vago/<goal> against the repo's default branch, even when that isn't main", async () => {
-	const { root, gh, vago } = await makeGoalRepo("trunk");
+	const { root, gh, vago } = await makeGoalRepo({ defaultBranch: "trunk" });
 
 	const run = await vago(["run", "ship"]);
 

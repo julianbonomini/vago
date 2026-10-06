@@ -291,3 +291,54 @@ test("goal report refuses a Goal that doesn't exist", async () => {
 	expect(result.stderr).toMatch(/Goal hello not found/);
 	expect(result.stdout).toBe("");
 });
+
+test("goal report lists the before_all Runs before the Tickets' and the after_all Runs after them, in the totals too", async () => {
+	const at = (time: string) => new Date(`2026-10-02T${time}Z`);
+	const root = await makeProject({
+		[`${goalDir}/goal.md`]: goalText("small", "# Hello\n", {
+			beforeAll: [
+				{
+					step: "setup",
+					started: at("09:00:00"),
+					ended: at("09:00:02"),
+					outcome: "ok",
+				},
+			],
+			afterAll: [
+				{
+					step: "describe",
+					started: at("12:00:00"),
+					ended: at("12:01:00"),
+					outcome: "ok",
+					model: "claude-opus-5-5",
+					costUsd: 0.25,
+				},
+				{
+					step: "ready",
+					started: at("12:01:00"),
+					ended: at("12:01:01"),
+					outcome: "exit 1",
+				},
+			],
+		}),
+		[`${goalDir}/tickets/01-greet.md`]: greet,
+	});
+
+	const result = await runVago(root, ["goal", "report", "hello"]);
+
+	expect(result.exitCode).toBe(0);
+	expect(result.stdout).toContain(`| Ticket | Runs | Took | Cost |
+|---|---:|---:|---:|
+| before_all | 1 | 2.0s |  |
+| 01-greet | 2 | 5m31s | $1.25 |
+| after_all | 2 | 1m01s | $0.25 |
+| **Total** | **5** | **6m34s** | **$1.50** |
+`);
+	expect(result.stdout).toContain(`|---|---|---|---:|---:|
+| before_all | setup | ok | 2.0s |  |
+| 01-greet | branch | ok | 1.5s |  |
+| 01-greet | implement | ok | 5m30s | $1.25 |
+| after_all | describe | ok | 1m00s | $0.25 |
+| after_all | ready | exit 1 | 1.0s |  |
+`);
+});

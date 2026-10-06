@@ -64,9 +64,30 @@ export async function makeProject(
 	return root;
 }
 
-/** A `goal.md` whose `+++` header names `workflow`, followed by `body`. */
-export function goalText(workflow: string, body = "# Hello\n"): string {
-	return `+++\nworkflow = "${workflow}"\n+++\n${body}`;
+/**
+ * A `goal.md` whose `+++` header names `workflow` and holds the Runs of its
+ * Goal Steps, `beforeAll`'s then `afterAll`'s, followed by `body`. Run N of
+ * step `s` of `before_all` logs to `logs/before_all-s-N.log`, or `.jsonl`
+ * for an agent Step's, in the Goal's folder.
+ */
+export function goalText(
+	workflow: string,
+	body = "# Hello\n",
+	runs: { beforeAll?: FixtureRun[]; afterAll?: FixtureRun[] } = {},
+): string {
+	const before = (runs.beforeAll ?? []).map((run) => ({
+		run,
+		prefix: "before_all-",
+	}));
+	const after = (runs.afterAll ?? []).map((run) => ({
+		run,
+		prefix: "after_all-",
+	}));
+	const lines = [
+		`workflow = "${workflow}"`,
+		...runTables([...before, ...after]),
+	];
+	return `+++\n${lines.join("\n")}\n+++\n${body}`;
 }
 
 /**
@@ -121,7 +142,17 @@ export function ticketText(
 	if (options.blockedBy !== undefined) {
 		lines.push(`blocked_by = [${options.blockedBy.join(", ")}]`);
 	}
-	for (const [index, run] of (options.runs ?? []).entries()) {
+	lines.push(
+		...runTables((options.runs ?? []).map((run) => ({ run, prefix: "" }))),
+	);
+	return `+++\n${lines.join("\n")}\n+++\n\n${options.body ?? "# A Ticket\n"}`;
+}
+
+// The `[[runs]]` tables of `runs`, each Run's log named after `prefix`, its
+// Step and its position.
+function runTables(runs: { run: FixtureRun; prefix: string }[]): string[] {
+	const lines: string[] = [];
+	for (const [index, { run, prefix }] of runs.entries()) {
 		lines.push("", "[[runs]]", `step = "${run.step}"`);
 		lines.push(`started = ${run.started.toISOString()}`);
 		if (run.ended !== undefined)
@@ -144,9 +175,9 @@ export function ticketText(
 			lines.push(`retry_at = ${run.retryAt.toISOString()}`);
 		}
 		const extension = run.model === undefined ? "log" : "jsonl";
-		lines.push(`log = "logs/${run.step}-${index + 1}.${extension}"`);
+		lines.push(`log = "logs/${prefix}${run.step}-${index + 1}.${extension}"`);
 	}
-	return `+++\n${lines.join("\n")}\n+++\n\n${options.body ?? "# A Ticket\n"}`;
+	return lines;
 }
 
 /** A `running.lock` held by a live process, until `release` is called. */

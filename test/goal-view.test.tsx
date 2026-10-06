@@ -546,6 +546,93 @@ test("a Ticket whose Workflow can't be read says why in place of its Steps", asy
 	expect(frame).toContain('No Workflow "gone" in .vago/workflows/');
 });
 
+// Goal `marks` going through Workflow `small`, which has a `setup`
+// before_all Step and a `ready` after_all Step, with `goal.md` holding
+// `goalRuns` and its only Ticket `ticket`.
+function goalStepsProject(
+	goalRuns: { beforeAll?: FixtureRun[]; afterAll?: FixtureRun[] },
+	ticket: string,
+): Promise<string> {
+	return makeProject({
+		".vago/workflows/small.toml": `${workflowOf("implement")}
+[[before_all]]
+id = "setup"
+type = "shell"
+run = "true"
+
+[[after_all]]
+id = "ready"
+type = "shell"
+run = "true"
+`,
+		".vago-goals/marks/goal.md": goalText("small", "# Marks\n", goalRuns),
+		".vago-goals/marks/tickets/01-only.md": ticket,
+	});
+}
+
+test("before_all shows before the Tickets and after_all after them, each with its Steps and Runs", async () => {
+	const root = await goalStepsProject(
+		{ beforeAll: [{ ...runOf("setup", 0, 1), costUsd: 0.5 }] },
+		ticketText("done", { runs: [runOf("implement", 1, 5)] }),
+	);
+	const { view, frame } = await openFirstGoal(root);
+
+	expect(frame).toMatch(
+		/ ✓ before_all Goal Steps .*\n.* ✓ 01 A Ticket .*\n.* ○ after_all Goal Steps /,
+	);
+	expect(frame).toContain(" 3/3 ");
+	expect(frame).toContain(" after_all ");
+	expect(frame).toContain(" · ready ");
+	expect(frame).toContain(" Runs of after_all ");
+
+	view.mockInput.pressArrow("up");
+	view.mockInput.pressArrow("up");
+	const before = await frameWith(view, " Runs of before_all ");
+	expect(before).toContain(" ✓ setup ");
+	expect(before).toContain(" 1 Run · 1m 0s · $0.50 ");
+	expect(before).toMatch(/ 1 {2}setup +✓ ok +1m 0s +\$0\.50 +│/);
+	expect(before).toContain(" Run 1 · before_all setup ");
+});
+
+test("a Goal Step that failed is stuck, its Step marked failed", async () => {
+	const root = await goalStepsProject(
+		{
+			beforeAll: [runOf("setup", 0, 1)],
+			afterAll: [runOf("ready", 6, 7, "exit 1")],
+		},
+		ticketText("done", { runs: [runOf("implement", 1, 5)] }),
+	);
+	const { frame } = await openFirstGoal(root);
+
+	expect(frame).toContain(" ✗ after_all stuck  Goal Steps ");
+	expect(frame).toContain(" ✗ ready ");
+	expect(frame).toMatch(/\n ✗ marks {2}Marks +\n STUCK /);
+});
+
+test("after_all that Tickets ran after is pending again", async () => {
+	const root = await goalStepsProject(
+		{ beforeAll: [runOf("setup", 0, 1)], afterAll: [runOf("ready", 2, 3)] },
+		ticketText("done", { runs: [runOf("implement", 4, 5)] }),
+	);
+	const { frame } = await openFirstGoal(root);
+
+	expect(frame).toContain(" ○ after_all Goal Steps ");
+	expect(frame).toContain(" · ready ");
+	expect(frame).toContain(" 1 Run ");
+});
+
+test("a done Goal whose Workflow gained a before_all after it ran lists none and stays done", async () => {
+	const root = await goalStepsProject(
+		{ afterAll: [runOf("ready", 6, 7)] },
+		ticketText("done", { runs: [runOf("implement", 1, 5)] }),
+	);
+	const { frame } = await openFirstGoal(root);
+
+	expect(frame).not.toContain("before_all");
+	expect(frame).toContain(" ✓ after_all Goal Steps ");
+	expect(frame).toMatch(/\n ✓ marks {2}Marks +\n DONE /);
+});
+
 test("the Runs pane lists the selected Ticket's Runs and follows ↑↓", async () => {
 	const { view, frame } = await openFirstGoal(await stuckGoal());
 	expect(frame).toContain(" Runs of Ticket 02 ");

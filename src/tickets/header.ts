@@ -1,6 +1,6 @@
 // The `+++` TOML header that opens `goal.md` and every Ticket file: parsing
-// and checking it, writing it back, and rewriting a Ticket's header in place
-// atomically with its body kept byte for byte.
+// and checking it, writing it back, and rewriting a Ticket's or `goal.md`'s
+// header in place atomically with its body kept byte for byte.
 
 import { rename } from "node:fs/promises";
 import { parse, stringify } from "smol-toml";
@@ -34,7 +34,10 @@ const TicketHeader = z.looseObject({
 	runs: z.array(RunEntry).optional(),
 });
 
-/** One `[[runs]]` table of a Ticket file's header, spelled as in the file. */
+/**
+ * One `[[runs]]` table of a Ticket file's or `goal.md`'s header, spelled as
+ * in the file.
+ */
 export type TicketRunTable = z.infer<typeof RunEntry>;
 
 /** A Ticket file's header, with the fields as spelled in the file. */
@@ -44,7 +47,12 @@ const GoalHeader = z.looseObject({
 	workflow: z.string(),
 	// Absent from a Goal made before Vago recorded it.
 	created: z.date().optional(),
+	// The Runs of the Goal's Goal Steps; absent until one runs.
+	runs: z.array(RunEntry).optional(),
 });
+
+/** A `goal.md` header, with the fields as spelled in the file. */
+export type GoalHeader = z.infer<typeof GoalHeader>;
 
 const headerStart = "+++\n";
 const headerEnd = "\n+++\n";
@@ -68,30 +76,24 @@ export async function readTicketFile(
 /**
  * Reads the `goal.md` at `file` and returns the Workflow its header names,
  * when the Goal was created (undefined for a Goal made before Vago recorded
- * it) and its body without the blank lines under the header. Throws an
- * Error naming the file and the line to add when the header is missing or
- * names no Workflow.
+ * it), the `[[runs]]` of its Goal Steps, and its body without the blank lines
+ * under the header. Throws an Error naming the file and the line to add when
+ * the header is missing or names no Workflow, and naming the file and the
+ * problem when another field is bad.
  */
-export async function readGoalFile(
-	file: string,
-): Promise<{ workflow: string; created: Date | undefined; body: string }> {
-	const split = splitHeader(file, await Bun.file(file).text());
-	if (split === undefined) {
-		throw new Error(
-			`${file} has no +++ header naming its Workflow; start it with the lines +++, workflow = "<name>", +++`,
-		);
-	}
-	const checked = GoalHeader.safeParse(split.toml);
-	if (!checked.success) {
-		throw new Error(
-			`${file}: its header names no Workflow; add the line workflow = "<name>"`,
-		);
-	}
+export async function readGoalFile(file: string): Promise<{
+	workflow: string;
+	created: Date | undefined;
+	runs: TicketRunTable[];
+	body: string;
+}> {
+	const { header, body } = await readGoalHeader(file);
 	// A human editing the header by hand may leave a blank line under it.
 	return {
-		workflow: checked.data.workflow,
-		created: checked.data.created,
-		body: split.body.replace(/^\n+/, ""),
+		workflow: header.workflow,
+		created: header.created,
+		runs: header.runs ?? [],
+		body: body.replace(/^\n+/, ""),
 	};
 }
 
@@ -108,16 +110,65 @@ export function headedText(
  * writes it back, and returns what `change` returned. A crash leaves the old
  * file or the new one, never half of each.
  */
-export async function rewriteHeader<Change>(
+export function rewriteHeader<Change>(
 	file: string,
 	change: (header: TicketHeader) => Change,
 ): Promise<Change> {
-	const { header, body } = await readTicketFile(file);
+	return rewriteWith(file, readTicketFile, change);
+}
+
+/**
+ * Reads the `goal.md` at `file`, lets `change` edit its header in place,
+ * writes it back with the body byte for byte, and returns what `change`
+ * returned. A crash leaves the old file or the new one, never half of each.
+ */
+export function rewriteGoalHeader<Change>(
+	file: string,
+	change: (header: GoalHeader) => Change,
+): Promise<Change> {
+	// Not through readGoalFile, which drops the blank lines under the header.
+	return rewriteWith(file, readGoalHeader, change);
+}
+
+// Reads `file` with `read`, lets `change` edit the header, and writes the
+// header and the body back through a temp file renamed over `file`, so a
+// crash never leaves half of each.
+async function rewriteWith<Header extends Record<string, unknown>, Change>(
+	file: string,
+	read: (file: string) => Promise<{ header: Header; body: string }>,
+	change: (header: Header) => Change,
+): Promise<Change> {
+	const { header, body } = await read(file);
 	const changed = change(header);
 	const temp = `${file}.tmp`;
 	await Bun.write(temp, headedText(header, body));
 	await rename(temp, file);
 	return changed;
+}
+
+// The checked header of the `goal.md` at `file` and its body exactly as
+// written, with what `readGoalFile` throws.
+async function readGoalHeader(
+	file: string,
+): Promise<{ header: GoalHeader; body: string }> {
+	const split = splitHeader(file, await Bun.file(file).text());
+	if (split === undefined) {
+		throw new Error(
+			`${file} has no +++ header naming its Workflow; start it with the lines +++, workflow = "<name>", +++`,
+		);
+	}
+	const checked = GoalHeader.safeParse(split.toml);
+	if (!checked.success) {
+		const namesNoWorkflow = checked.error.issues.some(
+			({ path }) => path[0] === "workflow",
+		);
+		throw new Error(
+			namesNoWorkflow
+				? `${file}: its header names no Workflow; add the line workflow = "<name>"`
+				: `${file}: ${z.prettifyError(checked.error)}`,
+		);
+	}
+	return { header: checked.data, body: split.body };
 }
 
 // Splits the `+++` header off `text`, the text of `file`, and parses it.

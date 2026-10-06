@@ -66,7 +66,7 @@ It overwrites each starter file that differs, writes any that are missing, and p
 
 ### Pick a Workflow
 
-Both starter Workflows run each Ticket through these Steps, in order, with Claude Opus as the model:
+Both starter Workflows run each Ticket through these Steps, in order, with Claude Opus as the model, and run one more Step, `ready`, once every Ticket is done (see [Run Steps once per Goal](#run-steps-once-per-goal)):
 
 | Workflow | Steps | Pick it when |
 |---|---|---|
@@ -76,8 +76,26 @@ Both starter Workflows run each Ticket through these Steps, in order, with Claud
 The starter files are yours to change, and a few of them assume things about the Project that you may need to change first:
 
 - The `check` Step runs `bun run check`, and the prompts tell every agent Step to make it pass before it finishes. In a Project without that script, change the command in `.vago/workflows/*.toml` and the prompts that name it.
-- `merge.sh` pushes the Goal's branch to `origin` and opens its PR with `gh`, against the repo's default branch.
+- `merge.sh` pushes the Goal's branch to `origin` and opens its PR with `gh`, against the repo's default branch, and `ready.sh` labels and comments on that PR.
 - The prompts send agents to the docs that the Project's `AGENTS.md` names.
+
+### Run Steps once per Goal
+
+Besides `[[steps]]`, which every Ticket goes through, a Workflow can list Goal Steps, which run for the whole Goal: `[[before_all]]` runs once before the Goal's first Ticket, and `[[after_all]]` once every Ticket is done. They take the same types and options as `[[steps]]`. This is the starter's `after_all`:
+
+```toml
+[[after_all]]
+id   = "ready"
+name = "Ready for review"
+type = "shell"
+run  = "sh .vago/scripts/ready.sh"
+```
+
+`before_all` runs on the first `vago run` that has a Ticket to take, and not again once it has gone through. `after_all` runs again after Tickets added since its last pass are done, such as Tickets one of its own agent Steps adds, so a Step that mustn't repeat checks for itself, as `ready.sh` checks for its comment. A Goal whose Tickets are all done isn't done until `after_all` has gone through.
+
+Goal Steps run in the Goal's worktree on `vago/<goal>`. A shell Goal Step gets `$VAGO_GOAL` and `$VAGO_PROJECT_ROOT`, but no `$VAGO_TICKET` or `$VAGO_LAST_TICKET`. An agent Goal Step's prompt gets `{{goal}}` and `{{goal_name}}`, and the Workflow is refused if it reads `{{ticket}}`. `{{steps.<id>.output}}` reads only earlier Steps of the same list, and Step ids are unique across all three lists. Their Runs go in `goal.md`'s header, their logs are named for their list, like `logs/after_all-ready-1.log`, and `vago goal report` and the TUI show them before and after the Tickets.
+
+Only the Goal's Workflow's Goal Steps run, so `vago ticket add --workflow` refuses any other Workflow that has them.
 
 ### Run Steps on Codex
 
@@ -150,7 +168,9 @@ vago run search
 1. `branch` switches the Goal's worktree to a fresh `search/01-index` branch cut from `vago/search`, the Goal's branch, which Vago cut from the repo's default branch. It fails if the worktree has uncommitted changes, unless the worktree is already on the Ticket's branch, where it leaves the work as it is.
 2. The agent Steps build and review the Ticket on that branch and commit there. `check` runs between them; when it fails, the Ticket goes on, and review reads the failure and fixes it.
 3. On the Goal's last Ticket, `goal-review` reads the whole Goal's diff for problems no single Ticket shows: names that disagree with the glossary, one decision owned in two places, docs that no longer match the code. It fixes the small ones on the branch. For bigger ones it adds Tickets to the Goal, so this Ticket is no longer the last and `vago run` takes them next. Only the first Goal review may add Tickets; the ones after it fix or report. Its `when = "last-ticket"` skips it on every other Ticket; a Step without `when` runs on every Ticket.
-4. `merge` commits any changes the Steps left uncommitted, squash-merges the Ticket's branch into `vago/search` as one commit, deletes the Ticket's branch, pushes `vago/search`, and creates or updates its PR to the repo's default branch. The PR description is the output of `vago goal report search`, rewritten after every Ticket. After the Goal's last Ticket, `merge` also labels the PR `ready-for-review` and comments on it mentioning you, the account `gh` is logged in as, so GitHub notifies you. A Goal that ends with a stuck Ticket gets neither. A push or `gh` call that fails on the network or with a 5xx from GitHub is tried again a few times. When `merge` fails anyway, its log's last line says why, and running the Ticket again finishes the job: a Ticket already squashed into `vago/search` isn't squashed twice.
+4. `merge` commits any changes the Steps left uncommitted, squash-merges the Ticket's branch into `vago/search` as one commit, deletes the Ticket's branch, pushes `vago/search`, and creates or updates its PR to the repo's default branch. The PR description is the output of `vago goal report search`, rewritten after every Ticket. A push or `gh` call that fails on the network or with a 5xx from GitHub is tried again a few times. When `merge` fails anyway, its log's last line says why, and running the Ticket again finishes the job: a Ticket already squashed into `vago/search` isn't squashed twice.
+
+Once every Ticket is done, the starter Workflows' `after_all` Step `ready` labels the PR `ready-for-review` and comments on it mentioning you, the account `gh` is logged in as, so GitHub notifies you. A Goal that ends with a stuck Ticket gets neither, and a later `after_all` doesn't mention you again.
 
 A shell Step gets the Goal's and Ticket's names in `$VAGO_GOAL` and `$VAGO_TICKET`, and `$VAGO_LAST_TICKET` is `true` when every other Ticket of the Goal is `done`, `false` otherwise. An agent Step's prompt gets the Ticket in `{{ticket}}`, `goal.md` without its header in `{{goal}}`, the Goal's name in `{{goal_name}}`, and an earlier Step's output in `{{steps.<id>.output}}`.
 
@@ -173,7 +193,7 @@ Ticket      Status  Runs    Took   Cost
 Total                 10  39m42s  $7.02
 ```
 
-On a terminal the outcomes and statuses are coloured; set `NO_COLOR` to turn that off. `vago run` exits 0 only when every Ticket of the Goal is done.
+On a terminal the outcomes and statuses are coloured; set `NO_COLOR` to turn that off. `vago run` exits 0 only when every Ticket of the Goal is done and its `after_all` has gone through.
 
 A Step ends `ok`, `exit <code>` for a shell Step or a Harness exiting non-zero, `idle-timeout` when the Harness printed nothing for the Workflow's `idle_timeout` (10 minutes in the starters), `interrupted` when you pressed Ctrl-C, `permission-denied` when Claude Code refused a tool call or Codex's automatic review declined a command, or `permission-mode <mode>` when a Claude Code session ran in another mode than the one its command asked for.
 
@@ -213,5 +233,15 @@ To recover:
 Each resume and retry is a Run of its own in the Ticket's header, marked `resume = "resumed"`, or `"fell-back"` when the resume failed to start and it ran in a fresh session. Its time and cost count like any Run's, and `vago goal report` and the TUI mark it.
 
 To start a Ticket over instead, reset it with `vago ticket reset search 02` and run `vago run search`. Its status goes back to `ready`; its Runs stay in the header. A reset Ticket starts at its first Step: `branch` cuts its branch again from `vago/search`, so commits left on the old `search/02-ranking` branch are dropped, and it fails if the worktree has uncommitted changes, so commit, stash or discard them first. Tickets already merged into `vago/search` keep their work.
+
+A Goal Step that fails leaves the Goal stuck the same way, and `vago run` prints the Goal's name in place of a Ticket's, with no `reset` line:
+
+```text
+search is stuck after Ready for review: exit 1
+  log:    .vago-goals/search/logs/after_all-ready-2.log
+  again:  vago run search
+```
+
+The next `vago run search` picks it up at that Step, under the same rules as a Ticket's Steps. A Goal Step has no reset: to run a `before_all` again from its first Step, delete its `[[runs]]` tables from `goal.md`'s header.
 
 A Ticket left `running` by a `vago run` that crashed or was killed has its open Run ended `lost` by the next `vago run`, which then picks it up at that Run's Step like any stuck Ticket. An agent Run's `session_id` reaches its `[[runs]]` entry as soon as its Harness reports it, so a lost Run's session can still be resumed.

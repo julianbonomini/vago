@@ -28,7 +28,9 @@ import smallReviewPrompt from "../starter/prompts/small-review.md" with {
 	type: "text",
 };
 import branchScript from "../starter/scripts/branch.sh" with { type: "text" };
+import githubScript from "../starter/scripts/github.sh" with { type: "text" };
 import mergeScript from "../starter/scripts/merge.sh" with { type: "text" };
+import readyScript from "../starter/scripts/ready.sh" with { type: "text" };
 import checkRedFlagsSkill from "../starter/skills/vago-check-red-flags/SKILL.md" with {
 	type: "text",
 };
@@ -86,6 +88,8 @@ const starterFiles: Record<string, string> = {
 	".vago/prompts/goal-review.md": goalReviewPrompt,
 	".vago/scripts/branch.sh": branchScript,
 	".vago/scripts/merge.sh": mergeScript,
+	".vago/scripts/github.sh": githubScript,
+	".vago/scripts/ready.sh": readyScript,
 	...Object.fromEntries(
 		skillFolders.flatMap((folder) =>
 			Object.entries(skillFiles).map(([path, text]) => [

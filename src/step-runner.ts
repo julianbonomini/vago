@@ -1,6 +1,7 @@
-// Runs one Step on a Ticket as one Run: the only module that spawns a Step's
-// process. Hides how the Run is recorded and announced, how a Step's command
-// is spawned, how a Harness's stream is read and how output reaches the log.
+// Runs one Step for a Ticket or for the Goal as one Run: the only module
+// that spawns a Step's process. Hides how the Run is recorded and announced,
+// how a Step's command is spawned, how a Harness's stream is read and how
+// output reaches the log.
 
 import { closeSync, openSync, writeSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
@@ -9,6 +10,7 @@ import { findHarness, type HarnessSessionReport } from "./harness/registry.ts";
 import { printStepEnded, printStepStarted } from "./progress.ts";
 import {
 	isLastTicket,
+	type RunOwner,
 	readGoalBody,
 	readRunLog,
 	readTicketBody,
@@ -16,7 +18,8 @@ import {
 	recordRunFellBack,
 	recordRunSession,
 	recordRunStart,
-	type Ticket,
+	runOwnerGoal,
+	shellExitCode,
 	type TicketRun,
 	type TicketRunEntry,
 } from "./tickets/tickets.ts";
@@ -59,17 +62,19 @@ export type FinishedRun = {
 };
 
 /**
- * Runs `step` on `ticket` with `worktree`, the Goal's worktree as an
- * absolute path, as the working directory of its command or Harness session,
- * and waits for it to end. The
- * Run gets a `[[runs]]` entry before it starts and its end filled in after, a
- * line on stdout at each, and a log of everything it wrote. An agent Step's
- * prompt reads `stepOutputs`, the outputs of the Steps already run on this
- * Ticket by Step id, and the Goal's name. A shell Step's command gets the
- * Goal's and Ticket's names in `VAGO_GOAL` and `VAGO_TICKET`, like `hello`
- * and `01-say-hello`, and `VAGO_LAST_TICKET`, `true` when every other Ticket
- * of the Goal is `done` and `false` otherwise. A shell Step's command also
- * gets `VAGO_PROJECT_ROOT`, the main checkout's path.
+ * Runs `step` for `owner`, a Ticket or the Goal, with `worktree`, the Goal's
+ * worktree as an absolute path, as the working directory of its command or
+ * Harness session, and waits for it to end. The Run gets an entry in
+ * `owner`'s `[[runs]]` before it starts and its end filled in after, a line
+ * on stdout at each, and a log of everything it wrote. An agent Step's
+ * prompt reads `stepOutputs`, the outputs of the Steps already run in this
+ * pass by Step id, the Goal's name and the Goal, and for a Ticket the
+ * Ticket. A shell Step's command gets the Goal's name in `VAGO_GOAL`, like
+ * `hello`, and `VAGO_PROJECT_ROOT`, the main checkout's path. For a Ticket it
+ * also gets the Ticket's name in `VAGO_TICKET`, like `01-say-hello`, and
+ * `VAGO_LAST_TICKET`, `true` when every other Ticket of the Goal is `done`
+ * and `false` otherwise; for the Goal, neither is set, even when `vago`'s own
+ * environment has them.
  * SIGINT or SIGTERM while the Step runs kills every process it started
  * and ends the Run `interrupted`, instead of ending `vago`.
  * Given `resume`, the id of an earlier Run's session of an agent Step on
@@ -80,14 +85,14 @@ export type FinishedRun = {
  */
 export async function runStep(
 	step: Step,
-	ticket: Ticket,
+	owner: RunOwner,
 	worktree: string,
 	stepOutputs: ReadonlyMap<string, string>,
 	resume?: string,
 ): Promise<FinishedRun> {
 	const started = new Date();
 	const resumes = step.type === "agent" ? resume : undefined;
-	const entry = await recordRunStart(ticket, step, started, resumes);
+	const entry = await recordRunStart(owner, step, started, resumes);
 	printStepStarted(step.name, started);
 	await mkdir(dirname(entry.log), { recursive: true });
 	// One descriptor for both streams keeps stdout and stderr in the order the
@@ -119,18 +124,25 @@ export async function runStep(
 			// Agents read the Goal and Ticket in their prompt; a command needs
 			// the names, for example to name a branch per Goal and Ticket, and
 			// whether the Goal ends with this Ticket, to announce it.
-			const lastTicket = await isLastTicket(ticket);
+			const { root, goal } = runOwnerGoal(owner);
+			const env: Record<string, string | undefined> = {
+				...process.env,
+				VAGO_GOAL: goal,
+				// The main checkout, for example to reach `.vago-goals/`, which
+				// the Goal's worktree doesn't hold.
+				VAGO_PROJECT_ROOT: root,
+			};
+			if (owner.kind === "ticket") {
+				env.VAGO_TICKET = owner.ticket.name;
+				env.VAGO_LAST_TICKET = String(await isLastTicket(owner.ticket));
+			} else {
+				// A Goal Step runs on no Ticket, whatever `vago` itself was given.
+				delete env.VAGO_TICKET;
+				delete env.VAGO_LAST_TICKET;
+			}
 			const child = Bun.spawn(["sh", "-c", step.run], {
 				cwd: worktree,
-				env: {
-					...process.env,
-					VAGO_GOAL: ticket.goal,
-					VAGO_TICKET: ticket.name,
-					VAGO_LAST_TICKET: String(lastTicket),
-					// The main checkout, for example to reach `.vago-goals/`, which
-					// the Goal's worktree doesn't hold.
-					VAGO_PROJECT_ROOT: ticket.root,
-				},
+				env,
 				stdin: "ignore",
 				stdout: fd,
 				stderr: fd,
@@ -233,11 +245,13 @@ async function runAgent(
 		}
 	}
 	if (ran === undefined) {
-		const { ticket } = entry;
+		const { owner } = entry;
+		const { root, goal } = runOwnerGoal(owner);
 		const prompt = buildPrompt(step, {
-			ticket: await readTicketBody(ticket),
-			goal: await readGoalBody(ticket.root, ticket.goal),
-			goalName: ticket.goal,
+			// `loadWorkflow` refuses `{{ticket}}` in a Goal Step's prompt.
+			ticket: owner.kind === "ticket" ? await readTicketBody(owner.ticket) : "",
+			goal: await readGoalBody(root, goal),
+			goalName: goal,
 			stepOutputs,
 		});
 		ran = await runSession(
@@ -346,16 +360,6 @@ export function spellOutcome(outcome: RunOutcome): string {
 		return `permission-mode ${outcome.mode}`;
 	}
 	return outcome.kind;
-}
-
-/**
- * The exit code of a shell Run whose outcome, as `spellOutcome` spelled it,
- * is `outcome`: 0 for `ok`, N for `exit N`, and undefined for any other.
- */
-export function shellExitCode(outcome: string | undefined): number | undefined {
-	if (outcome === "ok") return 0;
-	const exit = /^exit (\d+)$/.exec(outcome ?? "");
-	return exit?.[1] === undefined ? undefined : Number(exit[1]);
 }
 
 // A shell Run's output for later Steps' prompts.

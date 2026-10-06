@@ -27,7 +27,7 @@ export type ShellStep = {
 	readonly type: "shell";
 	readonly run: string;
 	/**
-	 * Whether the Ticket goes on to its next Step when `run` exits non-zero.
+	 * Whether the pass goes on to its next Step when `run` exits non-zero.
 	 * `stop` unless the Workflow says otherwise.
 	 */
 	readonly onFail: "stop" | "continue";
@@ -79,13 +79,24 @@ export type Step = ShellStep | AgentStep;
 /**
  * Which of a Goal's Tickets a Step runs on: `every-ticket` unless the
  * Workflow says `last-ticket`, the Ticket that ends with every other Ticket
- * of the Goal `done`.
+ * of the Goal `done`. A Goal Step runs once whatever its `when` says.
  */
 export type StepWhen = "every-ticket" | "last-ticket";
 
+/** The Workflow lists that run once for the whole Goal, named as in the TOML. */
+export type GoalStepGroup = "before_all" | "after_all";
+
+// Each list of a Workflow, named as in the TOML.
+type StepGroup = GoalStepGroup | "steps";
+
 /** A Project's Workflow, frozen: nothing changes it once it's loaded. */
 export type Workflow = {
+	/** Goal Steps run once before the Goal's first Ticket. Empty when the Workflow lists none. */
+	readonly beforeAll: readonly Step[];
+	/** Each Ticket's Steps, in order. */
 	readonly steps: readonly Step[];
+	/** Goal Steps run once no Tickets are left. Empty when the Workflow lists none. */
+	readonly afterAll: readonly Step[];
 };
 
 const HarnessName = z.string().refine(knownHarness, {
@@ -118,43 +129,43 @@ const IncludeSlots = z.record(z.string(), z.string());
 
 const When = z.literal("last-ticket");
 
+const StepEntry = z.discriminatedUnion(
+	"type",
+	[
+		z.strictObject({
+			id: z.string(),
+			name: z.string().optional(),
+			type: z.literal("shell"),
+			run: z.string(),
+			on_fail: z.enum(["stop", "continue"]).optional(),
+			when: When.optional(),
+		}),
+		z.strictObject({
+			id: z.string(),
+			name: z.string().optional(),
+			type: z.literal("agent"),
+			prompt: z.string(),
+			harness: HarnessName.optional(),
+			model: z.string().optional(),
+			args: z.array(z.string()).optional(),
+			idle_timeout: IdleTimeout.optional(),
+			include: IncludeSlots.optional(),
+			when: When.optional(),
+			goal_report: z.boolean().optional(),
+		}),
+	],
+	{ error: 'type must be "agent" or "shell"' },
+);
+
 const WorkflowFile = z.strictObject({
 	harness: HarnessName.optional(),
 	model: z.string().optional(),
 	args: z.array(z.string()).optional(),
 	idle_timeout: IdleTimeout.optional(),
 	include: IncludeSlots.optional(),
-	steps: z
-		.array(
-			z.discriminatedUnion(
-				"type",
-				[
-					z.strictObject({
-						id: z.string(),
-						name: z.string().optional(),
-						type: z.literal("shell"),
-						run: z.string(),
-						on_fail: z.enum(["stop", "continue"]).optional(),
-						when: When.optional(),
-					}),
-					z.strictObject({
-						id: z.string(),
-						name: z.string().optional(),
-						type: z.literal("agent"),
-						prompt: z.string(),
-						harness: HarnessName.optional(),
-						model: z.string().optional(),
-						args: z.array(z.string()).optional(),
-						idle_timeout: IdleTimeout.optional(),
-						include: IncludeSlots.optional(),
-						when: When.optional(),
-						goal_report: z.boolean().optional(),
-					}),
-				],
-				{ error: 'type must be "agent" or "shell"' },
-			),
-		)
-		.min(1),
+	before_all: z.array(StepEntry).optional(),
+	steps: z.array(StepEntry).min(1),
+	after_all: z.array(StepEntry).optional(),
 });
 
 /**
@@ -166,7 +177,10 @@ const WorkflowFile = z.strictObject({
  * `on_fail`, `when` or `idle_timeout`), gives two Steps one `id`, leaves an
  * agent Step without a harness or model, names a prompt or include file that
  * doesn't exist, or has a prompt read `{{steps.<id>.output}}` of a Step that
- * doesn't run before it.
+ * doesn't run before it in its own list, naming the other list when the Step
+ * is in one: outputs never cross from `[[before_all]]`, `[[steps]]` or
+ * `[[after_all]]` to another. Step ids are unique across all three lists,
+ * and a Goal Step's prompt can't read `{{ticket}}`.
  */
 export async function loadWorkflow(
 	root: string,
@@ -180,101 +194,182 @@ export async function loadWorkflow(
 		checked.include ?? {},
 		"the Workflow",
 	);
-	const steps: Step[] = [];
-	for (const step of checked.steps) {
-		if (steps.some(({ id }) => id === step.id)) {
-			throw new Error(`${path}: two steps have id "${step.id}"`);
+	const beforeAll = checked.before_all ?? [];
+	const afterAll = checked.after_all ?? [];
+	const lists: [StepGroup, z.infer<typeof StepEntry>[]][] = [
+		["before_all", beforeAll],
+		["steps", checked.steps],
+		["after_all", afterAll],
+	];
+	// Gathered before any list is built, so a Step reading the output of a
+	// Step in another list is told where that Step is. Unique across lists,
+	// since a Run in `goal.md` names only its Step.
+	const groupOf = new Map<string, StepGroup>();
+	for (const [group, entries] of lists) {
+		for (const { id } of entries) {
+			if (groupOf.has(id)) {
+				throw new Error(`${path}: two steps have id "${id}"`);
+			}
+			groupOf.set(id, group);
 		}
-		const when = step.when ?? "every-ticket";
-		const name = stepName(step);
-		if (step.type === "shell") {
+	}
+	// Builds the Steps of `entries`, the Workflow's list `group`.
+	const buildSteps = async (
+		entries: z.infer<typeof StepEntry>[],
+		group: StepGroup,
+	): Promise<readonly Step[]> => {
+		const steps: Step[] = [];
+		for (const step of entries) {
+			const when = step.when ?? "every-ticket";
+			const name = stepName(step);
+			if (step.type === "shell") {
+				steps.push(
+					Object.freeze({
+						id: step.id,
+						name,
+						type: step.type,
+						run: step.run,
+						onFail: stepOnFail(step),
+						when,
+					}),
+				);
+				continue;
+			}
+			const harness = step.harness ?? checked.harness;
+			const model = step.model ?? checked.model;
+			if (harness === undefined || model === undefined) {
+				throw new Error(
+					`${path}: agent step "${step.id}" needs a harness and a model`,
+				);
+			}
+			const promptPath = join(vago, step.prompt);
+			const prompt = Bun.file(promptPath);
+			if (!(await prompt.exists())) {
+				throw new Error(
+					`${path}: prompt file ${promptPath} of step "${step.id}" not found`,
+				);
+			}
+			const promptTemplate = await prompt.text();
+			for (const [written, placeholderName, stepId] of promptTemplate.matchAll(
+				placeholder,
+			)) {
+				if (placeholderName === "ticket" && group !== "steps") {
+					throw new Error(
+						`${path}: ${stepLabel(group, step.id)} reads ${written}, but a Goal Step runs on no Ticket`,
+					);
+				}
+				if (stepId === undefined || steps.some(({ id }) => id === stepId)) {
+					continue;
+				}
+				const otherGroup = groupOf.get(stepId);
+				if (otherGroup !== undefined && otherGroup !== group) {
+					throw new Error(
+						`${path}: ${stepLabel(group, step.id)} reads ${written}, but "${stepId}" is in [[${otherGroup}]], and a Step reads only the outputs of Steps in its own group`,
+					);
+				}
+				throw new Error(
+					`${path}: ${stepLabel(group, step.id)} reads ${written}, but no step "${stepId}" runs before it`,
+				);
+			}
+			// Spread keeps a replaced slot where the Workflow listed it and adds new
+			// slots after, which is the order they reach the prompt in.
+			const includes = Object.entries({
+				...workflowIncludes,
+				...(await readIncludes(
+					root,
+					path,
+					step.include ?? {},
+					`step "${step.id}"`,
+				)),
+			}).map(([name, text]) => Object.freeze({ name, text }));
 			steps.push(
 				Object.freeze({
 					id: step.id,
 					name,
 					type: step.type,
-					run: step.run,
-					onFail: step.on_fail ?? "stop",
+					promptTemplate,
+					harness,
+					model,
+					args: Object.freeze(step.args ?? checked.args ?? []),
+					idleTimeoutMs:
+						step.idle_timeout ?? checked.idle_timeout ?? defaultIdleTimeoutMs,
+					includes: Object.freeze(includes),
 					when,
+					inGoalReport: step.goal_report ?? false,
 				}),
 			);
-			continue;
 		}
-		const harness = step.harness ?? checked.harness;
-		const model = step.model ?? checked.model;
-		if (harness === undefined || model === undefined) {
-			throw new Error(
-				`${path}: agent step "${step.id}" needs a harness and a model`,
-			);
-		}
-		const promptPath = join(vago, step.prompt);
-		const prompt = Bun.file(promptPath);
-		if (!(await prompt.exists())) {
-			throw new Error(
-				`${path}: prompt file ${promptPath} of step "${step.id}" not found`,
-			);
-		}
-		const promptTemplate = await prompt.text();
-		for (const [written, , stepId] of promptTemplate.matchAll(placeholder)) {
-			if (stepId !== undefined && !steps.some(({ id }) => id === stepId)) {
-				throw new Error(
-					`${path}: step "${step.id}" reads ${written}, but no step "${stepId}" runs before it`,
-				);
-			}
-		}
-		// Spread keeps a replaced slot where the Workflow listed it and adds new
-		// slots after, which is the order they reach the prompt in.
-		const includes = Object.entries({
-			...workflowIncludes,
-			...(await readIncludes(
-				root,
-				path,
-				step.include ?? {},
-				`step "${step.id}"`,
-			)),
-		}).map(([name, text]) => Object.freeze({ name, text }));
-		steps.push(
-			Object.freeze({
-				id: step.id,
-				name,
-				type: step.type,
-				promptTemplate,
-				harness,
-				model,
-				args: Object.freeze(step.args ?? checked.args ?? []),
-				idleTimeoutMs:
-					step.idle_timeout ?? checked.idle_timeout ?? defaultIdleTimeoutMs,
-				includes: Object.freeze(includes),
-				when,
-				inGoalReport: step.goal_report ?? false,
-			}),
-		);
-	}
+		return Object.freeze(steps);
+	};
 	// Frozen, with the prompts' text inside, so a Goal runs every Ticket with
 	// the Workflow it started with even if an agent edits `.vago/`.
-	return Object.freeze({ steps: Object.freeze(steps) });
+	return Object.freeze({
+		beforeAll: await buildSteps(beforeAll, "before_all"),
+		steps: await buildSteps(checked.steps, "steps"),
+		afterAll: await buildSteps(afterAll, "after_all"),
+	});
 }
 
-/** A Step's `id` and the `name` the TUI shows it by, its `id` without one. */
-export type NamedStep = { id: string; name: string };
+/**
+ * A Step as the TUI shows it: its `id`, the `name` it goes by, its `id`
+ * without one, and whether a pass goes on from it when it exits non-zero,
+ * which only a shell Step can.
+ */
+export type NamedStep = {
+	id: string;
+	name: string;
+	onFail: "stop" | "continue";
+};
+
+/** A Workflow's three lists of Steps as the TUI shows them, in the order they run. */
+export type NamedWorkflow = {
+	beforeAll: NamedStep[];
+	steps: NamedStep[];
+	afterAll: NamedStep[];
+};
 
 /**
- * Each Step of Workflow `name` of the Project at `root`, in the order they
- * run, read from its TOML alone, so it costs one small file read and no
- * prompt or include file is opened or checked. Throws what `loadWorkflow`
- * throws for a missing Workflow, bad TOML or a schema it doesn't take.
+ * Each Step of Workflow `name` of the Project at `root`, read from its TOML
+ * alone, so it costs one small file read and no prompt or include file is
+ * opened or checked. Throws what `loadWorkflow` throws for a missing
+ * Workflow, bad TOML or a schema it doesn't take.
  */
 export async function readWorkflowStepNames(
 	root: string,
 	name: string,
-): Promise<NamedStep[]> {
+): Promise<NamedWorkflow> {
 	const { checked } = await readWorkflowFile(root, name);
-	return checked.steps.map((step) => ({ id: step.id, name: stepName(step) }));
+	const named = (steps: z.infer<typeof StepEntry>[] = []) =>
+		steps.map(
+			(step): NamedStep => ({
+				id: step.id,
+				name: stepName(step),
+				onFail: step.type === "shell" ? stepOnFail(step) : "stop",
+			}),
+		);
+	return {
+		beforeAll: named(checked.before_all),
+		steps: named(checked.steps),
+		afterAll: named(checked.after_all),
+	};
+}
+
+// How a message names Step `id` of list `group`: a `[[steps]]` Step plainly,
+// a Goal Step with its group, like `before_all step "setup"`.
+function stepLabel(group: StepGroup, id: string): string {
+	return group === "steps" ? `step "${id}"` : `${group} step "${id}"`;
 }
 
 // A Step without a `name` goes by its `id`.
 function stepName(step: { id: string; name?: string | undefined }): string {
 	return step.name ?? step.id;
+}
+
+// A shell Step without `on_fail` stops its pass when it exits non-zero.
+function stepOnFail(step: {
+	on_fail?: "stop" | "continue" | undefined;
+}): "stop" | "continue" {
+	return step.on_fail ?? "stop";
 }
 
 // The path of Workflow `name`'s TOML and its content checked against the

@@ -1,45 +1,32 @@
 // A Goal's lifecycle: creating it and its Tickets with the Workflows they
-// name, the main loop of `vago run`, which takes the Goal's Tickets one at a
-// time through the Steps of their Workflow in the Goal's worktree, a stuck
-// one from the Step it stopped on, retries a failed agent Step, and closes
-// it once every Ticket is done, and resetting a stuck Ticket. Hides the order
-// of a Goal's lifecycle, where its Steps run, where a Ticket picks up and
-// when a Step is retried.
+// name, the main loop of `vago run`, which runs the Goal's `before_all` once,
+// then takes the Goal's Tickets one at a time through the Steps of their
+// Workflow in the Goal's worktree, then its `after_all`, and closes it once
+// the Goal is done, and resetting a stuck Ticket. Hides the order of a Goal's
+// lifecycle and where its Steps run.
 
+import { type PassEnd, runPass } from "./pass-runner.ts";
 import {
 	printGoalSummary,
-	printPickUpRefusal,
-	printStepRetry,
-	printStepSkipped,
-	printStuck,
-	printTicketStarted,
 	printWorktree,
 	printWorktreeClose,
 } from "./progress.ts";
 import {
-	type FinishedRun,
-	readRunOutput,
-	runStep,
-	shellExitCode,
-	spellOutcome,
-} from "./step-runner.ts";
-import {
 	addTicket,
 	closeOpenRun,
 	createGoal,
-	isLastTicket,
-	latestPassStart,
+	goalStepsPass,
 	readGoal,
-	recordRunRetry,
 	setStatus,
-	type Ticket,
-	type TicketRun,
 	withGoalClaimed,
 } from "./tickets/tickets.ts";
-import { loadWorkflow, type Step, type Workflow } from "./workflow.ts";
+import { loadWorkflow, type Workflow } from "./workflow.ts";
 import { closeWorktree, openWorktree } from "./worktree.ts";
 
-/** How `vago run` left the Goal: every Ticket `done`, or not. */
+/**
+ * How `vago run` left the Goal: every Ticket `done` and `after_all` gone
+ * through since the last of them ran, or not.
+ */
 export type GoalEnd = "done" | "unfinished";
 
 /**
@@ -67,7 +54,9 @@ export async function newGoal(
  * `addTicket` does, going through Workflow `workflow` in place of the Goal's
  * when it's given. Returns the path of the Ticket file. Throws an Error
  * naming the problem, and writes nothing, when `vago run` would refuse the
- * Workflow or `addTicket` refuses the Ticket.
+ * Workflow or `addTicket` refuses the Ticket. Also refuses a `workflow` that
+ * has Goal Steps and isn't the Goal's own, since only the Goal's Workflow's
+ * Goal Steps run.
  */
 export async function newTicket(
 	root: string,
@@ -77,29 +66,45 @@ export async function newTicket(
 	workflow: string | undefined,
 	body?: string,
 ): Promise<string> {
-	// The check vago run makes, so ticket add never writes a Ticket vago run would refuse.
-	if (workflow !== undefined) await loadWorkflow(root, workflow);
+	if (workflow !== undefined) {
+		// The check vago run makes, so ticket add never writes a Ticket vago run would refuse.
+		const { beforeAll, afterAll } = await loadWorkflow(root, workflow);
+		const hasGoalSteps = beforeAll.length > 0 || afterAll.length > 0;
+		if (hasGoalSteps && workflow !== (await readGoal(root, goal)).workflow) {
+			throw new Error(
+				`Workflow "${workflow}" has Goal Steps (before_all or after_all), which run only from the Goal's Workflow, so a Ticket can't go through it`,
+			);
+		}
+	}
 	return addTicket(root, goal, slug, blockedBy, workflow, body);
 }
 
 /**
- * Runs `goal` of the Project at `root` until no Ticket is ready or stuck, or
- * a Ticket goes stuck, then prints the Goal summary. Its Steps run in the
- * Goal's worktree, whose path it prints before the first Ticket; a Goal with
- * no such Ticket gets none. A Ticket found `running`, left so by a `vago run`
- * that crashed or was killed, goes stuck with its open Run ended `lost`. A
- * stuck Ticket continues at the Step it stopped on, its earlier Steps'
- * outputs rebuilt from its latest pass, and an agent Step resuming the
- * Harness session it stopped in; when an output can't be rebuilt, it prints
- * which Step, leaves the Ticket as it was and stops there. Throws an Error
- * naming the problem, before any Ticket changes, when `goal.md` names no
- * Workflow or one that doesn't exist, or when the Workflow or the Goal's
- * format is bad. The Goal is checked before the first Run and again after
- * each Ticket, so a `goal.md` or Ticket file broken mid-Goal stops it there,
- * without a summary. When this run takes the Goal's last Tickets to done, it
- * then removes the Goal's worktree if nothing in it would be lost, or prints
- * why it keeps it. Throws an Error naming the Goal, before anything changes,
- * when another `vago run` is running it.
+ * Runs `goal` of the Project at `root` until no Ticket is ready or stuck and no
+ * `after_all` is owed, or a Ticket or a Goal Step goes stuck, then prints the
+ * Goal summary. Its Steps run in the Goal's worktree, whose path it prints
+ * before the first Run; a Goal with nothing to run gets none. Once the worktree
+ * is open, it runs the Goal Workflow's `before_all` before the first Ticket,
+ * unless its latest pass already succeeded, picking the pass up at the Step of
+ * its last Run as it picks up a stuck Ticket, with retries, after closing a Run
+ * a dead `vago run` left open as `lost`. A `before_all` that goes stuck or
+ * can't be picked up runs no Ticket. Once every Ticket is done, it runs
+ * `after_all` the same way, opening the worktree for it alone if need be,
+ * unless its latest pass succeeded after the last Ticket Run started. Tickets
+ * an `after_all` Step adds run next, then `after_all` starts over. A Ticket
+ * found `running`, left so by a `vago run` that crashed or was killed, goes
+ * stuck with its open Run ended `lost`. A stuck Ticket continues at the Step it
+ * stopped on, its earlier Steps' outputs rebuilt from its latest pass, and an
+ * agent Step resuming the Harness session it stopped in; when an output can't
+ * be rebuilt, it prints which Step, leaves the Ticket as it was and stops
+ * there. Throws an Error naming the problem, before any Ticket changes, when
+ * `goal.md` names no Workflow or one that doesn't exist, or when the Workflow
+ * or the Goal's format is bad. The Goal is checked before the first Run and
+ * again after each Ticket, so a `goal.md` or Ticket file broken mid-Goal stops
+ * it there, without a summary. When this run leaves the Goal done, it then
+ * removes the Goal's worktree if nothing in it would be lost, or prints why it
+ * keeps it. Throws an Error naming the Goal, before anything changes, when
+ * another `vago run` is running it.
  */
 export async function runGoal(root: string, goal: string): Promise<GoalEnd> {
 	return withGoalClaimed(root, goal, () => runClaimedGoal(root, goal));
@@ -126,43 +131,59 @@ async function runClaimedGoal(root: string, goal: string): Promise<GoalEnd> {
 	// up below at that Run's Step like any stuck Ticket.
 	for (const { ticket, status } of state.tickets) {
 		if (status !== "running") continue;
-		await closeOpenRun(ticket, "lost", new Date());
+		await closeOpenRun({ kind: "ticket", ticket }, "lost", new Date());
 		await setStatus(ticket, "stuck");
 	}
 	state = await readGoal(root, goal);
-	const opened = state.next !== undefined;
+	const { beforeAll, afterAll } = await workflowNamed(state.workflow);
+	const opened =
+		state.next !== undefined ||
+		goalStepsPass(state, "after_all", afterAll).owed;
 	if (opened) {
 		const worktree = await openWorktree(root, goal);
 		printWorktree(worktree);
-		while (state.next !== undefined) {
-			const { ticket, status, runs } = state.next;
-			const workflow = await workflowNamed(state.next.workflow);
-			let from = 0;
-			let stepOutputs = new Map<string, string>();
-			let resume: string | undefined;
-			if (status === "stuck") {
-				const pickUp = await pickUpPoint(workflow, runs);
-				if (pickUp.outcome === "refused") {
-					printPickUpRefusal(ticket, pickUp.stepName, pickUp.reason);
-					break;
-				}
-				({ from, stepOutputs, resume } = pickUp);
-			}
-			const finished = await runTicket(
-				workflow,
-				ticket,
+		let end: PassEnd = "done";
+		const beforeAllPass = goalStepsPass(state, "before_all", beforeAll);
+		if (beforeAllPass.owed) {
+			end = await runPass(
+				beforeAll,
+				{ kind: "goal", root, goal, group: "before_all" },
 				worktree,
-				from,
-				stepOutputs,
-				resume,
+				beforeAllPass.runs,
 			);
+		}
+		while (end === "done") {
+			if (state.next !== undefined) {
+				const { ticket, status, runs } = state.next;
+				const workflow = await workflowNamed(state.next.workflow);
+				// A ready Ticket starts over even with Runs, as after a reset.
+				end = await runPass(
+					workflow.steps,
+					{ kind: "ticket", ticket },
+					worktree,
+					status === "stuck" ? runs : [],
+				);
+				// A refused Ticket is left as it was.
+				if (end !== "refused") await setStatus(ticket, end);
+			} else {
+				const afterAllPass = goalStepsPass(state, "after_all", afterAll);
+				if (!afterAllPass.owed) break;
+				end = await runPass(
+					afterAll,
+					{ kind: "goal", root, goal, group: "after_all" },
+					worktree,
+					afterAllPass.runs,
+				);
+			}
 			state = await readGoal(root, goal);
-			if (!finished) break;
 		}
 	}
 	printGoalSummary(goal, state);
-	if (opened && state.done) printWorktreeClose(await closeWorktree(root, goal));
-	return state.done ? "done" : "unfinished";
+	// `after_all` makes a Goal with every Ticket done unfinished until it has
+	// gone through them.
+	const done = state.done && !goalStepsPass(state, "after_all", afterAll).owed;
+	if (opened && done) printWorktreeClose(await closeWorktree(root, goal));
+	return done ? "done" : "unfinished";
 }
 
 /**
@@ -187,181 +208,4 @@ export async function resetTicket(
 		);
 	}
 	await setStatus(found.ticket, "ready");
-}
-
-// Runs the Steps of `workflow` on `ticket` in `worktree` from Step `from`
-// on, with `stepOutputs` the outputs of the Steps before it and `resume` the
-// Harness session Step `from` resumes, if any, skipping a
-// `last-ticket` Step unless this is the Goal's last Ticket, and returns
-// whether the Ticket got to `done`. A failed Step leaves it `stuck`, once
-// its retries failed too, unless it's a shell Step whose failure the
-// Workflow lets the Ticket go on from. `on_fail` covers a Step that exits
-// non-zero, never one the human interrupted.
-async function runTicket(
-	workflow: Workflow,
-	ticket: Ticket,
-	worktree: string,
-	from: number,
-	stepOutputs: Map<string, string>,
-	resume: string | undefined,
-): Promise<boolean> {
-	await setStatus(ticket, "running");
-	printTicketStarted(ticket, from > 0 ? workflow.steps[from]?.name : undefined);
-	for (const [index, step] of workflow.steps.slice(from).entries()) {
-		if (step.when === "last-ticket" && !(await isLastTicket(ticket))) {
-			printStepSkipped(step.name, new Date());
-			continue;
-		}
-		const run = await runStepWithRetries(
-			step,
-			ticket,
-			worktree,
-			stepOutputs,
-			index === 0 ? resume : undefined,
-		);
-		stepOutputs.set(step.id, run.output);
-		const goesOn =
-			run.outcome.kind === "ok" ||
-			(run.outcome.kind === "exit" &&
-				step.type === "shell" &&
-				step.onFail === "continue");
-		if (!goesOn) {
-			await setStatus(ticket, "stuck");
-			printStuck(
-				ticket,
-				step.name,
-				spellOutcome(run.outcome),
-				run.log,
-				run.resumeHint,
-			);
-			return false;
-		}
-	}
-	await setStatus(ticket, "done");
-	return true;
-}
-
-// How many minutes a failed agent Step waits before each of its retries.
-const retryWaitMinutes = [1, 1, 5];
-
-// Tests set `VAGO_RETRY_MINUTE_MS` to shorten the waits without changing
-// their count or proportions.
-const retryMinuteMs = Number(process.env.VAGO_RETRY_MINUTE_MS ?? 60_000);
-
-// Runs `step` as `runStep` does, then, while an agent Step's Run fails, waits
-// and resumes its session in a new Run, up to one Run per wait in
-// `retryWaitMinutes`. Returns the last Run. A Run the human interrupted, or
-// SIGINT or SIGTERM during a wait, ends the retries there.
-async function runStepWithRetries(
-	step: Step,
-	ticket: Ticket,
-	worktree: string,
-	stepOutputs: ReadonlyMap<string, string>,
-	resume: string | undefined,
-): Promise<FinishedRun> {
-	let run = await runStep(step, ticket, worktree, stepOutputs, resume);
-	const waits = step.type === "agent" ? retryWaitMinutes : [];
-	for (const minutes of waits) {
-		if (run.outcome.kind === "ok" || run.outcome.kind === "interrupted") break;
-		const waitMs = minutes * retryMinuteMs;
-		const now = new Date();
-		// For the TUI, which shows the wait from the Ticket file.
-		await recordRunRetry(ticket, new Date(now.getTime() + waitMs));
-		printStepRetry(step.name, now, waitMs);
-		if (!(await waitUnlessInterrupted(waitMs))) break;
-		run = await runStep(step, ticket, worktree, stepOutputs, run.sessionId);
-	}
-	return run;
-}
-
-// Resolves true after `ms`, or false as soon as SIGINT or SIGTERM comes,
-// which then ends only the wait instead of `vago`.
-function waitUnlessInterrupted(ms: number): Promise<boolean> {
-	return new Promise((resolve) => {
-		const finish = (waited: boolean) => {
-			clearTimeout(timer);
-			process.off("SIGINT", interrupted);
-			process.off("SIGTERM", interrupted);
-			resolve(waited);
-		};
-		const interrupted = () => finish(false);
-		const timer = setTimeout(() => finish(true), ms);
-		process.on("SIGINT", interrupted);
-		process.on("SIGTERM", interrupted);
-	});
-}
-
-// Where a stuck Ticket whose Runs are `runs` continues in `workflow`: at the
-// Step of its last Run, with the outputs of the Steps before it rebuilt from
-// its latest pass, resuming that Run's session when it had one on the
-// Step's Harness. Refused, naming the Step and with a `reason` that goes on
-// from its name, when an output can't be rebuilt or the Step isn't in the
-// Workflow. A Step's output counts when its
-// Run ended `ok`, or `exit N` on a shell Step the Workflow lets the Ticket
-// go on from, as it did when the Run ended.
-async function pickUpPoint(
-	workflow: Workflow,
-	runs: TicketRun[],
-): Promise<
-	| {
-			outcome: "pick-up";
-			from: number;
-			stepOutputs: Map<string, string>;
-			resume?: string;
-	  }
-	| { outcome: "refused"; stepName: string; reason: string }
-> {
-	const stepOutputs = new Map<string, string>();
-	const last = runs.at(-1);
-	const [first] = workflow.steps;
-	if (last === undefined || first === undefined) {
-		return { outcome: "pick-up", from: 0, stepOutputs };
-	}
-	const from = workflow.steps.findIndex(({ id }) => id === last.step);
-	if (from === -1) {
-		return {
-			outcome: "refused",
-			stepName: last.step,
-			reason: "isn't in the Ticket's Workflow",
-		};
-	}
-	const pass = runs.slice(latestPassStart(runs, first.id));
-	for (const step of workflow.steps.slice(0, from)) {
-		const run = pass.findLast(({ step: id }) => id === step.id);
-		if (run === undefined) {
-			if (step.when === "last-ticket") continue;
-			return {
-				outcome: "refused",
-				stepName: step.name,
-				reason: "has no Run in the Ticket's latest pass",
-			};
-		}
-		const counts =
-			run.outcome === "ok" ||
-			(step.type === "shell" &&
-				step.onFail === "continue" &&
-				shellExitCode(run.outcome) !== undefined);
-		if (!counts) {
-			return {
-				outcome: "refused",
-				stepName: step.name,
-				reason: `ended ${run.outcome ?? "without an outcome"}, which the Ticket didn't go on from`,
-			};
-		}
-		const output = await readRunOutput(run);
-		if (output === undefined) {
-			return {
-				outcome: "refused",
-				stepName: step.name,
-				reason: "has no log left to rebuild its output from",
-			};
-		}
-		stepOutputs.set(step.id, output);
-	}
-	const step = workflow.steps[from];
-	const resume =
-		step?.type === "agent" && step.harness === last.harness
-			? last.sessionId
-			: undefined;
-	return { outcome: "pick-up", from, stepOutputs, resume };
 }
