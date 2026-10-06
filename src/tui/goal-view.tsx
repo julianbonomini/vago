@@ -418,7 +418,10 @@ const helpKeys = (upDown: string, leftRight: string): HelpKey[] => [
 	{ keys: "e E", meaning: "select the Run's edit before, after" },
 	{ keys: "d", meaning: "show, hide the selected edit's diff" },
 	{ keys: "[ ]", meaning: "open the Goal before, after" },
-	{ keys: "s", meaning: "start this Goal in vago run" },
+	{
+		keys: "s",
+		meaning: "start this Goal in vago run, or pick it up if stuck or lost",
+	},
 	{ keys: "click", meaning: "select the Ticket or Run, focus the pane" },
 	{ keys: "wheel", meaning: "scroll the pane under the pointer" },
 	{ keys: "Esc", meaning: "close the diff, full screen, then the Goals" },

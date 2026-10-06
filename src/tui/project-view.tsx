@@ -357,7 +357,11 @@ const footerKeys = (upDown: string): FooterKey[] => [
 const helpKeys = (upDown: string): HelpKey[] => [
 	{ keys: `${upDown} j k`, meaning: "select the Goal above, below" },
 	{ keys: "Enter", meaning: "open the selected Goal" },
-	{ keys: "s", meaning: "start the selected Goal in vago run" },
+	{
+		keys: "s",
+		meaning:
+			"start the selected Goal in vago run, or pick up a stuck or lost one",
+	},
 	{ keys: "g G", meaning: "select the first, the last Goal" },
 	{ keys: "click", meaning: "select the Goal clicked" },
 	{ keys: "Space PgDn", meaning: "page the Goal's description" },
