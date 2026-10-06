@@ -128,12 +128,12 @@ test("while the keys show, a click on a Goal beside them selects nothing", async
 
 test("the footer names the keys of the Project view", async () => {
 	const root = await projectWithGoals(["alpha"]);
-	const view = await renderView(root);
+	const view = await renderView(root, wide);
 
 	const frame = await frameWith(view, " 1/1 ");
 
 	expect(frame.trimEnd().split("\n").at(-1)).toMatch(
-		/^ ↑↓ Goal {3}Enter Open {3}s Start {3}g G First, last {3}\? Help {3}q Quit *$/,
+		/^ ↑↓ Goal {3}Enter Open {3}s Start {3}g G First, last {3}PgUp PgDn Scroll {3}\? Help {3}q Quit *$/,
 	);
 });
 
@@ -204,29 +204,29 @@ test("moving the selection past the Goals box's last row scrolls to it", async (
 	expect(lineOf(first, "ready   goal-00 ")).toBeGreaterThan(-1);
 });
 
-const accent = RGBA.fromHex("#ff8a3d");
+const selected = RGBA.fromHex("#a8481a");
 
-// Whether the row that shows `name` has the accent colour behind it.
-function isAccented(view: TestRendererSetup, name: string): boolean {
+// Whether the row that shows `name` has the selection colour behind it.
+function isSelected(view: TestRendererSetup, name: string): boolean {
 	for (const line of view.captureSpans().lines) {
 		const span = line.spans.find((span) => span.text.includes(name));
-		if (span !== undefined) return span.bg.equals(accent);
+		if (span !== undefined) return span.bg.equals(selected);
 	}
 	throw new Error(`No row shows ${name}`);
 }
 
-test("the selected Goal is drawn in the accent colour", async () => {
+test("the selected Goal is drawn in the selection colour", async () => {
 	const root = await projectWithGoals(["alpha", "beta"]);
 	const view = await renderView(root);
 	await frameWith(view, "1/2");
 
-	expect(isAccented(view, "alpha")).toBe(true);
-	expect(isAccented(view, "beta")).toBe(false);
+	expect(isSelected(view, "alpha")).toBe(true);
+	expect(isSelected(view, "beta")).toBe(false);
 
 	view.mockInput.pressArrow("down");
 	await frameWith(view, "2/2");
-	expect(isAccented(view, "beta")).toBe(true);
-	expect(isAccented(view, "alpha")).toBe(false);
+	expect(isSelected(view, "beta")).toBe(true);
+	expect(isSelected(view, "alpha")).toBe(false);
 });
 
 for (const [what, files] of [
@@ -583,15 +583,31 @@ test("rows sort running, lost, stuck, ready, done, then latest activity first", 
 	expect(rows[0]).toBeGreaterThan(-1);
 });
 
-test("the header line counts the Goals, the running, those that need you, and the spend", async () => {
+test("the header counts the Goals done, ready, running and stuck, lost and broken among the stuck, and the spend stands out", async () => {
 	const root = await projectOfEveryStanding();
+	await rewrite(root, ".vago-goals/f-broken/goal.md", goalText("w"));
+	await rewrite(
+		root,
+		".vago-goals/f-broken/tickets/01-t.md",
+		'+++\nstatus = "nope"\n+++\n',
+	);
 
 	const view = await renderView(root, wide);
-	const frame = await frameWith(view, " 6 Goals");
+	const frame = await frameWith(view, "! broken ");
 
 	const header = frame.split("\n")[0] ?? "";
-	expect(header).toContain(`${basename(root)} · 6 Goals`);
-	expect(header).toContain("1 running · 2 need you · $6.85 spent");
+	expect(header).toMatch(
+		new RegExp(
+			`^ ${basename(root)} +2 done · 1 ready · 1 running · 3 stuck, lost or broken · \\$6\\.85 spent $`,
+		),
+	);
+	expect(header).not.toContain("need you");
+	const spend = view
+		.captureSpans()
+		.lines[0]?.spans.find((span) => span.text.includes("$6.85"));
+	expect((spend?.attributes ?? 0) & TextAttributes.BOLD).toBe(
+		TextAttributes.BOLD,
+	);
 });
 
 test("at 120 wide a row shows its Goal's run time, its Runs' sum across a pause, and cost", async () => {
@@ -677,11 +693,11 @@ test("titles with CJK and emoji stay aligned, and long ones are cut to their col
 });
 
 const tokens = [
-	"#0c0c0c",
+	"#ffffff",
 	"#d6d6d6",
 	"#7a7a7a",
 	"#4a4a4a",
-	"#2e2e2e",
+	"#5c5c5c",
 	"#ff8a3d",
 	"#8fae8b",
 	"#e5736b",
@@ -693,7 +709,7 @@ test("every text is drawn in one of the theme's colours", async () => {
 	const root = await projectOfEveryStanding();
 
 	const view = await renderView(root, wide);
-	await frameWith(view, " 6 Goals");
+	await frameWith(view, " 2 done ");
 
 	const untokened = view
 		.captureSpans()
@@ -708,7 +724,7 @@ test("at 80 wide the run time, cost and title columns drop out", async () => {
 	const root = await projectOfEveryStanding();
 
 	const view = await renderView(root, { width: 80, height: 30 });
-	const frame = await frameWith(view, " 6 Goals");
+	const frame = await frameWith(view, " 2 done ");
 
 	const headings = frame.split("\n").find((line) => line.includes("STATE"));
 	expect(headings).not.toContain("RUN TIME");
@@ -732,9 +748,6 @@ function lineWith(frame: string, text: string): string {
 	if (line === undefined) throw new Error(`No line shows ${text}:\n${frame}`);
 	return line;
 }
-
-// The hour and minute `time` shows in the preview, in the local time zone.
-const clock = (time: Date) => time.toTimeString().slice(0, 5);
 
 test("the preview shows the selected Goal, and moving the selection changes it", async () => {
 	const root = await makeProject({
@@ -765,7 +778,7 @@ test("the preview shows when a Goal was created and its number of Tickets", asyn
 	});
 	const view = await renderView(root, wide);
 
-	const frame = await frameWith(view, "LATEST RUNS");
+	const frame = await frameWith(view, "No Runs yet.");
 	expect(lineWith(frame, "Workflow w")).toContain("created 2026-09-30");
 	expect(frame).toContain("1/2 Tickets");
 
@@ -774,91 +787,60 @@ test("the preview shows when a Goal was created and its number of Tickets", asyn
 	expect(lineWith(old, "Workflow w")).not.toContain("created");
 });
 
-test("a running Goal's preview shows its latest eight Runs, newest first", async () => {
-	const runs = Array.from({ length: 9 }, (_, index) => ({
-		step: `step${index + 1}`,
-		started: at(`0${index}:00`),
-		ended: at(`0${index}:05`),
+test("the preview totals each Step's Runs, run time and cost over the Goal's Tickets", async () => {
+	const run = (step: string, start: string, end: string, costUsd?: number) => ({
+		step,
+		started: at(start),
+		ended: at(end),
 		outcome: "ok",
-		costUsd: index % 2 === 0 ? 1.25 : undefined,
-	}));
+		costUsd,
+	});
 	const root = await makeProject({
 		".vago-goals/a/goal.md": goalText("w"),
-		".vago-goals/a/tickets/01-first.md": ticketText("done", { runs }),
-		".vago-goals/a/tickets/02-second.md": ticketText("running", {
-			runs: [{ step: "review", started: at("10:00") }],
+		".vago-goals/a/tickets/01-first.md": ticketText("done", {
+			runs: [
+				run("implement", "09:00", "09:10", 1),
+				run("check", "09:10", "09:12"),
+				run("implement", "09:12", "09:17", 0.5),
+				run("check", "09:17", "09:19"),
+			],
 		}),
+		".vago-goals/a/tickets/02-second.md": ticketText("running", {
+			runs: [
+				run("implement", "10:00", "10:20", 2),
+				run("check", "10:20", "10:21"),
+				{ step: "review", started: at("10:21") },
+			],
+		}),
+		".vago-goals/a/tickets/03-third.md": ticketText("ready"),
 	});
 	await heldLock(root, "a");
 
 	const view = await renderView(root, wide);
-	const frame = await frameWith(view, "LATEST RUNS");
+	const frame = await frameWith(view, "STEP");
 
-	const shown = frame
+	expect(frame).not.toContain("LATEST RUNS");
+	const steps = frame
 		.split("\n")
-		.filter((line) => /\d\d:\d\d \d\d /.test(line))
-		.map((line) => /\d\d:\d\d \d\d (\w+)/.exec(line)?.[1]);
-	expect(shown).toEqual([
-		"review",
-		"step9",
-		"step8",
-		"step7",
-		"step6",
-		"step5",
-		"step4",
-		"step3",
-	]);
-	expect(lineWith(frame, `${clock(at("10:00"))} 02 review`)).toContain(
-		"● live",
-	);
-	expect(lineWith(frame, "step9")).toMatch(/✓ ok +5m 0s +\$1\.25/);
-	expect(lineWith(frame, "step8")).toMatch(/✓ ok +5m 0s +$/);
-	expect(lineWith(frame, "Workflow w")).toMatch(/last activity .+ ago/);
-	expect(frame).toContain("1/2 Tickets");
+		.map((line) => /^ +(STEP|implement|check|review|total) /.exec(line)?.[1])
+		.filter((step) => step !== undefined);
+	expect(steps).toEqual(["STEP", "implement", "check", "review", "total"]);
+	expect(frame).toMatch(/^ +STEP +RUNS +TOOK +COST /m);
+	expect(frame).toMatch(/^ +implement +3 +35m 0s +\$3\.50 /m);
+	expect(frame).toMatch(/^ +check +3 +5m 0s +$/m);
+	expect(frame).toMatch(/^ +review +1 +\d+[a-z]/m);
+	expect(frame).toMatch(/^ +total +7 +\d+[a-z].* \$3\.50 /m);
+	expect(frame).toContain("1/3 Tickets");
 });
 
-test("a stuck Goal's preview shows the failed Run's outcome", async () => {
-	const root = await projectWithTickets({
-		"01-first": ticketText("stuck", {
-			runs: [
-				{
-					step: "check",
-					started: at("09:00"),
-					ended: at("09:02"),
-					outcome: "exit 1",
-				},
-			],
-		}),
-	});
+test("a Goal with no Runs yet says so in place of the Step totals", async () => {
+	const root = await projectWithTickets({ "01-first": ticketText("ready") });
 
 	const view = await renderView(root, wide);
-	const frame = await frameWith(view, "LATEST RUNS");
+	const frame = await frameWith(view, "No Runs yet.");
 
-	expect(lineWith(frame, "01 check")).toMatch(/✗ exit 1 +2m 0s/);
-	expect(frame).toContain("0/1 Tickets");
-});
-
-test("a done Goal's preview shows every Ticket done and how long ago it ended", async () => {
-	const root = await projectWithTickets({
-		"01-first": ticketText("done", {
-			runs: [
-				{
-					step: "merge",
-					started: at("09:00"),
-					ended: at("09:01"),
-					outcome: "ok",
-					costUsd: 0.5,
-				},
-			],
-		}),
-	});
-
-	const view = await renderView(root, wide);
-	const frame = await frameWith(view, "LATEST RUNS");
-
-	expect(lineWith(frame, "01 merge")).toMatch(/✓ ok +1m 0s +\$0\.50/);
-	expect(frame).toContain("1/1 Tickets");
-	expect(lineWith(frame, "Workflow w")).toMatch(/last activity \d+d \d+h ago/);
+	expect(frame).not.toContain("total");
+	expect(lineWith(frame, "Workflow w")).toContain("no Runs yet");
 });
 
 test("the description reads as paragraphs and is cut to the space it has", async () => {
@@ -874,13 +856,54 @@ test("the description reads as paragraphs and is cut to the space it has", async
 	});
 
 	const view = await renderView(root, wide);
-	const frame = await frameWith(view, "LATEST RUNS");
+	const frame = await frameWith(view, "No Runs yet.");
 
 	expect(frame).toContain("Short first paragraph ends here.");
 	expect(frame).toMatch(/columns line\d+ of/);
 	expect(frame).not.toContain("line39");
 	const lines = frame.trimEnd().split("\n");
-	expect(lines.at(-2)).toMatch(/^ *$/);
+	expect(lines.at(-2)).toMatch(/^─+$/);
+});
+
+test("Space and PgDn page a long description to its end, PgUp pages back, and another Goal starts at its top", async () => {
+	const lines = Array.from({ length: 40 }, (_, index) => `line${index}`);
+	const root = await makeProject({
+		".vago-goals/a/goal.md": goalText("w", `# A\n\n${lines.join("\n\n")}\n`),
+		".vago-goals/b/goal.md": goalText("w", "# B\n\nb's own description\n"),
+	});
+	const view = await renderView(root, wide);
+	await frameWith(view, " line0 ");
+
+	view.mockInput.pressKey(" ");
+	expect(await frameWithout(view, " line0 ")).not.toContain(" line39 ");
+	for (let press = 0; press < 10; press++) {
+		view.mockInput.pressKey("\u001b[6~");
+	}
+	const end = await frameWith(view, " line39 ");
+	expect(end).toContain(" 1/2 ");
+	view.mockInput.pressKey("\u001b[5~");
+	await frameWithout(view, " line39 ");
+
+	view.mockInput.pressArrow("down");
+	await frameWith(view, " b's own description ");
+	view.mockInput.pressArrow("up");
+	await frameWith(view, " line0 ");
+});
+
+test("the wheel over the description scrolls it", async () => {
+	const lines = Array.from({ length: 40 }, (_, index) => `line${index}`);
+	const root = await makeProject({
+		".vago-goals/a/goal.md": goalText("w", `# A\n\n${lines.join("\n\n")}\n`),
+	});
+	const view = await renderView(root, wide);
+	const frame = await frameWith(view, " line0 ");
+	const row = lineOf(frame, " line0 ");
+	const column = (frame.split("\n")[row] ?? "").indexOf("line0");
+
+	for (let turn = 0; turn < 5; turn++) {
+		await view.mockMouse.scroll(column, row, "down");
+	}
+	await frameWithout(view, " line0 ");
 });
 
 test("moving the cursor shifts no row of the table or the preview", async () => {
@@ -897,14 +920,15 @@ test("moving the cursor shifts no row of the table or the preview", async () => 
 		".vago-goals/b/goal.md": goalText("w", "# B\n"),
 	});
 	const view = await renderView(root);
-	const slots = (frame: string) =>
-		[" a ", " b ", "LATEST RUNS", "Workflow w", "Tickets"].map((text) =>
+	// The Step totals' header row and "No Runs yet." share a slot.
+	const slots = (frame: string, steps: string) =>
+		[" a ", " b ", steps, "Workflow w", "Tickets"].map((text) =>
 			lineOf(frame, text),
 		);
 
-	const first = slots(await frameWith(view, " 1/2 "));
+	const first = slots(await frameWith(view, " 1/2 "), "No Runs yet.");
 	view.mockInput.pressArrow("down");
-	const second = slots(await frameWith(view, " 2/2 "));
+	const second = slots(await frameWith(view, " 2/2 "), "STEP");
 
 	expect(first).not.toContain(-1);
 	expect(second).toEqual(first);
@@ -937,8 +961,7 @@ test("a Run starting and then ending shows with no key pressed", async () => {
 	});
 	await heldLock(root, "a");
 	const view = await renderView(root, wide);
-	await frameWith(view, `${clock(at("09:00"))} 02 design`);
-	const architecture = `${clock(at("09:10"))} 02 architecture`;
+	await frameWith(view, "design ");
 	const second = ".vago-goals/a/tickets/02-second.md";
 
 	await rewrite(
@@ -948,8 +971,8 @@ test("a Run starting and then ending shows with no key pressed", async () => {
 			runs: [design, { step: "architecture", started: at("09:10") }],
 		}),
 	);
-	expect(lineWith(await frameWith(view, architecture), architecture)).toContain(
-		"● live",
+	expect(lineWith(await frameWith(view, "architecture "), "total")).toMatch(
+		/total +2 /,
 	);
 
 	await rewrite(
@@ -967,9 +990,7 @@ test("a Run starting and then ending shows with no key pressed", async () => {
 			],
 		}),
 	);
-	expect(lineWith(await frameWith(view, "15m 0s"), architecture)).toMatch(
-		/✓ ok +15m 0s/,
-	);
+	expect(await frameWith(view, "15m 0s")).toMatch(/architecture +1 +15m 0s/);
 });
 
 for (const [how, drop] of [
@@ -1019,13 +1040,13 @@ test("a lock taken shows with no key pressed, and the selection stays on its Goa
 	await frameWith(view, " 1/3 ");
 	view.mockInput.pressArrow("down");
 	await frameWith(view, " 2/3 ");
-	expect(isAccented(view, "beta")).toBe(true);
+	expect(isSelected(view, "beta")).toBe(true);
 
 	await startGamma(root);
 
 	const frame = await frameWith(view, "● running");
 	expect(lineOf(frame, " gamma ")).toBeLessThan(lineOf(frame, " alpha "));
-	expect(isAccented(view, "beta")).toBe(true);
+	expect(isSelected(view, "beta")).toBe(true);
 	expect(frame).toContain(" 3/3 ");
 });
 
@@ -1033,13 +1054,13 @@ test("before any key the selection stays on the first Goal read when rows reorde
 	const root = await projectWithGoals(["alpha", "beta", "gamma"]);
 	const view = await renderView(root);
 	await frameWith(view, " 1/3 ");
-	expect(isAccented(view, "alpha")).toBe(true);
+	expect(isSelected(view, "alpha")).toBe(true);
 
 	await startGamma(root);
 
 	const frame = await frameWith(view, "● running");
 	expect(lineOf(frame, " gamma ")).toBeLessThan(lineOf(frame, " alpha "));
-	expect(isAccented(view, "alpha")).toBe(true);
+	expect(isSelected(view, "alpha")).toBe(true);
 	expect(frame).toContain(" 2/3 ");
 });
 
@@ -1050,7 +1071,7 @@ test("a Ticket broken on disk turns its Goal broken, and fixing it brings the Go
 	const first = ".vago-goals/a/tickets/01-first.md";
 
 	await rewrite(root, first, "+++\nstatus = \n");
-	expect(rowOf(await frameWith(view, "broken"), "a")).toMatch(
+	expect(rowOf(await frameWith(view, "! broken"), "a")).toMatch(
 		/! broken +a +━+ 0\/0 +0s +\$0\.00 +\.vago-goals\/a\/tickets\/01-first\.md /,
 	);
 
@@ -1091,8 +1112,8 @@ for (const [what, tickets, error] of [
 		expect(rowOf(frame, "bad")).toMatch(/! broken +bad +━+ 0\/0 /);
 		expect(rowOf(frame, "bad")).toContain(error.slice(0, 30));
 		expect(rowOf(frame, "good")).toMatch(/○ ready +good .+ ready to start/);
-		expect(frame).toContain("1 need you");
-		expect(frame.match(/ broken /g)).toHaveLength(1);
+		expect(frame).toContain("1 stuck, lost or broken");
+		expect(frame.match(/! broken /g)).toHaveLength(1);
 		// The preview, on the broken Goal, shows the whole error.
 		expect(frame.replace(/[│\s]+/g, " ")).toContain(error);
 	});
@@ -1119,7 +1140,7 @@ test("under NO_COLOR every text takes the terminal's own colours, dim and invers
 	const root = await projectThatScrolls();
 
 	const view = await renderView(root, short);
-	await frameWith(view, " 8 Goals");
+	await frameWith(view, " 3 ready ");
 
 	const spans = view
 		.captureSpans()
@@ -1154,7 +1175,7 @@ test("under VAGO_ASCII=1 every symbol, bar and border is ASCII", async () => {
 	const root = await projectThatScrolls();
 
 	const view = await renderView(root, short);
-	const frame = await frameWith(view, " 8 Goals");
+	const frame = await frameWith(view, " 3 ready ");
 
 	expect(frame).toMatch(onlyAscii);
 	expect(rowOf(frame, "e-run")).toMatch(/^ {2}\* running +e-run +=+ 0\/1 /);
@@ -1188,12 +1209,12 @@ for (const size of [
 		const root = await projectThatScrolls();
 
 		const view = await renderView(root, size);
-		const frame = await frameWith(view, " 8 Goals");
+		const frame = await frameWith(view, " 3 ready ");
 
 		holdsTogether(frame, size.width);
 		const lines = frame.split("\n");
 		expect(lines[0]).toMatch(
-			/^ \S+ · 8 Goals +1 running · 2 need you · \$\d+\.\d\d spent *$/,
+			/^ \S+ +2 done · 3 ready · 1 running · 2 stuck · \$\d+\.\d\d spent $/,
 		);
 		for (const goal of ["e-run", "d-lost", "c-stuck", "b-ready"]) {
 			expect(rowOf(frame, goal)).toMatch(
@@ -1208,7 +1229,7 @@ for (const size of [
 test("a resize redraws the view to the new size", async () => {
 	const root = await projectOfEveryStanding();
 	const view = await renderView(root);
-	await frameWith(view, " 6 Goals");
+	await frameWith(view, " 2 done ");
 
 	view.resize(60, 24);
 	const narrow = await frameWith(view, `\n${"─".repeat(60)}\n`);

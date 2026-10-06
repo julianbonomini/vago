@@ -1,7 +1,6 @@
-// One Run on one line, as the Project view's preview and the Goal view's
-// Runs pane list it: a leading field of the caller's, then its Step, outcome,
-// duration and cost in fixed columns. Hides the columns' widths and how a
-// narrow line is cut.
+// One Run on one line, as the Goal view's Runs pane lists it: a leading field
+// of the caller's, then its Step, outcome, duration and cost in fixed
+// columns. Hides the columns' widths and how a narrow line is cut.
 
 import type { ColorInput } from "@opentui/core";
 import type { JSX } from "@opentui/solid";
@@ -33,10 +32,6 @@ export type RunLineRun = {
 const stepWidth = 13;
 const outcomeWidth = 12;
 const durationWidth = 8;
-
-/** The columns a Run line needs after its leading field, cost included. */
-export const runLineFieldsWidth =
-	stepWidth + outcomeWidth + durationWidth + "$12.34".length + 1;
 
 /**
  * `run` in `width` columns: `lead` dim, its Step, its state or outcome in

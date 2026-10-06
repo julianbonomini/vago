@@ -60,13 +60,15 @@ import { duration, money, tokenCount } from "./time-and-money.ts";
 
 /**
  * The Goal view of the Goal `row` shows, of the Project at `root`, the
- * `position`th of `count` Goals in the Project list, under the Project
- * view's header: a box with the Goal's progress and numbers, its Tickets on
- * the left with `n/N` on their border and the selected Ticket's Runs under
- * them, the selected Ticket's
- * title, blockers and text on the right, and the selected Run across the
- * bottom. The Ticket the Goal is on starts selected, the first not done or
- * else the last. A Ticket starts on its latest Run, and ←→ and h l move to
+ * `position`th of `count` Goals in the Project list. Under the Project
+ * view's header line and a rule under it sit the Goal's name, its
+ * numbers with its place in the list, and its one-row progress bar. Below
+ * the line under them come its Tickets on the left with `n/N` on their
+ * border and the selected Ticket's Runs under them, three quarters and a
+ * quarter of that column whatever the Runs, the selected Ticket's title,
+ * blockers and text on the right, and the selected Run across the bottom.
+ * The Ticket the Goal is on starts selected, the first not done or else the
+ * last. A Ticket starts on its latest Run, and ←→ and h l move to
  * the one before or after from any pane. One pane has the focus, the
  * Tickets at first, its border in the accent: Tab and Shift+Tab move it on
  * and back, and 1 to 4 put it on the Tickets, the Runs, the Ticket or the
@@ -94,7 +96,7 @@ export function GoalView(props: {
 	onClose: () => void;
 	onNeighbour: (step: -1 | 1) => void;
 }): JSX.Element {
-	const { symbol } = theme();
+	const { color, symbol } = theme();
 	const terminal = useTerminalDimensions();
 	const [chosen, setChosen] = createSignal<string>();
 	const selectedIndex = () => {
@@ -268,31 +270,25 @@ export function GoalView(props: {
 	});
 	const lost = () => props.row.standing === "lost";
 	const ticketsWidth = () => Math.floor(terminal().width * ticketsShare);
-	// The share is of the rows under the Goal box, and its bottom line, which
-	// the top shares.
 	const topRows = () =>
 		Math.round(
-			(terminal().height -
-				headerRows -
-				goalBoxRows(lost()) -
-				footerRows +
-				sharedLine) *
+			(terminal().height - headerRows - goalHeaderRows(lost()) - footerRows) *
 				topShare,
 		);
-	// Enough rows for every Run, between 4 and 9, and at most a third of the
-	// top's and the title row, so the Tickets keep the most.
+	// Each pane of the left column counts its top line and its rows; the line
+	// under the column is the Run pane's. Set by the screen alone, so neither
+	// pane moves as Runs appear.
 	const runsRows = () =>
 		Math.max(
-			4,
-			Math.min(
-				(ticket()?.runs.length ?? 0) + 3,
-				9,
-				Math.floor(topRows() / 3) + 1,
-			),
+			minRunsRows,
+			Math.round((topRows() - sharedLine) * runsShare) + sharedLine,
 		);
 	return (
 		<box flexDirection="column" flexGrow={1}>
-			<GoalBox
+			<text fg={color.border} flexShrink={0} wrapMode="none">
+				{symbol.rule.repeat(terminal().width)}
+			</text>
+			<GoalHeader
 				row={props.row}
 				position={props.position}
 				count={props.count}
@@ -300,10 +296,9 @@ export function GoalView(props: {
 			/>
 			{/* A pane off the whole screen is hidden, not dropped, so it keeps
 			    its scroll and its Run's log. Each box under or beside another
-			    overlaps it by its shared line. */}
+			    pane overlaps it by its shared line. */}
 			<box
 				flexDirection="row"
-				marginTop={-sharedLine}
 				visible={fullScreen() !== "run"}
 				height={fullScreen() === "ticket" ? undefined : topRows()}
 				flexGrow={fullScreen() === "ticket" ? 1 : 0}
@@ -354,7 +349,7 @@ export function GoalView(props: {
 			</box>
 			<box
 				flexGrow={1}
-				marginTop={-sharedLine}
+				marginTop={fullScreen() === "run" ? 0 : -sharedLine}
 				visible={fullScreen() !== "ticket"}
 			>
 				<RunPane
@@ -399,6 +394,7 @@ const footerKeys = (upDown: string, leftRight: string): FooterKey[] => [
 	{ keys: upDown, label: "Move", use: 5 },
 	{ keys: leftRight, label: "Run", use: 4 },
 	{ keys: "Tab", label: "Pane", use: 3 },
+	{ keys: "PgUp PgDn", label: "Scroll", use: 3 },
 	{ keys: "[ ]", label: "Goal", use: 2 },
 	{ keys: "s", label: "Start", use: 2 },
 	{ keys: "t r", label: "Full screen", use: 2 },
@@ -433,31 +429,38 @@ const helpKeys = (upDown: string, leftRight: string): HelpKey[] => [
 // The share of the screen's width the Tickets and Runs panes take; the
 // Ticket pane takes the rest.
 const ticketsShare = 0.4;
-// The share of the rows under the header and over the footer that the
+// The share of the rows between the header area and the footer that the
 // Tickets, Runs and Ticket panes take; the Run pane takes the rest.
 const topShare = 0.62;
+// The share of the left column the Runs pane takes, the Tickets pane the
+// rest, and the fewest rows it keeps: its lines, its title and one Run.
+const runsShare = 0.25;
+const minRunsRows = 4;
 // A box's border and padding, on both sides.
 const paneEdges = 4;
-// The Project view's header line over the Goal view, and the footer.
-const headerRows = 1;
+// The Project view's header line over the Goal view with the rule under it,
+// and the footer.
+const headerRows = 2;
 const footerRows = 1;
 
-// The Goal box's rows: its border, its title, its bar and numbers, and,
+// The Goal's rows in the header area: its name, its numbers, its bar, and,
 // while the Goal is lost, the line saying so.
-const goalBoxRows = (lost: boolean) => (lost ? 6 : 5);
+const goalHeaderRows = (lost: boolean) => (lost ? 4 : 3);
 
-// The Goal box, `width` columns wide, titled with the Goal's symbol and name
-// and its place in the Project list, over its progress bar and a line of
-// its numbers, labels dim and values bold, and for a lost Goal a line saying
-// no `vago run` runs it. The Goal's title takes what the numbers leave.
-function GoalBox(props: {
+// The Goal's rows under the Project's header line, `width` columns wide and
+// inset by a space like it: the Goal's symbol and name in its standing's
+// colour and its title, then its numbers and its place in the Project list,
+// labels dim and values bold, then its progress bar, and for a lost Goal a
+// line saying no `vago run` runs it.
+function GoalHeader(props: {
 	row: GoalRow;
 	position: number;
 	count: number;
 	width: number;
 }): JSX.Element {
 	const { color, symbol, dimSpan } = theme();
-	const inner = () => props.width - paneEdges;
+	// Inside the space on both sides.
+	const inner = () => props.width - 2;
 	const done = () => `  ${props.row.ticketCounts.done}`;
 	const total = () => `/${ticketTotal(props.row.ticketCounts)} Tickets`;
 	const value = (text: string, fg: ColorInput = color.fg) => ({
@@ -465,6 +468,17 @@ function GoalBox(props: {
 		style: { fg, bold: true },
 	});
 	const label = (text: string) => ({ text, style: dimSpan });
+	const name = () =>
+		fitSpans(
+			[
+				value(
+					`${symbol[props.row.standing]} ${props.row.goal}`,
+					goalColor(props.row.standing),
+				),
+				{ text: `  ${props.row.title}`, style: { fg: color.fg } },
+			],
+			inner(),
+		);
 	const numbers = () =>
 		fitSpans(
 			[
@@ -477,36 +491,31 @@ function GoalBox(props: {
 				value(money(props.row.costUsd)),
 				label("   Workflow "),
 				value(props.row.workflow),
-				label("   "),
-				{ text: props.row.title, style: { fg: color.fg } },
+				label("   Goal "),
+				value(`${props.position} of ${props.count}`),
 			],
 			inner(),
 		);
-	const pane = usePane();
 	return (
-		<box ref={pane} border paddingLeft={1} paddingRight={1} flexShrink={0}>
-			<PaneTitle
-				title={`${symbol[props.row.standing]} ${props.row.goal}`}
-				aside={`Goal ${props.position}/${props.count}`}
-				titleColor={goalColor(props.row.standing)}
-				focused={false}
-				width={inner()}
-			/>
+		<box paddingLeft={1} paddingRight={1} flexShrink={0}>
+			<For each={[name(), numbers()]}>
+				{(line) => (
+					<text fg={color.fg} flexShrink={0} wrapMode="none">
+						<For each={line}>
+							{(span) => <span style={span.style}>{span.text}</span>}
+						</For>
+					</text>
+				)}
+			</For>
 			<text fg={color.fg} flexShrink={0} wrapMode="none">
 				<TicketBar
 					tickets={props.row.ticketCounts}
 					standing={props.row.standing}
 					width={Math.max(0, inner() - done().length - total().length)}
 					selected={false}
-					solid
 				/>
 				<span style={{ fg: color.fg, bold: true }}>{done()}</span>
 				<span style={dimSpan}>{total()}</span>
-			</text>
-			<text fg={color.fg} flexShrink={0} wrapMode="none">
-				<For each={numbers()}>
-					{(span) => <span style={span.style}>{span.text}</span>}
-				</For>
 			</text>
 			<Show when={props.row.standing === "lost"}>
 				<text fg={color.warn} flexShrink={0} wrapMode="none">
@@ -628,12 +637,11 @@ function TicketsPane(props: {
 }
 
 // The selected Ticket, `width` columns wide with its border, its left edge
-// the Tickets' right one when `besideTickets`: its title,
-// the Tickets it comes after, its Workflow's Steps marked, or why the
-// Workflow can't be read, and its text wrapped to the pane, scrolled by the
-// wheel and in `scrollRef`'s scrollbox. Its Runs' totals sit on its title
-// row, the title in the focus look when `focused`. A click on it calls
-// `onClick`.
+// the Tickets' right one when `besideTickets`: its title, the Tickets it
+// comes after, its Workflow's Steps marked, or why the Workflow can't be
+// read, and its text wrapped to the pane, all of it scrolled by the wheel and
+// in `scrollRef`'s scrollbox. Its Runs' totals sit on its title row, the
+// title in the focus look when `focused`. A click on it calls `onClick`.
 function TicketPane(props: {
 	ticket: GoalTicket;
 	width: number;
@@ -667,59 +675,59 @@ function TicketPane(props: {
 				focused={props.focused}
 				width={inner()}
 			/>
-			<For each={wrapText(props.ticket.title, inner())}>
-				{(line) => (
-					<text
-						fg={color.fg}
-						attributes={TextAttributes.BOLD}
-						flexShrink={0}
-						wrapMode="none"
-					>
-						{line}
-					</text>
-				)}
-			</For>
-			<Show when={props.ticket.blockedBy.length > 0}>
-				<text {...dimText} flexShrink={0} wrapMode="none">
-					{fitText(`after ${props.ticket.blockedBy.join(", ")}`, inner())}
-				</text>
-			</Show>
-			<box height={1} flexShrink={0} />
-			<For each={stepLines(props.ticket.steps, inner())}>
-				{(line) => (
-					<text fg={color.fg} flexShrink={0} wrapMode="none">
-						<For each={line}>
-							{(step, index) => {
-								// A function, so a Step whose mark changes in place is
-								// drawn again.
-								const look = () => stepMarkLook(step.mark);
-								return (
-									<>
-										<Show when={index() > 0}>{stepGap}</Show>
-										<span style={look().style}>{look().symbol}</span>
-										<span style={{ fg: color.fg }}>{` ${step.name}`}</span>
-									</>
-								);
-							}}
-						</For>
-					</text>
-				)}
-			</For>
-			<Show when={props.ticket.workflowProblem !== undefined}>
-				<For each={wrapText(props.ticket.workflowProblem ?? "", inner())}>
-					{(line) => (
-						<text {...dimText} flexShrink={0} wrapMode="none">
-							{line}
-						</text>
-					)}
-				</For>
-			</Show>
-			<box height={1} flexShrink={0} />
 			<scrollbox
 				ref={props.scrollRef}
 				flexGrow={1}
 				verticalScrollbarOptions={{ visible: false }}
 			>
+				<For each={wrapText(props.ticket.title, inner())}>
+					{(line) => (
+						<text
+							fg={color.fg}
+							attributes={TextAttributes.BOLD}
+							flexShrink={0}
+							wrapMode="none"
+						>
+							{line}
+						</text>
+					)}
+				</For>
+				<Show when={props.ticket.blockedBy.length > 0}>
+					<text {...dimText} flexShrink={0} wrapMode="none">
+						{fitText(`after ${props.ticket.blockedBy.join(", ")}`, inner())}
+					</text>
+				</Show>
+				<box height={1} flexShrink={0} />
+				<For each={stepLines(props.ticket.steps, inner())}>
+					{(line) => (
+						<text fg={color.fg} flexShrink={0} wrapMode="none">
+							<For each={line}>
+								{(step, index) => {
+									// A function, so a Step whose mark changes in place is
+									// drawn again.
+									const look = () => stepMarkLook(step.mark);
+									return (
+										<>
+											<Show when={index() > 0}>{stepGap}</Show>
+											<span style={look().style}>{look().symbol}</span>
+											<span style={{ fg: color.fg }}>{` ${step.name}`}</span>
+										</>
+									);
+								}}
+							</For>
+						</text>
+					)}
+				</For>
+				<Show when={props.ticket.workflowProblem !== undefined}>
+					<For each={wrapText(props.ticket.workflowProblem ?? "", inner())}>
+						{(line) => (
+							<text {...dimText} flexShrink={0} wrapMode="none">
+								{line}
+							</text>
+						)}
+					</For>
+				</Show>
+				<box height={1} flexShrink={0} />
 				<For
 					each={props.ticket.description.flatMap((paragraph) =>
 						wrapText(paragraph, inner()),
@@ -786,8 +794,18 @@ function RunsPane(props: {
 }): JSX.Element {
 	const { dimText } = theme();
 	let list: ScrollBoxRenderable | undefined;
-	const showSelected = () =>
-		list?.scrollChildIntoView(runRowId(props.selected));
+	// Scrolled by hand: OpenTUI's `scrollChildIntoView` leaves out a row as
+	// tall as the viewport, which a one-Run pane is.
+	const showSelected = () => {
+		const row = list?.content.findDescendantById(runRowId(props.selected));
+		if (list === undefined || row === undefined) return;
+		// The scroll that puts the row's top at the viewport's top, and the one
+		// that puts its bottom at the viewport's bottom.
+		const showTop = row.y - list.viewport.y + list.scrollTop;
+		const showBottom = showTop + row.height - list.viewport.height;
+		if (showTop < list.scrollTop) list.scrollTo(showTop);
+		else if (showBottom > list.scrollTop) list.scrollTo(showBottom);
+	};
 	createEffect(showSelected);
 	const runs = () => props.ticket?.runs ?? [];
 	// A narrow pane says only Runs.
