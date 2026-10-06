@@ -18,16 +18,14 @@ const barStatuses = ["done", "running", "stuck", "ready"] as const;
  * `width` cells of the bar, split between the Ticket statuses by their share
  * of the Tickets, done first. Every status present gets at least one cell,
  * so one stuck Ticket among many never rounds away. All faint with no
- * Tickets, all in the selection's colour on a `selected` row. Drawn in the
- * theme's `solidBar` cells when `solid`, its `bar` cells otherwise. Spans,
- * so it sits inside a `<text>`.
+ * Tickets, all in the selection's colour on a `selected` row. Spans, so it
+ * sits inside a `<text>`.
  */
 export function TicketBar(props: {
 	tickets: GoalTicketCounts;
 	standing: GoalStanding;
 	width: number;
 	selected: boolean;
-	solid: boolean;
 }): JSX.Element {
 	const { color, symbol, selection } = theme();
 	// Each status takes the whole cells of its share, the cells left go to
@@ -60,7 +58,7 @@ export function TicketBar(props: {
 		<For each={segments()}>
 			{(segment) => (
 				<span style={{ fg: props.selected ? selection.fg : segment.fg }}>
-					{(props.solid ? symbol.solidBar : symbol.bar).repeat(segment.cells)}
+					{symbol.bar.repeat(segment.cells)}
 				</span>
 			)}
 		</For>

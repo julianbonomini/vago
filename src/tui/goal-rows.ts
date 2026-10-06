@@ -11,12 +11,10 @@ import {
 	listGoals,
 	readGoal,
 	runLogLastWritten,
-	type TicketRunResume,
 	type TicketStatus,
 } from "../tickets/tickets.ts";
 import { readWorkflowStepNames } from "../workflow.ts";
 import {
-	type GoalRunState,
 	type GoalTicket,
 	type GoalTicketMark,
 	type GoalWorkflowSteps,
@@ -84,8 +82,11 @@ export type GoalRow = {
 	sinceLastActivityMs: number | undefined;
 	/** Every Ticket of the Goal, lowest number first. */
 	tickets: GoalTicket[];
-	/** The Goal's eight latest Runs, newest first. */
-	latestRuns: GoalRowRun[];
+	/**
+	 * One total for each Step the Goal's Runs went through, in the order the
+	 * Steps first ran, Ticket by Ticket; none with no Runs.
+	 */
+	stepTotals: GoalStepTotal[];
 	/**
 	 * `goal.md`'s body after its title as `joinParagraphs` gives it. For a
 	 * broken Goal, why its files can't be read.
@@ -93,20 +94,13 @@ export type GoalRow = {
 	description: string[];
 };
 
-/** One Run as the preview lists it. */
-export type GoalRowRun = {
-	started: Date;
-	/** The Run's Ticket number as file names spell it, like `02`. */
-	ticketNumber: string;
+/** The Runs of one Workflow Step summed over every Ticket of a Goal. */
+export type GoalStepTotal = {
 	stepName: string;
-	/** Absent for a Run that started a fresh session as usual. */
-	resume?: TicketRunResume;
-	state: GoalRunState;
-	/** As spelled in the header, like `ok`; absent while the Run is open. */
-	outcome?: string;
-	/** As `GoalTicketRun`'s. */
-	durationMs: number;
-	/** Absent for a shell Step. */
+	runs: number;
+	/** Every Run's `durationMs` added up. */
+	runMs: number;
+	/** Every Run's cost added up; absent when none had one, as with a shell Step. */
 	costUsd?: number;
 };
 
@@ -204,10 +198,11 @@ function projectMessage(error: unknown, root: string): string {
 
 /** The header line's counts of the Goals of a Project and their spend. */
 export type ProjectTotals = {
-	goals: number;
+	done: number;
+	ready: number;
 	running: number;
 	/** Stuck, lost and broken: the Goals waiting on the human. */
-	needYou: number;
+	stuck: number;
 	costUsd: number;
 };
 
@@ -216,9 +211,10 @@ export function projectTotals(rows: GoalRow[]): ProjectTotals {
 	const inStanding = (...standings: GoalStanding[]) =>
 		rows.filter((row) => standings.includes(row.standing)).length;
 	return {
-		goals: rows.length,
+		done: inStanding("done"),
+		ready: inStanding("ready"),
 		running: inStanding("running"),
-		needYou: inStanding("stuck", "lost", "broken"),
+		stuck: inStanding("stuck", "lost", "broken"),
 		costUsd: rows.reduce((sum, row) => sum + row.costUsd, 0),
 	};
 }
@@ -248,7 +244,7 @@ function brokenRow(goal: string, message: string): GoalRow {
 		created: undefined,
 		sinceLastActivityMs: undefined,
 		tickets: [],
-		latestRuns: [],
+		stepTotals: [],
 		description: joinParagraphs(message),
 	};
 }
@@ -288,23 +284,32 @@ function goalRow(
 		sinceLastActivityMs:
 			last === undefined ? undefined : now.getTime() - last.getTime(),
 		tickets,
-		latestRuns: tickets
-			.flatMap(({ number, runs }) =>
-				runs.map((run) => ({
-					started: run.started,
-					ticketNumber: number,
-					stepName: run.stepName,
-					resume: run.resume,
-					state: run.state,
-					outcome: run.outcome,
-					durationMs: run.durationMs,
-					costUsd: run.costUsd,
-				})),
-			)
-			.sort((a, b) => b.started.getTime() - a.started.getTime())
-			.slice(0, 8),
+		stepTotals: stepTotals(tickets),
 		description: joinParagraphs(state.description),
 	};
+}
+
+// The totals of each Step the Runs of `tickets` went through, in the order
+// the Steps first ran, Ticket by Ticket.
+function stepTotals(tickets: GoalTicket[]): GoalStepTotal[] {
+	const totals = new Map<string, GoalStepTotal>();
+	for (const run of tickets.flatMap(({ runs }) => runs)) {
+		const total = totals.get(run.stepName) ?? {
+			stepName: run.stepName,
+			runs: 0,
+			runMs: 0,
+		};
+		totals.set(run.stepName, {
+			stepName: run.stepName,
+			runs: total.runs + 1,
+			runMs: total.runMs + run.durationMs,
+			costUsd:
+				run.costUsd === undefined
+					? total.costUsd
+					: (total.costUsd ?? 0) + run.costUsd,
+		});
+	}
+	return [...totals.values()];
 }
 
 // The Goal's standing and the "now" phrase that goes with it, from its

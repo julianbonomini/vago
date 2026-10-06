@@ -38,8 +38,7 @@ export type ThemeColors = {
  * The symbols. The keys for the six Goal standings are the standing words,
  * so `symbol[standing]` is a standing's symbol. `blocked` is a ready Ticket
  * waiting on a blocker, `pending` a Step not run yet in a Ticket's pass,
- * `bar` one cell of a progress bar, `solidBar` one cell of the heavier bar a
- * Goal view's Goal box draws, `sep` the mark between items on a line,
+ * `bar` one cell of a progress bar, `sep` the mark between items on a line,
  * `cut` the end of a text cut short, `prose` the mark before the agent's
  * prose, `times` the mark of a count, like `×5`, `rule` one cell of a
  * divider, `upDown` and `leftRight` the arrow keys as a footer names
@@ -56,7 +55,6 @@ export type ThemeSymbols = {
 	blocked: string;
 	pending: string;
 	bar: string;
-	solidBar: string;
 	sep: string;
 	cut: string;
 	prose: string;
@@ -230,7 +228,7 @@ const palette: ThemeColors = {
 	bg: terminalBackground,
 	fg: "#d6d6d6",
 	faint: "#4a4a4a",
-	border: "#2e2e2e",
+	border: "#5c5c5c",
 	accent: "#ff8a3d",
 	ok: "#8fae8b",
 	bad: "#e5736b",
@@ -242,8 +240,10 @@ const palette: ThemeColors = {
 // Secondary text, which takes no token of its own.
 const grey = "#7a7a7a";
 
-// The selected row's text, dark on the accent.
-const onAccent = "#0c0c0c";
+// The selected row: bold white on a deep orange, which passes WCAG AA
+// (5.8:1) where white on the accent itself would not.
+const selectedFg = "#ffffff";
+const selectedBg = "#a8481a";
 
 // Behind the selected row of a pane without the focus.
 const idleGrey = "#3a3a3a";
@@ -273,7 +273,6 @@ const glyphs: ThemeSymbols = {
 	blocked: "◌",
 	pending: "·",
 	bar: "━",
-	solidBar: "█",
 	sep: "·",
 	cut: "…",
 	prose: "⁘",
@@ -295,7 +294,6 @@ const asciiGlyphs: ThemeSymbols = {
 	blocked: "-",
 	pending: ".",
 	bar: "=",
-	solidBar: "#",
 	sep: "|",
 	cut: "~",
 	prose: ">",
@@ -343,7 +341,11 @@ const coloured: Theme = {
 	scrollbars: true,
 	dimText: { fg: grey, attributes: 0 },
 	dimSpan: { fg: grey, dim: false },
-	selection: { fg: onAccent, bg: palette.accent, attributes: 0 },
+	selection: {
+		fg: selectedFg,
+		bg: selectedBg,
+		attributes: TextAttributes.BOLD,
+	},
 	idleSelection: { bg: idleGrey, attributes: TextAttributes.BOLD },
 };
 

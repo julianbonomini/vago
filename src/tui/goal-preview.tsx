@@ -1,36 +1,40 @@
 // The preview of the selected Goal under the Goals table: its title, its
-// progress, its latest Runs and its description, each in a slot of its own.
+// progress, its Step totals and its description, each in a slot of its own.
 // Hides the slots' sizes, which never depend on the Goal shown, so nothing
 // moves as the selection does.
 
+import { type ScrollBoxRenderable, TextAttributes } from "@opentui/core";
 import type { JSX } from "@opentui/solid";
-import { For, Show } from "solid-js";
+import { createEffect, For, on, Show } from "solid-js";
 import { type GoalRow, ticketTotal } from "./goal-rows.ts";
 import { sharedLine, usePane } from "./pane-grid.ts";
 import { PaneTitle } from "./pane-title.tsx";
-import { RunLine, runLineFieldsWidth } from "./run-line.tsx";
 import { fitText, wrapText } from "./text-fit.ts";
 import { theme } from "./theme.ts";
 import { TicketBar } from "./ticket-bar.tsx";
-import { clock, day, duration } from "./time-and-money.ts";
+import { day, duration, money } from "./time-and-money.ts";
 
 /**
  * The preview of the Goal `row` shows, `width` columns wide and as tall as
  * the space its parent gives it, its top line shared with the box over it.
  * Its title row names the Goal, and its Workflow, when it was created and its
- * last activity.
+ * last activity. The description scrolls by the wheel and in `scrollRef`'s
+ * scrollbox, and another Goal's opens at its top.
  */
 export function GoalPreview(props: {
 	row: GoalRow;
 	width: number;
+	scrollRef: (box: ScrollBoxRenderable) => void;
 }): JSX.Element {
 	const { color, symbol, dimText } = theme();
 	const inner = () => props.width - boxEdges;
-	// The Runs column keeps its full width while the description has room
+	// The Steps column keeps its full width while the description has room
 	// for a few words, and gives up the rest below that.
-	const runsColumn = () =>
-		Math.max(0, Math.min(runWidth, inner() - columnGap - descriptionMin));
-	const descriptionColumn = () => inner() - runsColumn() - columnGap;
+	const stepsColumn = () =>
+		Math.max(0, Math.min(stepsWidth, inner() - columnGap - descriptionMin));
+	const descriptionColumn = () => inner() - stepsColumn() - columnGap;
+	const totalRuns = () =>
+		props.row.stepTotals.reduce((sum, step) => sum + step.runs, 0);
 	const ticketsLabel = () =>
 		`  ${props.row.ticketCounts.done}/${ticketTotal(props.row.ticketCounts)} Tickets`;
 	const activity = () =>
@@ -41,6 +45,13 @@ export function GoalPreview(props: {
 		props.row.created === undefined
 			? ""
 			: ` ${symbol.sep} created ${day(props.row.created)}`;
+	let description: ScrollBoxRenderable | undefined;
+	createEffect(
+		on(
+			() => props.row.goal,
+			() => description?.scrollTo(0),
+		),
+	);
 	const pane = usePane();
 	return (
 		<box
@@ -67,40 +78,68 @@ export function GoalPreview(props: {
 					standing={props.row.standing}
 					width={Math.max(0, inner() - ticketsLabel().length)}
 					selected={false}
-					solid={false}
 				/>
 				{ticketsLabel()}
 			</text>
 			<box height={1} flexShrink={0} />
 			<box flexDirection="row" flexGrow={1} overflow="hidden">
 				<box
-					width={runsColumn()}
+					width={stepsColumn()}
 					flexShrink={0}
 					flexDirection="column"
 					overflow="hidden"
 				>
-					<text {...dimText} flexShrink={0} wrapMode="none">
-						{fitText("LATEST RUNS", runsColumn())}
-					</text>
 					<Show
-						when={props.row.latestRuns.length > 0}
+						when={props.row.stepTotals.length > 0}
 						fallback={
 							<text {...dimText} flexShrink={0} wrapMode="none">
-								{fitText("No Run yet.", runsColumn())}
+								{fitText("No Runs yet.", stepsColumn())}
 							</text>
 						}
 					>
-						<For each={props.row.latestRuns}>
-							{(run) => (
-								<RunLine
-									lead={`${clock(run.started)} ${run.ticketNumber}`.padEnd(
-										startWidth,
+						<text {...dimText} flexShrink={0} wrapMode="none">
+							{fitText(
+								stepLine({
+									step: "STEP",
+									runs: "RUNS",
+									took: "TOOK",
+									cost: "COST",
+								}),
+								stepsColumn(),
+							)}
+						</text>
+						<For each={props.row.stepTotals}>
+							{(step) => (
+								<text fg={color.fg} flexShrink={0} wrapMode="none">
+									{fitText(
+										stepLine({
+											step: step.stepName,
+											runs: `${step.runs}`,
+											took: duration(step.runMs),
+											cost:
+												step.costUsd === undefined ? "" : money(step.costUsd),
+										}),
+										stepsColumn(),
 									)}
-									run={run}
-									width={runsColumn()}
-								/>
+								</text>
 							)}
 						</For>
+						<text
+							fg={color.fg}
+							attributes={TextAttributes.BOLD}
+							flexShrink={0}
+							wrapMode="none"
+						>
+							{fitText(
+								stepLine({
+									step: "total",
+									runs: `${totalRuns()}`,
+									took: duration(props.row.runMs),
+									cost: money(props.row.costUsd),
+								}),
+								stepsColumn(),
+							)}
+						</text>
 					</Show>
 				</box>
 				<box width={columnGap} flexShrink={0} />
@@ -113,17 +152,26 @@ export function GoalPreview(props: {
 					<text {...dimText} flexShrink={0} wrapMode="none">
 						{fitText("GOAL", descriptionColumn())}
 					</text>
-					<For
-						each={props.row.description.flatMap((paragraph) =>
-							wrapText(paragraph, descriptionColumn()),
-						)}
+					<scrollbox
+						ref={(box: ScrollBoxRenderable) => {
+							description = box;
+							props.scrollRef(box);
+						}}
+						flexGrow={1}
+						verticalScrollbarOptions={{ visible: false }}
 					>
-						{(line) => (
-							<text fg={color.fg} flexShrink={0} wrapMode="none">
-								{fitText(line, descriptionColumn())}
-							</text>
-						)}
-					</For>
+						<For
+							each={props.row.description.flatMap((paragraph) =>
+								wrapText(paragraph, descriptionColumn()),
+							)}
+						>
+							{(line) => (
+								<text fg={color.fg} flexShrink={0} wrapMode="none">
+									{fitText(line, descriptionColumn())}
+								</text>
+							)}
+						</For>
+					</scrollbox>
 				</box>
 			</box>
 		</box>
@@ -133,9 +181,24 @@ export function GoalPreview(props: {
 // The preview's border and padding, on both sides.
 const boxEdges = 4;
 const columnGap = 3;
-// The least the description column keeps before the Runs column narrows.
+// The least the description column keeps before the Steps column narrows.
 const descriptionMin = 24;
-// The width of a Run line's leading field, when it started and its Ticket,
-// with the space after it.
-const startWidth = 9;
-const runWidth = startWidth + runLineFieldsWidth;
+// The widths of the Steps column's fields, each with the space after it.
+// The cost comes last and fits `$123.45`.
+const stepNameWidth = 14;
+const runsWidth = 6;
+const tookWidth = 9;
+const stepsWidth = stepNameWidth + runsWidth + tookWidth + "$123.45".length;
+
+// One line of the Step totals in its fixed columns, the Runs right-aligned
+// under their heading.
+function stepLine(fields: {
+	step: string;
+	runs: string;
+	took: string;
+	cost: string;
+}): string {
+	const step = fitText(fields.step, stepNameWidth - 1).padEnd(stepNameWidth);
+	const runs = `${fields.runs.padStart(runsWidth - 2)}  `;
+	return `${step}${runs}${fields.took.padEnd(tookWidth)}${fields.cost}`;
+}

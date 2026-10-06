@@ -49,6 +49,7 @@ NEW FEATURES (grilling needed)
 - [x] Harnesses other than Claude Code (a Codex adapter, user-supplied Harness plugins). _(grill)_ (Codex only)
 - [ ] Interact with agent session if you want to, like steer or correct while it runs without messing up the goal run
 - [ ] user new matpocock (or copy) of the PR skill at the end of a goal
+- [ ] Make the merge Step an agent Step, since the shell merge fails often when the work is fine. _(grill)_
 
 
 TECHINICAL IMRPOVEMENTS

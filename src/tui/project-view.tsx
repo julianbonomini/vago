@@ -85,12 +85,13 @@ function liveGoalRows(root: string): () => GoalRow[] | undefined {
  * Project's counts and spend, which stays on every screen, the Goal view's
  * included, and a Goals box with one row per Goal showing
  * its standing, Tickets, time, cost, what it is doing and its title, the
- * selected one in the accent colour, moved by ↑↓ and j k, g and G, or a
+ * selected one in the selection colours, moved by ↑↓ and j k, g and G, or a
  * click, with `n/N` on the box's bottom border, or a line naming
  * `vago goal new` while there are none. The box scrolls, by wheel or to
  * follow the selection, once the Goals outgrow its share of the screen.
  * Below it, the selected Goal's preview fills the rest of the screen, then
- * a footer names the keys, and `?` shows them all until `?` or Esc. Enter
+ * a footer names the keys, and `?` shows them all until `?` or Esc. Space
+ * and PgDn page the preview's description and PgUp pages it back. Enter
  * opens the selected Goal, unless it is broken, in the Goal view in place of
  * all this; its `[` and `]` open the Goal before and after, passing over
  * broken ones and stopping at the ends, and its Esc leaves the selection on
@@ -153,6 +154,7 @@ export function ProjectView(props: {
 			}
 		}
 	};
+	let description: ScrollBoxRenderable | undefined;
 	useKeyboard((key) => {
 		if (openedRow() !== undefined) return;
 		// A broken Goal has no Tickets to show; its preview says why.
@@ -169,6 +171,11 @@ export function ProjectView(props: {
 		if (key.name === "up" || key.name === "k") select(selectedIndex() - 1);
 		if (key.name === "down" || key.name === "j") select(selectedIndex() + 1);
 		if (key.name === "g") select(key.shift ? (rows() ?? []).length - 1 : 0);
+		if (helpShown()) return;
+		if (key.name === "space" || key.name === "pagedown") {
+			description?.scrollBy(1, "viewport");
+		}
+		if (key.name === "pageup") description?.scrollBy(-1, "viewport");
 	});
 	// No count until the Goals are read, so an empty Project and a slow read
 	// never look alike.
@@ -311,7 +318,13 @@ export function ProjectView(props: {
 				</box>
 				<Show when={rows()?.[selectedIndex()]}>
 					{(row: () => GoalRow) => (
-						<GoalPreview row={row()} width={terminal().width} />
+						<GoalPreview
+							row={row()}
+							width={terminal().width}
+							scrollRef={(box) => {
+								description = box;
+							}}
+						/>
 					)}
 				</Show>
 				<box flexShrink={0} paddingLeft={1} paddingRight={1}>
@@ -336,6 +349,7 @@ const footerKeys = (upDown: string): FooterKey[] => [
 	{ keys: "Enter", label: "Open", use: 5 },
 	{ keys: "s", label: "Start", use: 2 },
 	{ keys: "g G", label: "First, last", use: 1 },
+	{ keys: "PgUp PgDn", label: "Scroll", use: 2 },
 	{ keys: "?", label: "Help", use: 3 },
 	{ keys: "q", label: "Quit", use: 2 },
 ];
@@ -346,46 +360,59 @@ const helpKeys = (upDown: string): HelpKey[] => [
 	{ keys: "s", meaning: "start the selected Goal in vago run" },
 	{ keys: "g G", meaning: "select the first, the last Goal" },
 	{ keys: "click", meaning: "select the Goal clicked" },
-	{ keys: "wheel", meaning: "scroll the Goals" },
+	{ keys: "Space PgDn", meaning: "page the Goal's description" },
+	{ keys: "PgUp", meaning: "page back" },
+	{ keys: "wheel", meaning: "scroll the pane under the pointer" },
 	{ keys: "? Esc", meaning: "show, hide these keys" },
 	{ keys: "q Ctrl-C", meaning: "quit" },
 ];
 
 // The Project's name and its counts on one line at the top of every screen,
-// `width` columns wide, the counts on the right. The name is cut first when
-// the line is short of room. Not drawn until the Goals are read, so a slow
-// read never shows zero Goals.
+// `width` columns wide: the name on the left, then the Goals done, ready,
+// running and stuck on the right, and last the spend, bright and bold, the
+// number the human reads first. The stuck count takes in the lost and broken
+// Goals and says so while the whole name still fits, and is then just
+// "stuck"; past that the name is cut. Not drawn until the Goals are read, so
+// a slow read never shows zero Goals.
 function HeaderLine(props: {
 	root: string;
 	rows: GoalRow[];
 	width: number;
 }): JSX.Element {
-	const { symbol, dimText } = theme();
-	const line = () => {
-		const totals = projectTotals(props.rows);
-		const goals = ` ${symbol.sep} ${totals.goals} Goals`;
-		const counts = [
-			`${totals.running} running`,
-			`${totals.needYou} need you`,
-			`${money(totals.costUsd)} spent`,
-		].join(` ${symbol.sep} `);
-		// A space at each end of the line and one before the counts.
-		const left = props.width - 3 - Bun.stringWidth(counts);
-		const name = fitText(
-			basename(props.root),
-			Math.min(
-				Bun.stringWidth(basename(props.root)),
-				left - Bun.stringWidth(goals),
-			),
-		);
-		return ` ${fitText(`${name}${goals}`, left)} ${counts}`;
+	const { color, symbol, dimSpan } = theme();
+	const name = () => basename(props.root);
+	const totals = () => projectTotals(props.rows);
+	const spend = () => money(totals().costUsd);
+	const countsWith = (stuckLabel: string) => {
+		const { done, ready, running, stuck } = totals();
+		return `${[
+			`${done} done`,
+			`${ready} ready`,
+			`${running} running`,
+			`${stuck} ${stuckLabel}`,
+		].join(` ${symbol.sep} `)} ${symbol.sep} `;
+	};
+	// The room left for the name, past a space before it and one after it.
+	const nameRoom = (counts: string) =>
+		props.width - 2 - Bun.stringWidth(`${counts}${spend()}${spentLabel}`);
+	const counts = () => {
+		const spelledOut = countsWith("stuck, lost or broken");
+		return nameRoom(spelledOut) >= Bun.stringWidth(name())
+			? spelledOut
+			: countsWith("stuck");
 	};
 	return (
-		<text {...dimText} flexShrink={0} wrapMode="none">
-			{line()}
+		<text fg={color.fg} flexShrink={0} wrapMode="none">
+			{` ${fitText(name(), nameRoom(counts()))} `}
+			<span style={dimSpan}>{counts()}</span>
+			<span style={{ fg: color.bright, bold: true }}>{spend()}</span>
+			<span style={dimSpan}>{spentLabel}</span>
 		</text>
 	);
 }
+
+// With the space that ends the line.
+const spentLabel = " spent ";
 
 // The Goals box's border and padding, on both sides.
 const boxEdges = 4;
@@ -450,7 +477,6 @@ function GoalRowLine(props: {
 				standing={props.row.standing}
 				width={barWidth}
 				selected={props.selected}
-				solid={false}
 			/>
 			<span style={dim()}>
 				{` ${`${props.row.ticketCounts.done}/${ticketTotal(props.row.ticketCounts)}`.padEnd(ticketsWidth - barWidth - 1)}`}
