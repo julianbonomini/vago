@@ -749,9 +749,6 @@ function lineWith(frame: string, text: string): string {
 	return line;
 }
 
-// The hour and minute `time` shows in the preview, in the local time zone.
-const clock = (time: Date) => time.toTimeString().slice(0, 5);
-
 test("the preview shows the selected Goal, and moving the selection changes it", async () => {
 	const root = await makeProject({
 		".vago-goals/a/goal.md": goalText("one", "# First title\n\nAbout a.\n"),
@@ -781,7 +778,7 @@ test("the preview shows when a Goal was created and its number of Tickets", asyn
 	});
 	const view = await renderView(root, wide);
 
-	const frame = await frameWith(view, "LATEST RUNS");
+	const frame = await frameWith(view, "No Runs yet.");
 	expect(lineWith(frame, "Workflow w")).toContain("created 2026-09-30");
 	expect(frame).toContain("1/2 Tickets");
 
@@ -790,91 +787,60 @@ test("the preview shows when a Goal was created and its number of Tickets", asyn
 	expect(lineWith(old, "Workflow w")).not.toContain("created");
 });
 
-test("a running Goal's preview shows its latest eight Runs, newest first", async () => {
-	const runs = Array.from({ length: 9 }, (_, index) => ({
-		step: `step${index + 1}`,
-		started: at(`0${index}:00`),
-		ended: at(`0${index}:05`),
+test("the preview totals each Step's Runs, run time and cost over the Goal's Tickets", async () => {
+	const run = (step: string, start: string, end: string, costUsd?: number) => ({
+		step,
+		started: at(start),
+		ended: at(end),
 		outcome: "ok",
-		costUsd: index % 2 === 0 ? 1.25 : undefined,
-	}));
+		costUsd,
+	});
 	const root = await makeProject({
 		".vago-goals/a/goal.md": goalText("w"),
-		".vago-goals/a/tickets/01-first.md": ticketText("done", { runs }),
-		".vago-goals/a/tickets/02-second.md": ticketText("running", {
-			runs: [{ step: "review", started: at("10:00") }],
+		".vago-goals/a/tickets/01-first.md": ticketText("done", {
+			runs: [
+				run("implement", "09:00", "09:10", 1),
+				run("check", "09:10", "09:12"),
+				run("implement", "09:12", "09:17", 0.5),
+				run("check", "09:17", "09:19"),
+			],
 		}),
+		".vago-goals/a/tickets/02-second.md": ticketText("running", {
+			runs: [
+				run("implement", "10:00", "10:20", 2),
+				run("check", "10:20", "10:21"),
+				{ step: "review", started: at("10:21") },
+			],
+		}),
+		".vago-goals/a/tickets/03-third.md": ticketText("ready"),
 	});
 	await heldLock(root, "a");
 
 	const view = await renderView(root, wide);
-	const frame = await frameWith(view, "LATEST RUNS");
+	const frame = await frameWith(view, "STEP");
 
-	const shown = frame
+	expect(frame).not.toContain("LATEST RUNS");
+	const steps = frame
 		.split("\n")
-		.filter((line) => /\d\d:\d\d \d\d /.test(line))
-		.map((line) => /\d\d:\d\d \d\d (\w+)/.exec(line)?.[1]);
-	expect(shown).toEqual([
-		"review",
-		"step9",
-		"step8",
-		"step7",
-		"step6",
-		"step5",
-		"step4",
-		"step3",
-	]);
-	expect(lineWith(frame, `${clock(at("10:00"))} 02 review`)).toContain(
-		"● live",
-	);
-	expect(lineWith(frame, "step9")).toMatch(/✓ ok +5m 0s +\$1\.25/);
-	expect(lineWith(frame, "step8")).toMatch(/✓ ok +5m 0s +$/);
-	expect(lineWith(frame, "Workflow w")).toMatch(/last activity .+ ago/);
-	expect(frame).toContain("1/2 Tickets");
+		.map((line) => /^ +(STEP|implement|check|review|total) /.exec(line)?.[1])
+		.filter((step) => step !== undefined);
+	expect(steps).toEqual(["STEP", "implement", "check", "review", "total"]);
+	expect(frame).toMatch(/^ +STEP +RUNS +TOOK +COST /m);
+	expect(frame).toMatch(/^ +implement +3 +35m 0s +\$3\.50 /m);
+	expect(frame).toMatch(/^ +check +3 +5m 0s +$/m);
+	expect(frame).toMatch(/^ +review +1 +\d+[a-z]/m);
+	expect(frame).toMatch(/^ +total +7 +\d+[a-z].* \$3\.50 /m);
+	expect(frame).toContain("1/3 Tickets");
 });
 
-test("a stuck Goal's preview shows the failed Run's outcome", async () => {
-	const root = await projectWithTickets({
-		"01-first": ticketText("stuck", {
-			runs: [
-				{
-					step: "check",
-					started: at("09:00"),
-					ended: at("09:02"),
-					outcome: "exit 1",
-				},
-			],
-		}),
-	});
+test("a Goal with no Runs yet says so in place of the Step totals", async () => {
+	const root = await projectWithTickets({ "01-first": ticketText("ready") });
 
 	const view = await renderView(root, wide);
-	const frame = await frameWith(view, "LATEST RUNS");
+	const frame = await frameWith(view, "No Runs yet.");
 
-	expect(lineWith(frame, "01 check")).toMatch(/✗ exit 1 +2m 0s/);
-	expect(frame).toContain("0/1 Tickets");
-});
-
-test("a done Goal's preview shows every Ticket done and how long ago it ended", async () => {
-	const root = await projectWithTickets({
-		"01-first": ticketText("done", {
-			runs: [
-				{
-					step: "merge",
-					started: at("09:00"),
-					ended: at("09:01"),
-					outcome: "ok",
-					costUsd: 0.5,
-				},
-			],
-		}),
-	});
-
-	const view = await renderView(root, wide);
-	const frame = await frameWith(view, "LATEST RUNS");
-
-	expect(lineWith(frame, "01 merge")).toMatch(/✓ ok +1m 0s +\$0\.50/);
-	expect(frame).toContain("1/1 Tickets");
-	expect(lineWith(frame, "Workflow w")).toMatch(/last activity \d+d \d+h ago/);
+	expect(frame).not.toContain("total");
+	expect(lineWith(frame, "Workflow w")).toContain("no Runs yet");
 });
 
 test("the description reads as paragraphs and is cut to the space it has", async () => {
@@ -890,7 +856,7 @@ test("the description reads as paragraphs and is cut to the space it has", async
 	});
 
 	const view = await renderView(root, wide);
-	const frame = await frameWith(view, "LATEST RUNS");
+	const frame = await frameWith(view, "No Runs yet.");
 
 	expect(frame).toContain("Short first paragraph ends here.");
 	expect(frame).toMatch(/columns line\d+ of/);
@@ -913,14 +879,15 @@ test("moving the cursor shifts no row of the table or the preview", async () => 
 		".vago-goals/b/goal.md": goalText("w", "# B\n"),
 	});
 	const view = await renderView(root);
-	const slots = (frame: string) =>
-		[" a ", " b ", "LATEST RUNS", "Workflow w", "Tickets"].map((text) =>
+	// The Step totals' header row and "No Runs yet." share a slot.
+	const slots = (frame: string, steps: string) =>
+		[" a ", " b ", steps, "Workflow w", "Tickets"].map((text) =>
 			lineOf(frame, text),
 		);
 
-	const first = slots(await frameWith(view, " 1/2 "));
+	const first = slots(await frameWith(view, " 1/2 "), "No Runs yet.");
 	view.mockInput.pressArrow("down");
-	const second = slots(await frameWith(view, " 2/2 "));
+	const second = slots(await frameWith(view, " 2/2 "), "STEP");
 
 	expect(first).not.toContain(-1);
 	expect(second).toEqual(first);
@@ -953,8 +920,7 @@ test("a Run starting and then ending shows with no key pressed", async () => {
 	});
 	await heldLock(root, "a");
 	const view = await renderView(root, wide);
-	await frameWith(view, `${clock(at("09:00"))} 02 design`);
-	const architecture = `${clock(at("09:10"))} 02 architecture`;
+	await frameWith(view, "design ");
 	const second = ".vago-goals/a/tickets/02-second.md";
 
 	await rewrite(
@@ -964,8 +930,8 @@ test("a Run starting and then ending shows with no key pressed", async () => {
 			runs: [design, { step: "architecture", started: at("09:10") }],
 		}),
 	);
-	expect(lineWith(await frameWith(view, architecture), architecture)).toContain(
-		"● live",
+	expect(lineWith(await frameWith(view, "architecture "), "total")).toMatch(
+		/total +2 /,
 	);
 
 	await rewrite(
@@ -983,9 +949,7 @@ test("a Run starting and then ending shows with no key pressed", async () => {
 			],
 		}),
 	);
-	expect(lineWith(await frameWith(view, "15m 0s"), architecture)).toMatch(
-		/✓ ok +15m 0s/,
-	);
+	expect(await frameWith(view, "15m 0s")).toMatch(/architecture +1 +15m 0s/);
 });
 
 for (const [how, drop] of [
