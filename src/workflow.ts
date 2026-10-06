@@ -310,21 +310,48 @@ export async function loadWorkflow(
 	});
 }
 
-/** A Step's `id` and the `name` the TUI shows it by, its `id` without one. */
-export type NamedStep = { id: string; name: string };
+/**
+ * A Step as the TUI shows it: its `id`, the `name` it goes by, its `id`
+ * without one, and whether a pass goes on from it when it exits non-zero,
+ * which only a shell Step can.
+ */
+export type NamedStep = {
+	id: string;
+	name: string;
+	onFail: "stop" | "continue";
+};
+
+/** A Workflow's three lists of Steps as the TUI shows them, in the order they run. */
+export type NamedWorkflow = {
+	beforeAll: NamedStep[];
+	steps: NamedStep[];
+	afterAll: NamedStep[];
+};
 
 /**
- * Each Step of Workflow `name` of the Project at `root`, in the order they
- * run, read from its TOML alone, so it costs one small file read and no
- * prompt or include file is opened or checked. Throws what `loadWorkflow`
- * throws for a missing Workflow, bad TOML or a schema it doesn't take.
+ * Each Step of Workflow `name` of the Project at `root`, read from its TOML
+ * alone, so it costs one small file read and no prompt or include file is
+ * opened or checked. Throws what `loadWorkflow` throws for a missing
+ * Workflow, bad TOML or a schema it doesn't take.
  */
 export async function readWorkflowStepNames(
 	root: string,
 	name: string,
-): Promise<NamedStep[]> {
+): Promise<NamedWorkflow> {
 	const { checked } = await readWorkflowFile(root, name);
-	return checked.steps.map((step) => ({ id: step.id, name: stepName(step) }));
+	const named = (steps: z.infer<typeof StepEntry>[] = []) =>
+		steps.map(
+			(step): NamedStep => ({
+				id: step.id,
+				name: stepName(step),
+				onFail: step.type === "shell" ? (step.on_fail ?? "stop") : "stop",
+			}),
+		);
+	return {
+		beforeAll: named(checked.before_all),
+		steps: named(checked.steps),
+		afterAll: named(checked.after_all),
+	};
 }
 
 // How a message names Step `id` of list `group`: a `[[steps]]` Step plainly,

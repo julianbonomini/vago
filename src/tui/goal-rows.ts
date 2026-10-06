@@ -11,6 +11,7 @@ import {
 	listGoals,
 	readGoal,
 	runLogLastWritten,
+	type TicketRun,
 	type TicketStatus,
 } from "../tickets/tickets.ts";
 import { readWorkflowStepNames } from "../workflow.ts";
@@ -152,20 +153,27 @@ export async function readGoalRows(
 	return read.map(({ row }) => row);
 }
 
-// The Steps of each Workflow the Goal's Tickets go through, by name.
+// The Steps of the Goal's Workflow and each Workflow its Tickets go
+// through, by name.
 async function readWorkflows(
 	root: string,
 	state: GoalState,
 ): Promise<Map<string, GoalWorkflowSteps>> {
-	const names = [...new Set(state.tickets.map(({ workflow }) => workflow))];
+	const names = [
+		...new Set([
+			state.workflow,
+			...state.tickets.map(({ workflow }) => workflow),
+		]),
+	];
 	return new Map(
 		await Promise.all(
 			names.map(async (name): Promise<[string, GoalWorkflowSteps]> => {
 				try {
-					const steps = await readWorkflowStepNames(root, name);
-					return [name, { steps, problem: undefined }];
+					const workflow = await readWorkflowStepNames(root, name);
+					return [name, { workflow, problem: undefined }];
 				} catch (error) {
-					return [name, { steps: [], problem: projectMessage(error, root) }];
+					const workflow = { beforeAll: [], steps: [], afterAll: [] };
+					return [name, { workflow, problem: projectMessage(error, root) }];
 				}
 			}),
 		),
@@ -176,8 +184,7 @@ async function readWorkflows(
 async function readOpenLogsLastWritten(
 	state: GoalState,
 ): Promise<Map<string, Date>> {
-	const logs = state.tickets
-		.flatMap(({ runs }) => runs)
+	const logs = goalRuns(state)
 		.filter(({ ended }) => ended === undefined)
 		.map(({ log }) => log);
 	const written = new Map<string, Date>();
@@ -259,7 +266,7 @@ function goalRow(
 	last: Date | undefined,
 ): GoalRow {
 	const { standing, phrase } = goalStanding(claimed, tickets);
-	const runs = state.tickets.flatMap((ticket) => ticket.runs);
+	const runs = goalRuns(state);
 	const count = (status: TicketStatus) =>
 		state.tickets.filter((ticket) => ticket.status === status).length;
 	return {
@@ -325,7 +332,7 @@ function goalStanding(
 		tickets.find((ticket) => marks.includes(ticket.mark));
 	// A running Ticket is marked lost while no `vago run` holds the Goal.
 	const running = first("running", "lost");
-	const runningOn = running && `${running.number} ${running.onStep}`;
+	const runningOn = running && `${running.shortName} ${running.onStep}`;
 	if (claimed) {
 		return { standing: "running", phrase: runningOn ?? "between Tickets" };
 	}
@@ -342,8 +349,8 @@ function goalStanding(
 			standing: "stuck",
 			phrase:
 				last === undefined
-					? `${stuck.number} stuck`
-					: `${stuck.number} stuck after ${last.stepName} ${last.outcome ?? ""}`.trimEnd(),
+					? `${stuck.shortName} stuck`
+					: `${stuck.shortName} stuck after ${last.stepName} ${last.outcome ?? ""}`.trimEnd(),
 		};
 	}
 	if (tickets.length > 0 && tickets.every(({ mark }) => mark === "done")) {
@@ -358,8 +365,17 @@ function goalStanding(
 
 // When a Run of the Goal last started or ended, or undefined with no Runs.
 function lastActivity(state: GoalState): Date | undefined {
-	const times = state.tickets.flatMap(({ runs }) =>
-		runs.map((run) => (run.ended ?? run.started).getTime()),
+	const times = goalRuns(state).map((run) =>
+		(run.ended ?? run.started).getTime(),
 	);
 	return times.length === 0 ? undefined : new Date(Math.max(...times));
+}
+
+// Every Run of the Goal, its Goal Steps' and its Tickets'.
+function goalRuns(state: GoalState): TicketRun[] {
+	return [
+		...state.beforeAll,
+		...state.tickets.flatMap(({ runs }) => runs),
+		...state.afterAll,
+	];
 }

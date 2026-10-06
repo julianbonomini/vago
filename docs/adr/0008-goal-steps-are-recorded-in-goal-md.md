@@ -2,7 +2,7 @@
 
 A Workflow's `[[before_all]]` and `[[after_all]]` Steps run once for the whole Goal, and their Runs go in `goal.md`'s header as `[[runs]]` tables, in the same format as a Ticket's. A Goal has no status field. Whether `before_all` has succeeded, and where a stuck one picks up, come from those Runs, the way a picked-up Ticket's place comes from its own (ADR 0007): `before_all` has succeeded when its latest pass ends with a closed Run of its last Step that the pass goes on from, and otherwise the next `vago run` picks it up at the Step of its last Run. `after_all` is judged the same way, and is owed again when a Ticket Run started after its latest pass did, which is how Tickets an `after_all` Step adds lead to a fresh `after_all` pass; until it has gone through, a Goal with every Ticket done isn't done.
 
-A Goal Step's log is `logs/<group>-<id>-<position>`, like `logs/before_all-setup-1.log`, so it names its group and can't collide with a Ticket's `NN-` logs. Step ids are unique across a Workflow's three lists, which is how a Run in `goal.md` is tied to its group.
+A Goal Step's log is `logs/<group>-<id>-<position>`, like `logs/before_all-setup-1.log`, so it names its group and can't collide with a Ticket's `NN-` logs. That name is how a Run in `goal.md` is tied to its group, so the Goal report and the TUI split the Runs without reading the Workflow. Step ids are also unique across a Workflow's three lists.
 
 ## Considered options
 

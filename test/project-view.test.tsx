@@ -401,6 +401,50 @@ test("a Goal with a stuck Ticket is stuck after that Ticket's last Step", async 
 	expect(row).toContain("02 stuck after merge exit 1");
 });
 
+test("a Goal whose Goal Step failed is stuck after that Step, its Runs counted in its run time, cost and Step totals", async () => {
+	const run = (step: string, start: string, end: string, outcome = "ok") => ({
+		step,
+		started: at(start),
+		ended: at(end),
+		outcome,
+		costUsd: 1,
+	});
+	const root = await makeProject({
+		".vago/workflows/w.toml": `${oneStep("true")}
+[[before_all]]
+id = "setup"
+type = "shell"
+run = "true"
+
+[[after_all]]
+id = "ready"
+type = "shell"
+run = "true"
+`,
+		".vago-goals/a/goal.md": goalText("w", "# Hello\n", {
+			beforeAll: [run("setup", "09:00", "09:10")],
+			afterAll: [run("ready", "11:00", "11:05", "exit 1")],
+		}),
+		".vago-goals/a/tickets/01-first.md": ticketText("done", {
+			runs: [run("work", "10:00", "10:20")],
+		}),
+	});
+
+	const view = await renderView(root, wide);
+	const frame = await frameWith(view, "STEP");
+	const row = rowOf(frame, "a");
+
+	expect(row).toContain("✗ stuck");
+	expect(row).toContain("after_all stuck after ready exit 1");
+	expect(row).toMatch(/ 35m 0s +\$3\.00 /);
+	const steps = frame
+		.split("\n")
+		.map((line) => /^ +(STEP|setup|work|ready|total) /.exec(line)?.[1])
+		.filter((step) => step !== undefined);
+	expect(steps).toEqual(["STEP", "setup", "work", "ready", "total"]);
+	expect(frame).toMatch(/^ +total +3 +35m 0s +\$3\.00 /m);
+});
+
 test("a Goal with Tickets done and the rest ready is paused, ready to go on", async () => {
 	const root = await projectWithTickets({
 		"01-first": ticketText("done"),

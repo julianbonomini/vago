@@ -101,7 +101,7 @@ export function GoalView(props: {
 	const [chosen, setChosen] = createSignal<string>();
 	const selectedIndex = () => {
 		const tickets = props.row.tickets;
-		const index = tickets.findIndex(({ number }) => number === chosen());
+		const index = tickets.findIndex(({ shortName }) => shortName === chosen());
 		if (index !== -1) return index;
 		const current = tickets.findIndex(({ mark }) => mark !== "done");
 		return current === -1 ? tickets.length - 1 : current;
@@ -116,7 +116,7 @@ export function GoalView(props: {
 	const runIndex = () => {
 		const runs = ticket()?.runs ?? [];
 		const chosen = chosenRun();
-		return chosen !== undefined && chosen.ticket === ticket()?.number
+		return chosen !== undefined && chosen.ticket === ticket()?.shortName
 			? Math.min(chosen.index, runs.length - 1)
 			: runs.length - 1;
 	};
@@ -191,13 +191,13 @@ export function GoalView(props: {
 	const select = (index: number) => {
 		const tickets = props.row.tickets;
 		const ticket = tickets[clamp(index, tickets.length)];
-		if (ticket !== undefined) setChosen(ticket.number);
+		if (ticket !== undefined) setChosen(ticket.shortName);
 	};
 	const selectRun = (index: number) => {
 		const selected = ticket();
 		if (selected === undefined || selected.runs.length === 0) return;
 		setChosenRun({
-			ticket: selected.number,
+			ticket: selected.shortName,
 			index: clamp(index, selected.runs.length),
 		});
 	};
@@ -551,7 +551,7 @@ function TicketsPane(props: {
 	createEffect(() => {
 		const ticket = props.tickets[props.selected];
 		if (ticket !== undefined)
-			list?.scrollChildIntoView(ticketRowId(ticket.number));
+			list?.scrollChildIntoView(ticketRowId(ticket.shortName));
 	});
 	const pane = usePane();
 	return (
@@ -592,7 +592,7 @@ function TicketsPane(props: {
 										text: `${symbol[ticket.mark]} `,
 										style: markStyle(),
 									},
-									{ text: `${ticket.number} `, style: { fg: fg(color.fg) } },
+									{ text: `${ticket.shortName} `, style: { fg: fg(color.fg) } },
 									{
 										text:
 											ticket.stateWord === "" ? "" : `${ticket.stateWord}  `,
@@ -604,7 +604,7 @@ function TicketsPane(props: {
 							);
 						return (
 							<text
-								id={ticketRowId(ticket.number)}
+								id={ticketRowId(ticket.shortName)}
 								onMouseDown={() => props.onPick(index())}
 								fg={fg(color.fg)}
 								bg={
@@ -670,7 +670,7 @@ function TicketPane(props: {
 			onMouseDown={props.onClick}
 		>
 			<PaneTitle
-				title={`Ticket ${props.ticket.number}`}
+				title={props.ticket.label}
 				aside={totals()}
 				focused={props.focused}
 				width={inner()}
@@ -810,7 +810,7 @@ function RunsPane(props: {
 	const runs = () => props.ticket?.runs ?? [];
 	// A narrow pane says only Runs.
 	const title = () => {
-		const long = `Runs of Ticket ${props.ticket?.number}`;
+		const long = `Runs of ${props.ticket?.label}`;
 		return props.ticket === undefined || long.length > props.width - paneEdges
 			? "Runs"
 			: long;
@@ -965,7 +965,7 @@ function RunPane(props: {
 		const shown = run();
 		return shown === undefined
 			? "Run"
-			: `Run ${props.selected + 1} ${symbol.sep} ${props.ticket?.number} ${shown.stepName}`;
+			: `Run ${props.selected + 1} ${symbol.sep} ${props.ticket?.shortName} ${shown.stepName}`;
 	};
 	const numbers = () => {
 		const shown = run();

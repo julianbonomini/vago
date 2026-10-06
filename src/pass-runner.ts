@@ -1,7 +1,6 @@
 // One pass through a list of Steps for a Ticket or for the Goal: where it
 // picks up, the Steps in order, retries, and how it ends. Hides how a pass
-// picks up and rebuilds earlier outputs, what counts as going on from a
-// Step, the `last-ticket` skip, and the retry count and waits.
+// picks up and rebuilds earlier outputs, the `last-ticket` skip, and the retry count and waits.
 
 import {
 	printPassStarted,
@@ -14,7 +13,6 @@ import {
 	type FinishedRun,
 	readRunOutput,
 	runStep,
-	shellExitCode,
 	spellOutcome,
 } from "./step-runner.ts";
 import {
@@ -23,6 +21,7 @@ import {
 	latestPassStart,
 	type RunOwner,
 	recordRunRetry,
+	runGoesOn,
 	setStatus,
 	type TicketRun,
 } from "./tickets/tickets.ts";
@@ -86,7 +85,7 @@ export async function runPass(
 		stepOutputs.set(step.id, run.output);
 		// `on_fail` covers a Step that exits non-zero, never one the human
 		// interrupted.
-		if (!runCounts(step, spellOutcome(run.outcome))) {
+		if (!runGoesOn(step, spellOutcome(run.outcome))) {
 			printStuck(
 				owner,
 				step.name,
@@ -98,26 +97,6 @@ export async function runPass(
 		}
 	}
 	return "done";
-}
-
-/**
- * Whether the latest pass in `runs` through `steps` got past its last Step:
- * true for no Steps, false for no Runs.
- */
-export function passSucceeded(
-	steps: readonly Step[],
-	runs: TicketRun[],
-): boolean {
-	const [first] = steps;
-	const lastStep = steps.at(-1);
-	if (first === undefined || lastStep === undefined) return true;
-	const last = runs.slice(latestPassStart(runs, first.id)).at(-1);
-	return (
-		last !== undefined &&
-		last.step === lastStep.id &&
-		last.ended !== undefined &&
-		runCounts(lastStep, last.outcome)
-	);
 }
 
 // How many minutes a failed agent Step waits before each of its retries.
@@ -168,18 +147,6 @@ function waitUnlessInterrupted(ms: number): Promise<boolean> {
 		process.on("SIGINT", interrupted);
 		process.on("SIGTERM", interrupted);
 	});
-}
-
-// Whether a pass goes on from a Run of `step` that ended with `outcome`, as
-// spelled in the header: it ended `ok`, or `exit N` on a shell Step the
-// Workflow lets the pass go on from.
-function runCounts(step: Step, outcome: string | undefined): boolean {
-	return (
-		outcome === "ok" ||
-		(step.type === "shell" &&
-			step.onFail === "continue" &&
-			shellExitCode(outcome) !== undefined)
-	);
 }
 
 // Where `owner`'s pass through `steps`, whose Runs are `runs`, continues: at
@@ -241,7 +208,7 @@ async function pickUpPoint(
 				reason: `has no Run in ${words.pass}`,
 			};
 		}
-		if (!runCounts(step, run.outcome)) {
+		if (!runGoesOn(step, run.outcome)) {
 			return {
 				outcome: "refused",
 				stepName: step.name,

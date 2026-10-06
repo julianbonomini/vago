@@ -210,8 +210,10 @@ export function printWorktreeClose(close: WorktreeClose): void {
  * Prints `goal.md` without its header, as `goalBody`, each of its paragraphs
  * on one line, and then in Markdown what each Ticket's Steps put in the Goal
  * report, collapsed by Ticket, the Workflow the Goal names and what the
- * Goal's Runs took and cost: a table with one row per Ticket and a total, and
- * every Run in a collapsed table under it, its outcome marked when it
+ * Goal's Runs took and cost: a table with one row per Ticket, a row for the
+ * `before_all` Runs before them and one for the `after_all` Runs after them
+ * when there are any, and a total, and every Run in a collapsed table under
+ * it in the same order, its outcome marked when it
  * resumed a session or fell back to a fresh one. Made to be a PR description.
  * `outputs` holds the output of each Run whose Step puts it in the report, by
  * the Run's log; a Ticket shows the latest such Run of each Step that ended
@@ -246,12 +248,24 @@ export function printGoalReport(
 	}
 	lines.push("## Runs", "", `Workflow: ${state.workflow}`, "");
 	lines.push("| Ticket | Runs | Took | Cost |", "|---|---:|---:|---:|");
-	const { tickets, total } = goalTotals(state);
-	for (const { name, totals } of tickets) {
+	// A Goal Step group with no Runs gets no row, so a Workflow without one
+	// reads as before.
+	const group = (name: string, runs: TicketRun[]) =>
+		runs.length === 0 ? [] : [{ name, runs }];
+	const owners = [
+		...group("before_all", state.beforeAll),
+		...state.tickets.map(({ ticket, runs }) => ({ name: ticket.name, runs })),
+		...group("after_all", state.afterAll),
+	];
+	for (const { name, runs } of owners) {
+		const totals = runTotals(runs);
 		lines.push(
 			`| ${name} | ${totals.runs} | ${duration(totals.tookMs)} | ${dollars(totals.costUsd)} |`,
 		);
 	}
+	// Over every Run, not the rows' sums: floats added in another order can
+	// round the total to a different cent.
+	const total = runTotals(owners.flatMap(({ runs }) => runs));
 	lines.push(
 		`| **Total** | **${total.runs}** | **${duration(total.tookMs)}** | **${dollars(total.costUsd)}** |`,
 	);
@@ -260,7 +274,7 @@ export function printGoalReport(
 		"| Ticket | Step | Outcome | Took | Cost |",
 		"|---|---|---|---:|---:|",
 	);
-	for (const { ticket, runs } of state.tickets) {
+	for (const { name, runs } of owners) {
 		for (const run of runs) {
 			const took =
 				run.ended === undefined
@@ -271,7 +285,7 @@ export function printGoalReport(
 				...(run.resume === undefined ? [] : [ticketRunResumeWords[run.resume]]),
 			].join(", ");
 			lines.push(
-				`| ${ticket.name} | ${run.step} | ${outcome} | ${took} | ${dollars(run.costUsd)} |`,
+				`| ${name} | ${run.step} | ${outcome} | ${took} | ${dollars(run.costUsd)} |`,
 			);
 		}
 	}

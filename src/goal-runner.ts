@@ -5,7 +5,7 @@
 // the Goal is done, and resetting a stuck Ticket. Hides the order of a Goal's
 // lifecycle, where its Steps run, and when the Goal's Goal Steps run.
 
-import { type PassEnd, passSucceeded, runPass } from "./pass-runner.ts";
+import { type PassEnd, runPass } from "./pass-runner.ts";
 import {
 	printGoalSummary,
 	printWorktree,
@@ -16,7 +16,8 @@ import {
 	closeOpenRun,
 	createGoal,
 	type GoalState,
-	latestPassStart,
+	latestAfterAllPass,
+	passSucceeded,
 	readGoal,
 	setStatus,
 	type TicketRun,
@@ -144,13 +145,15 @@ async function runClaimedGoal(root: string, goal: string): Promise<GoalEnd> {
 		const worktree = await openWorktree(root, goal);
 		printWorktree(worktree);
 		let end: PassEnd = "done";
-		const beforeAllRuns = groupRuns(beforeAll, state);
-		if (state.next !== undefined && !passSucceeded(beforeAll, beforeAllRuns)) {
+		if (
+			state.next !== undefined &&
+			!passSucceeded(beforeAll, state.beforeAll)
+		) {
 			end = await runPass(
 				beforeAll,
 				{ kind: "goal", root, goal, group: "before_all" },
 				worktree,
-				beforeAllRuns,
+				state.beforeAll,
 			);
 		}
 		while (end === "done") {
@@ -187,17 +190,11 @@ async function runClaimedGoal(root: string, goal: string): Promise<GoalEnd> {
 	return done ? "done" : "unfinished";
 }
 
-// The Runs of `state`'s Goal Steps that are of `steps`, one Goal Step list.
-function groupRuns(steps: readonly Step[], state: GoalState): TicketRun[] {
-	return state.runs.filter(({ step }) => steps.some(({ id }) => id === step));
-}
-
 // The Runs to pick `afterAll` up from when the Goal owes it a pass, or
 // undefined when it doesn't. It's owed once the Goal has Tickets, every one
-// done, and its latest pass hasn't succeeded since the last Ticket Run
-// started. When a Ticket ran after the latest pass started, as one an
-// `after_all` Step added does, the pass starts over, given no Runs;
-// otherwise a pass that went stuck is picked up.
+// done, and its latest pass, as `latestAfterAllPass` gives it, hasn't
+// succeeded: a pass that went stuck is picked up, and one that Tickets ran
+// after starts over, given no Runs.
 function afterAllOwed(
 	afterAll: readonly Step[],
 	state: GoalState,
@@ -206,13 +203,7 @@ function afterAllOwed(
 	if (first === undefined || state.tickets.length === 0 || !state.done) {
 		return undefined;
 	}
-	const runs = groupRuns(afterAll, state);
-	const passStarted = runs[latestPassStart(runs, first.id)]?.started;
-	if (passStarted === undefined) return [];
-	const ticketsRanSince = state.tickets.some(({ runs }) =>
-		runs.some(({ started }) => started > passStarted),
-	);
-	if (ticketsRanSince) return [];
+	const runs = latestAfterAllPass(state, first.id);
 	return passSucceeded(afterAll, runs) ? undefined : runs;
 }
 

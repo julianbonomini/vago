@@ -145,8 +145,10 @@ export type GoalState = {
 	workflow: string;
 	/** Undefined for a Goal made before Vago recorded it. */
 	created: Date | undefined;
-	/** The Runs of the Goal's Goal Steps, from `goal.md`'s `[[runs]]`, in the order they ran. */
-	runs: TicketRun[];
+	/** The Runs of the Goal's `before_all` Steps, from `goal.md`'s `[[runs]]`, in the order they ran. */
+	beforeAll: TicketRun[];
+	/** The Runs of the Goal's `after_all` Steps, like `beforeAll`. */
+	afterAll: TicketRun[];
 	/**
 	 * Every Ticket of the Goal, lowest number first, with its status, the name
 	 * of the Workflow it goes through (which might not exist) and its
@@ -195,6 +197,83 @@ export function latestPassStart(
 		0,
 		runs.findLastIndex(({ step }) => step === firstStepId),
 	);
+}
+
+/**
+ * A Step as a pass judges its Runs: its `id`, and `onFail`, which only a
+ * shell Step has, `continue` when the pass goes on after it exits non-zero.
+ */
+export type PassStep = {
+	readonly id: string;
+	readonly onFail?: "stop" | "continue";
+};
+
+/**
+ * Whether the latest pass in `runs`, a Ticket's or a Goal Step list's Runs
+ * in the order they ran, through `steps` got past its last Step: true for no
+ * Steps, false for no Runs.
+ */
+export function passSucceeded(
+	steps: readonly PassStep[],
+	runs: TicketRun[],
+): boolean {
+	const [first] = steps;
+	const lastStep = steps.at(-1);
+	if (first === undefined || lastStep === undefined) return true;
+	const last = runs.slice(latestPassStart(runs, first.id)).at(-1);
+	return (
+		last !== undefined &&
+		last.step === lastStep.id &&
+		last.ended !== undefined &&
+		runGoesOn(lastStep, last.outcome)
+	);
+}
+
+/**
+ * Whether a pass goes on from a Run of `step` that ended with `outcome`, as
+ * the header spells it: it ended `ok`, or `exit N` on a Step whose `onFail`
+ * is `continue`.
+ */
+export function runGoesOn(
+	step: PassStep,
+	outcome: string | undefined,
+): boolean {
+	return (
+		outcome === "ok" ||
+		(step.onFail === "continue" && shellExitCode(outcome) !== undefined)
+	);
+}
+
+/**
+ * The exit code of a shell Run whose outcome, as the header spells it, is
+ * `outcome`: 0 for `ok`, N for `exit N`, and undefined for any other.
+ */
+export function shellExitCode(outcome: string | undefined): number | undefined {
+	if (outcome === "ok") return 0;
+	const exit = /^exit (\d+)$/.exec(outcome ?? "");
+	return exit?.[1] === undefined ? undefined : Number(exit[1]);
+}
+
+/**
+ * The Runs of the latest pass of the Goal's `after_all`, read as `state`,
+ * whose first Step is `firstStepId`: none before its first Run, and none
+ * once a Ticket Run started after that pass did, as a Ticket an `after_all`
+ * Step added does, since `after_all` then runs again from its start.
+ */
+export function latestAfterAllPass(
+	state: GoalState,
+	firstStepId: string,
+): TicketRun[] {
+	const pass = state.afterAll.slice(
+		latestPassStart(state.afterAll, firstStepId),
+	);
+	const passStarted = pass[0]?.started;
+	const ticketsRanSince =
+		passStarted !== undefined &&
+		state.tickets.some(({ runs }) =>
+			runs.some(({ started }) => started > passStarted),
+		);
+	return ticketsRanSince ? [] : pass;
 }
 
 /**
@@ -261,6 +340,10 @@ export async function readGoal(root: string, goal: string): Promise<GoalState> {
 	const { workflow, created, runs, body } = await readGoalFile(
 		await existingGoalFile(root, goal),
 	);
+	const goalRuns = (group: GoalStepGroup) =>
+		runs
+			.filter(({ log }) => log.startsWith(goalStepLogStem(group, "")))
+			.map((run) => ticketRunOf(run, root, goal));
 	const ticketFolder = join(folder, "tickets");
 	const entries = (await readTicketFolder(goal, ticketFolder)).map(
 		({ name, number, header, body }) => ({
@@ -294,7 +377,8 @@ export async function readGoal(root: string, goal: string): Promise<GoalState> {
 		description: afterHeading(body),
 		workflow,
 		created,
-		runs: runs.map((run) => ticketRunOf(run, root, goal)),
+		beforeAll: goalRuns("before_all"),
+		afterAll: goalRuns("after_all"),
 		tickets,
 		// The status is checked again only so its type is `ready` or `stuck`.
 		next:
@@ -477,13 +561,11 @@ export async function recordRunStart(
 ): Promise<TicketRunEntry> {
 	const { position, log } = await rewriteRuns(owner, (runs) => {
 		const position = runs.length + 1;
-		// Named by group, a Goal Step's log can't collide with a Ticket's.
-		const prefix =
-			owner.kind === "ticket"
-				? ticketNumberText(owner.ticket.number)
-				: owner.group;
 		// The position in the name gives a reset Ticket's new Runs new logs.
-		const logStem = `logs/${prefix}-${step.id}-${position}`;
+		const logStem =
+			owner.kind === "ticket"
+				? `logs/${ticketNumberText(owner.ticket.number)}-${step.id}-${position}`
+				: goalStepLogStem(owner.group, `${step.id}-${position}`);
 		const entry =
 			step.type === "agent"
 				? {
@@ -699,6 +781,14 @@ async function existingGoalFile(root: string, goal: string): Promise<string> {
 function goalFolder(root: string, goal: string): string {
 	checkName("Goal name", goal);
 	return join(root, goalsFolderName, goal);
+}
+
+// The log path, as the header spells it and without its extension, of a Run
+// of Goal Step group `group` named by `rest`. Named by group, a Goal Step's
+// log can't collide with a Ticket's, and `readGoal` tells the groups' Runs
+// apart by it.
+function goalStepLogStem(group: GoalStepGroup, rest: string): string {
+	return `logs/${group}-${rest}`;
 }
 
 // A Run's log path as the header spells it, relative to the folder of Goal

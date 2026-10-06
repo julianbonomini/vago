@@ -19,6 +19,7 @@ import {
 	recordRunSession,
 	recordRunStart,
 	runOwnerGoal,
+	shellExitCode,
 	type TicketRun,
 	type TicketRunEntry,
 } from "./tickets/tickets.ts";
@@ -359,16 +360,6 @@ export function spellOutcome(outcome: RunOutcome): string {
 		return `permission-mode ${outcome.mode}`;
 	}
 	return outcome.kind;
-}
-
-/**
- * The exit code of a shell Run whose outcome, as `spellOutcome` spelled it,
- * is `outcome`: 0 for `ok`, N for `exit N`, and undefined for any other.
- */
-export function shellExitCode(outcome: string | undefined): number | undefined {
-	if (outcome === "ok") return 0;
-	const exit = /^exit (\d+)$/.exec(outcome ?? "");
-	return exit?.[1] === undefined ? undefined : Number(exit[1]);
 }
 
 // A shell Run's output for later Steps' prompts.
