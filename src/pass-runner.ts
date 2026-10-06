@@ -1,6 +1,7 @@
 // One pass through a list of Steps for a Ticket or for the Goal: where it
 // picks up, the Steps in order, retries, and how it ends. Hides how a pass
-// picks up and rebuilds earlier outputs, the `last-ticket` skip, and the retry count and waits.
+// picks up and rebuilds earlier outputs, the `last-ticket` skip, and the
+// retry count and waits.
 
 import {
 	printPassStarted,
@@ -40,9 +41,9 @@ export type PassEnd = "done" | "stuck" | "refused";
  * A failed agent Step is retried after 1, 1 and 5 minutes. A Ticket's pass
  * skips a `last-ticket` Step unless it is the Goal's last Ticket; the Goal's
  * runs every Step. Prints a failed Step as stuck, or a pass that can't be
- * picked up naming the Step, and returns how it ended. A Ticket owner is set `running` once its pass is
- * picked up, before its first Step; setting it `done` or `stuck` after is
- * the caller's. A refused pass writes nothing.
+ * picked up naming the Step, and returns how it ended. A Ticket owner is set
+ * `running` once its pass is picked up, before its first Step; setting it
+ * `done` or `stuck` after is the caller's. A refused pass writes nothing.
  */
 export async function runPass(
 	steps: readonly Step[],

@@ -3,7 +3,7 @@
 // then takes the Goal's Tickets one at a time through the Steps of their
 // Workflow in the Goal's worktree, then its `after_all`, and closes it once
 // the Goal is done, and resetting a stuck Ticket. Hides the order of a Goal's
-// lifecycle, where its Steps run, and when the Goal's Goal Steps run.
+// lifecycle and where its Steps run.
 
 import { type PassEnd, runPass } from "./pass-runner.ts";
 import {
@@ -15,15 +15,12 @@ import {
 	addTicket,
 	closeOpenRun,
 	createGoal,
-	type GoalState,
-	latestAfterAllPass,
-	passSucceeded,
+	goalStepsPass,
 	readGoal,
 	setStatus,
-	type TicketRun,
 	withGoalClaimed,
 } from "./tickets/tickets.ts";
-import { loadWorkflow, type Step, type Workflow } from "./workflow.ts";
+import { loadWorkflow, type Workflow } from "./workflow.ts";
 import { closeWorktree, openWorktree } from "./worktree.ts";
 
 /**
@@ -140,20 +137,19 @@ async function runClaimedGoal(root: string, goal: string): Promise<GoalEnd> {
 	state = await readGoal(root, goal);
 	const { beforeAll, afterAll } = await workflowNamed(state.workflow);
 	const opened =
-		state.next !== undefined || afterAllOwed(afterAll, state) !== undefined;
+		state.next !== undefined ||
+		goalStepsPass(state, "after_all", afterAll).owed;
 	if (opened) {
 		const worktree = await openWorktree(root, goal);
 		printWorktree(worktree);
 		let end: PassEnd = "done";
-		if (
-			state.next !== undefined &&
-			!passSucceeded(beforeAll, state.beforeAll)
-		) {
+		const beforeAllPass = goalStepsPass(state, "before_all", beforeAll);
+		if (beforeAllPass.owed) {
 			end = await runPass(
 				beforeAll,
 				{ kind: "goal", root, goal, group: "before_all" },
 				worktree,
-				state.beforeAll,
+				beforeAllPass.runs,
 			);
 		}
 		while (end === "done") {
@@ -170,13 +166,13 @@ async function runClaimedGoal(root: string, goal: string): Promise<GoalEnd> {
 				// A refused Ticket is left as it was.
 				if (end !== "refused") await setStatus(ticket, end);
 			} else {
-				const afterAllRuns = afterAllOwed(afterAll, state);
-				if (afterAllRuns === undefined) break;
+				const afterAllPass = goalStepsPass(state, "after_all", afterAll);
+				if (!afterAllPass.owed) break;
 				end = await runPass(
 					afterAll,
 					{ kind: "goal", root, goal, group: "after_all" },
 					worktree,
-					afterAllRuns,
+					afterAllPass.runs,
 				);
 			}
 			state = await readGoal(root, goal);
@@ -185,26 +181,9 @@ async function runClaimedGoal(root: string, goal: string): Promise<GoalEnd> {
 	printGoalSummary(goal, state);
 	// `after_all` makes a Goal with every Ticket done unfinished until it has
 	// gone through them.
-	const done = state.done && afterAllOwed(afterAll, state) === undefined;
+	const done = state.done && !goalStepsPass(state, "after_all", afterAll).owed;
 	if (opened && done) printWorktreeClose(await closeWorktree(root, goal));
 	return done ? "done" : "unfinished";
-}
-
-// The Runs to pick `afterAll` up from when the Goal owes it a pass, or
-// undefined when it doesn't. It's owed once the Goal has Tickets, every one
-// done, and its latest pass, as `latestAfterAllPass` gives it, hasn't
-// succeeded: a pass that went stuck is picked up, and one that Tickets ran
-// after starts over, given no Runs.
-function afterAllOwed(
-	afterAll: readonly Step[],
-	state: GoalState,
-): TicketRun[] | undefined {
-	const [first] = afterAll;
-	if (first === undefined || state.tickets.length === 0 || !state.done) {
-		return undefined;
-	}
-	const runs = latestAfterAllPass(state, first.id);
-	return passSucceeded(afterAll, runs) ? undefined : runs;
 }
 
 /**

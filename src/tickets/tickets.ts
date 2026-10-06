@@ -208,15 +208,10 @@ export type PassStep = {
 	readonly onFail?: "stop" | "continue";
 };
 
-/**
- * Whether the latest pass in `runs`, a Ticket's or a Goal Step list's Runs
- * in the order they ran, through `steps` got past its last Step: true for no
- * Steps, false for no Runs.
- */
-export function passSucceeded(
-	steps: readonly PassStep[],
-	runs: TicketRun[],
-): boolean {
+// Whether the latest pass in `runs`, a Goal Step list's Runs in the order
+// they ran, through `steps` got past its last Step: true for no Steps, false
+// for no Runs.
+function passSucceeded(steps: readonly PassStep[], runs: TicketRun[]): boolean {
 	const [first] = steps;
 	const lastStep = steps.at(-1);
 	if (first === undefined || lastStep === undefined) return true;
@@ -255,25 +250,51 @@ export function shellExitCode(outcome: string | undefined): number | undefined {
 }
 
 /**
- * The Runs of the latest pass of the Goal's `after_all`, read as `state`,
- * whose first Step is `firstStepId`: none before its first Run, and none
- * once a Ticket Run started after that pass did, as a Ticket an `after_all`
- * Step added does, since `after_all` then runs again from its start.
+ * A Goal Step group's latest pass as the Goal stands: whether it got past
+ * its last Step, whether `vago run` owes it now, and its Runs, which an owed
+ * pass picks up from.
  */
-export function latestAfterAllPass(
+export type GoalStepsPass = {
+	succeeded: boolean;
+	owed: boolean;
+	runs: TicketRun[];
+};
+
+/**
+ * The latest pass of the Goal's `group`, read as `state`, through `steps`,
+ * the group's Steps in the Goal's Workflow. Its Runs are none before its
+ * first Run, and for `after_all` none once a Ticket Run started after that
+ * pass did, as a Ticket an `after_all` Step added does, since `after_all`
+ * then starts over. A pass is owed when it hasn't succeeded and, for
+ * `before_all`, the Goal has a Ticket to take next, or, for `after_all`,
+ * the Goal has Tickets and every one is done. A group with no Steps is
+ * never owed.
+ */
+export function goalStepsPass(
 	state: GoalState,
-	firstStepId: string,
-): TicketRun[] {
-	const pass = state.afterAll.slice(
-		latestPassStart(state.afterAll, firstStepId),
-	);
+	group: GoalStepGroup,
+	steps: readonly PassStep[],
+): GoalStepsPass {
+	const groupRuns = group === "before_all" ? state.beforeAll : state.afterAll;
+	const [first] = steps;
+	if (first === undefined) {
+		return { succeeded: true, owed: false, runs: groupRuns };
+	}
+	const pass = groupRuns.slice(latestPassStart(groupRuns, first.id));
 	const passStarted = pass[0]?.started;
 	const ticketsRanSince =
+		group === "after_all" &&
 		passStarted !== undefined &&
 		state.tickets.some(({ runs }) =>
 			runs.some(({ started }) => started > passStarted),
 		);
-	return ticketsRanSince ? [] : pass;
+	const runs = ticketsRanSince ? [] : pass;
+	const due =
+		group === "before_all"
+			? state.next !== undefined
+			: state.tickets.length > 0 && state.done;
+	const succeeded = passSucceeded(steps, runs);
+	return { succeeded, owed: due && !succeeded, runs };
 }
 
 /**

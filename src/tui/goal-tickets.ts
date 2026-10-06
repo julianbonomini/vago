@@ -8,9 +8,8 @@
 
 import {
 	type GoalState,
-	latestAfterAllPass,
+	goalStepsPass,
 	latestPassStart,
-	passSucceeded,
 	type TicketRun,
 	type TicketRunResume,
 	type TicketStatus,
@@ -155,8 +154,9 @@ export type GoalWorkflowSteps = {
  * A group is done when its latest pass got past its last Step, stuck when
  * that pass stopped short and no `vago run` holds the Goal, and ready with
  * no Runs, as is an `after_all` whose latest pass started before a Ticket
- * Run did, since it runs again. A `before_all` with no Runs isn't listed
- * once every Ticket is done, since `vago run` then never runs it.
+ * Run did, since it runs again. A `before_all` with no Runs is listed only
+ * while `goalStepsPass` says the Goal owes it, since `vago run` runs it only
+ * before a Ticket.
  */
 export function goalTickets(
 	state: GoalState,
@@ -206,29 +206,21 @@ export function goalTickets(
 		};
 	});
 	const own = workflows.get(state.workflow);
-	// A group's entry, or none when it has no Steps and no Runs.
+	// A group's entry, or none when it has no Runs and, for `before_all`, the
+	// Goal doesn't owe it or, for `after_all`, it has no Steps.
 	const groupEntry = (
 		group: GoalStepGroup,
 		steps: NamedStep[],
 		groupRuns: TicketRun[],
 	): GoalTicket[] => {
-		if (steps.length === 0 && groupRuns.length === 0) return [];
-		const neverRuns =
-			group === "before_all" &&
-			groupRuns.length === 0 &&
-			state.tickets.length > 0 &&
-			state.done;
-		if (neverRuns) return [];
+		const latest = goalStepsPass(state, group, steps);
+		const listed =
+			groupRuns.length > 0 ||
+			(group === "before_all" ? latest.owed : steps.length > 0);
+		if (!listed) return [];
 		const runs = timed(groupRuns, steps);
-		const [first] = steps;
-		const passRuns =
-			first === undefined
-				? groupRuns
-				: group === "after_all"
-					? latestAfterAllPass(state, first.id)
-					: groupRuns.slice(latestPassStart(groupRuns, first.id));
-		const pass = timed(passRuns, steps);
-		const mark = goalStepsMark(passSucceeded(steps, passRuns), pass, claimed);
+		const pass = timed(latest.runs, steps);
+		const mark = goalStepsMark(latest.succeeded, pass, claimed);
 		const retryAt = groupRuns.at(-1)?.retryAt;
 		const onStep = runningStep(
 			pass,
