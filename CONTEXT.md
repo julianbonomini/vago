@@ -45,8 +45,16 @@ An outcome the human wants for a Project, from a one-Ticket feature to a whole a
 _Avoid_: epic, mission
 
 **Planning item**:
-A Goal still being planned: a folder in `.vago-goals/` with a `planning/` folder and no `goal.md`. It shows in the Goals list as `planning`, has a name the human may change, and can be discarded. It is no Goal: `vago run` doesn't find it, and it has no Workflow, Tickets or Runs.
+A Goal still being planned: a folder in `.vago-goals/` with a `planning/` folder and no `goal.md`. It shows in the Goals list as `planning`, has a name the human may change, and can be discarded. It is no Goal: `vago run` doesn't find it, and it has no Workflow, Tickets or Runs. It holds its planning chat.
 _Avoid_: draft, idea, proposal
+
+**Planning chat**:
+A planning item's conversation with its planning agent, saved under its `planning/` folder and continued across TUI sessions.
+_Avoid_: session, thread
+
+**Planning turn**:
+One message the human sends a planning item's agent and the agent's response to it. It is not a Run: it belongs to no Step, Ticket or Goal.
+_Avoid_: Run, exchange
 
 **Run**:
 One Harness session performing one agent Step on one Ticket, or for the Goal in a Goal Step, such as implement, review or discuss; a Ticket usually takes several.

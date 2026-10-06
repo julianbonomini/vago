@@ -34,6 +34,13 @@ export const permissionDeniedFixture = fixture(
  */
 export const acceptEditsFixture = fixture("claude-code-accept-edits.jsonl");
 
+/**
+ * An Opus session as a planning turn starts one: read-only tools in
+ * `dontAsk` mode, run under the sandbox in a Project with `notes.txt`. It
+ * reads the file and answers in one sentence.
+ */
+export const planningFixture = fixture("claude-code-planning.jsonl");
+
 // Each Codex fixture was recorded from `codex exec --json --approve-for-me
 // --model <model> -` in a Goal's worktree, with the recording's paths
 // replaced.

@@ -135,6 +135,16 @@ test("init copies the starter into .vago/ verbatim and vago run accepts both Wor
 	}
 });
 
+test("init writes the planning prompt a planning item's agent starts from", async () => {
+	const root = await makeProject({});
+
+	await runVago(root, ["init"]);
+
+	expect(await Bun.file(join(root, ".vago/prompts/planning.md")).text()).toBe(
+		await Bun.file(join(starter, "prompts/planning.md")).text(),
+	);
+});
+
 test("the reinstalled binary's init copies the same starter as the source", async () => {
 	const root = await makeProject({});
 	const home = await mkdtemp(join(tmpdir(), "vago-home-"));

@@ -1,9 +1,9 @@
 // The entry to the TUI that a bare `vago` opens on a terminal: how the
 // terminal is held while it is open and given back on every way out. It
-// reads, and writes only to start Goals and to make, rename and discard
-// planning items (ADR 0005), and is drawn with OpenTUI and Solid (ADR 0006).
-// Only `cli.ts` imports this file, and only lazily, so no command loads
-// OpenTUI.
+// reads, and writes only to start Goals, to make, rename and discard
+// planning items, and to send a planning item's agent a message (ADR 0005),
+// and is drawn with OpenTUI and Solid (ADR 0006). Only `cli.ts` imports this
+// file, and only lazily, so no command loads OpenTUI.
 
 import { format } from "node:util";
 import { createCliRenderer } from "@opentui/core";
@@ -25,7 +25,8 @@ import { theme } from "./theme.ts";
  * shown, raw mode off. Holds what is written to stderr and `console`
  * meanwhile and prints it afterwards. Throws, after restoring the terminal,
  * any error the view hit. Needs stdin and stdout to be terminals. `vago` is
- * the command that runs this same `vago`, which the TUI starts Goals with.
+ * the command that runs this same `vago`, which the TUI starts Goals and
+ * planning turns with.
  */
 export async function openTui(root: string, vago: string[]): Promise<void> {
 	return holdTerminal(() => <ProjectView root={root} vago={vago} />);

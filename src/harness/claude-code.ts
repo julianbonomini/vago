@@ -177,6 +177,12 @@ export const claudeCode: HarnessCli = {
 			...sessionFlags(model, args),
 		];
 	},
+	readOnlyCommand(model) {
+		return ["claude", "-p", ...readOnlyFlags(model)];
+	},
+	readOnlyResumeCommand(sessionId, model) {
+		return ["claude", "-p", "--resume", sessionId, ...readOnlyFlags(model)];
+	},
 	events(line, command) {
 		const event = parseJson(line);
 		const denied = PermissionDeniedEvent.safeParse(event);
@@ -248,6 +254,25 @@ function sessionFlags(model: string, args: readonly string[]): string[] {
 		"--model",
 		model,
 		...args,
+	];
+}
+
+// What a read-only session runs with: only tools that read files or load a
+// Skill, and `dontAsk`, which refuses any call those tools don't cover
+// rather than wait for a human. No MCP server either, since one can change
+// things the tools list doesn't name.
+function readOnlyFlags(model: string): string[] {
+	return [
+		"--output-format",
+		"stream-json",
+		"--verbose",
+		"--permission-mode",
+		"dontAsk",
+		"--strict-mcp-config",
+		"--tools",
+		"Read,Grep,Glob,Skill",
+		"--model",
+		model,
 	];
 }
 

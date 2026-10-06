@@ -22,6 +22,9 @@ import goalReviewPrompt from "../starter/prompts/goal-review.md" with {
 import implementPrompt from "../starter/prompts/implement.md" with {
 	type: "text",
 };
+import planningPrompt from "../starter/prompts/planning.md" with {
+	type: "text",
+};
 import productPrompt from "../starter/prompts/product.md" with { type: "text" };
 import reviewPrompt from "../starter/prompts/review.md" with { type: "text" };
 import smallImplementPrompt from "../starter/prompts/small-implement.md" with {
@@ -96,6 +99,7 @@ const starterFiles: Record<string, string> = {
 	".vago/prompts/small-review.md": smallReviewPrompt,
 	".vago/prompts/goal-review.md": goalReviewPrompt,
 	".vago/prompts/describe.md": describePrompt,
+	".vago/prompts/planning.md": planningPrompt,
 	".vago/scripts/branch.sh": branchScript,
 	".vago/scripts/merge.sh": mergeScript,
 	".vago/scripts/github.sh": githubScript,

@@ -142,10 +142,18 @@ export type Harness = {
 		args: readonly string[],
 	): string[];
 	/**
-	 * What one stream line of the session started with `command` or
-	 * `resumeCommand`, the argv it gave, carries. Fields the line doesn't
-	 * carry are left out, so the kernel spreads each result over the last; a
-	 * line that isn't an event it knows gives `{}`.
+	 * The argv that starts a fresh session on `model` whose tools can read
+	 * files and load Skills but never change a file, reading its prompt on
+	 * stdin and streaming as `command()`'s does.
+	 */
+	readOnlyCommand(model: string): string[];
+	/** As `readOnlyCommand`, resuming session `sessionId` with the message on stdin. */
+	readOnlyResumeCommand(sessionId: string, model: string): string[];
+	/**
+	 * What one stream line of the session started with `command`,
+	 * `resumeCommand` or a read-only command, the argv it gave, carries.
+	 * Fields the line doesn't carry are left out, so the kernel spreads each
+	 * result over the last; a line that isn't an event it knows gives `{}`.
 	 */
 	readLine(line: string, command: readonly string[]): HarnessSessionReport;
 	/**

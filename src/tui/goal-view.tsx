@@ -9,29 +9,18 @@ import {
 	TextAttributes,
 } from "@opentui/core";
 import { type JSX, useKeyboard, useTerminalDimensions } from "@opentui/solid";
-import {
-	createEffect,
-	createMemo,
-	createSignal,
-	For,
-	on,
-	onCleanup,
-	Show,
-} from "solid-js";
+import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import {
 	findHarness,
 	knownHarness,
 	type RunActivity,
 	type RunToolCalls,
 } from "../harness/registry.ts";
-import { readRunLog, ticketRunResumeWords } from "../tickets/tickets.ts";
+import { ticketRunResumeWords } from "../tickets/tickets.ts";
+import { startGoal } from "./detached-vago.ts";
 import { type GoalRow, ticketTotal } from "./goal-rows.ts";
-import { startGoal } from "./goal-start.ts";
-import type {
-	GoalTicket,
-	GoalTicketRun,
-	GoalTicketStep,
-} from "./goal-tickets.ts";
+import type { GoalTicket, GoalTicketStep } from "./goal-tickets.ts";
+import { liveRunLog } from "./live-run-log.ts";
 import { sharedLine, usePane } from "./pane-grid.ts";
 import { PaneTitle } from "./pane-title.tsx";
 import {
@@ -121,7 +110,7 @@ export function GoalView(props: {
 			: runs.length - 1;
 	};
 	const run = () => ticket()?.runs[runIndex()];
-	const log = liveRunLog(run);
+	const log = liveRunLog(() => run()?.log);
 	// A log whose Harness this build doesn't know shows as text.
 	const activity = createMemo(() => {
 		const harness = run()?.harness;
@@ -879,57 +868,6 @@ function RunsPane(props: {
 			</Show>
 		</box>
 	);
-}
-
-// How often the shown Run's log is read again: what it adds shows within
-// this.
-const refreshMs = 1000;
-
-// The log of the Run `run` gives, as read so far.
-type ShownLog = {
-	/** The log's path, which tells one Run's log from another's. */
-	log: string;
-	text: string;
-	/** The bytes of the log `text` holds, to skip on the next read. */
-	end: number;
-};
-
-// The log of the Run `run` gives, undefined until the first read of it ends,
-// so another Run's log never shows under this one's title. Read again every
-// `refreshMs` for as long as the calling component lives, each read taking
-// only what the log added since the last.
-function liveRunLog(
-	run: () => GoalTicketRun | undefined,
-): () => ShownLog | undefined {
-	const [shown, setShown] = createSignal<ShownLog>();
-	let reading = false;
-	const read = async () => {
-		const log = run()?.log;
-		if (log === undefined || reading) return;
-		reading = true;
-		try {
-			const last = shown();
-			const before = last?.log === log ? last : undefined;
-			const piece = await readRunLog(log, before?.end ?? 0);
-			if (before !== undefined && piece.added === "") return;
-			setShown({
-				log,
-				text: (before?.text ?? "") + piece.added,
-				end: piece.end,
-			});
-		} finally {
-			reading = false;
-		}
-		// Another Run picked during the read is read now, not a refresh later.
-		if (run()?.log !== log) read();
-	};
-	createEffect(on(() => run()?.log, read));
-	const timer = setInterval(read, refreshMs);
-	onCleanup(() => clearInterval(timer));
-	return () => {
-		const last = shown();
-		return last?.log === run()?.log ? last : undefined;
-	};
 }
 
 // The `selected`th Run of `ticket` across the screen, `width` columns wide

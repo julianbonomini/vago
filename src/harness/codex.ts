@@ -90,6 +90,13 @@ export const codex: HarnessCli = {
 		// before it, to `exec`.
 		return [...execCommand(model, args), "resume", sessionId, "-"];
 	},
+	// Codex's own read-only sandbox lets its commands read but not write.
+	readOnlyCommand(model) {
+		return [...readOnlyExecCommand(model), "-"];
+	},
+	readOnlyResumeCommand(sessionId, model) {
+		return [...readOnlyExecCommand(model), "resume", sessionId, "-"];
+	},
 	events(line, command) {
 		const event = parseJson(line);
 		const thread = ThreadStartedEvent.safeParse(event);
@@ -143,6 +150,18 @@ export const codex: HarnessCli = {
 // What a fresh session and a resumed one both run with.
 function execCommand(model: string, args: readonly string[]): string[] {
 	return ["codex", "exec", "--json", guardedMode, "--model", model, ...args];
+}
+
+function readOnlyExecCommand(model: string): string[] {
+	return [
+		"codex",
+		"exec",
+		"--json",
+		"--sandbox",
+		"read-only",
+		"--model",
+		model,
+	];
 }
 
 // A command shows from its start; a file change, which Codex applies at

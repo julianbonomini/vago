@@ -7,6 +7,7 @@
 
 import { newGoal, newTicket, resetTicket, runGoal } from "./goal-runner.ts";
 import { initProject, updateProject } from "./init.ts";
+import { sendPlanningMessage } from "./planning-runner.ts";
 import { printGoalReport } from "./progress.ts";
 import { readRunOutput } from "./step-runner.ts";
 import {
@@ -131,6 +132,13 @@ const planningName: Operand = {
 const planningNewName: Operand = {
 	name: "<new-name>",
 	meaning: "The name it takes.",
+};
+
+const messageFileFlag: RequiredFlag = {
+	name: "--body-file",
+	value: "<path>",
+	times: "once",
+	meaning: "Takes the message from this file, or from stdin when <path> is -.",
 };
 
 const workflowFlag: RequiredFlag = {
@@ -293,6 +301,33 @@ Goal, and a name a Goal or planning item has.`,
 				given.operand(planningName),
 				given.operand(planningNewName),
 			);
+			return 0;
+		},
+	},
+	{
+		name: "plan say",
+		summary: "Send a planning item's agent a message and print its answer",
+		description: `Sends the message to the agent of the planning item's chat and prints its
+answer. The first message starts the agent on .vago/prompts/planning.md in
+this repo; later ones continue the same conversation. The agent can read the
+repo but not change a file in it. Exits 1 with the reason when the response
+fails. It refuses a Goal, an empty message, and an item whose last response
+is still being written.`,
+		operands: [planningName],
+		flags: [messageFileFlag],
+		example: "vago plan say search --body-file -",
+		run: async (root, given) => {
+			const message = await readBodyFile(given.requiredFlag(messageFileFlag));
+			const response = await sendPlanningMessage(
+				root,
+				given.operand(planningName),
+				message ?? "",
+			);
+			if (response.outcome === "failed") {
+				console.error(`vago: ${response.reason}`);
+				return 1;
+			}
+			console.log(response.answer);
 			return 0;
 		},
 	},

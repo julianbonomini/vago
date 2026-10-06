@@ -147,6 +147,22 @@ test("Ctrl-C quits and gives the terminal back", async () => {
 	expect(restoresTerminal(tui.screen.printed(), drawn)).toBe(true);
 });
 
+test("q types into a planning item's chat field, and Ctrl-C still quits", async () => {
+	const root = await makeProject({ ".vago-goals/search/planning/.keep": "" });
+	const tui = openVago(root);
+	await tui.screen.frameWhere((lines) => goalsAt(lines, "1/1") !== -1);
+	tui.press("\r");
+	await tui.screen.frameWhere(
+		(lines) => rowOf(lines, "No messages yet.") !== -1,
+	);
+
+	tui.press("quiet");
+
+	await tui.screen.frameWhere((lines) => rowOf(lines, "> quiet") !== -1);
+	tui.press("\x03");
+	expect(await tui.exited).toBe(0);
+});
+
 test("SIGTERM ends vago and gives the terminal back", async () => {
 	const tui = await openOnGoals();
 	const drawn = tui.screen.printed().length;

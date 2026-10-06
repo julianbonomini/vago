@@ -327,6 +327,7 @@ test("vago nope prints every command's usage, lined up, then points at --help", 
        vago goal report <goal>
        vago plan new <name>
        vago plan rename <name> <new-name>
+       vago plan say <name> --body-file <path>
        vago plan discard <name>
        vago ticket add <goal> <slug> [--blocked-by <NN>]... [--workflow <name>] [--body-file <path>]
        vago ticket reset <goal> <NN>

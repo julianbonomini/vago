@@ -1,8 +1,8 @@
 // Owns `.vago/workflows/<name>.toml` and the prompt and include files each
 // names: which Workflows exist, reading one once, checking it, returning the
-// Workflow a Goal runs with, and building agent prompts. Hides the TOML
-// schema, its defaults, how paths resolve, how include slots merge and the
-// `{{…}}` placeholder syntax.
+// Workflow a Goal runs with, and building agent prompts. Also owns where the
+// planning prompt is. Hides the TOML schema, its defaults, how paths
+// resolve, how include slots merge and the `{{…}}` placeholder syntax.
 
 import { existsSync } from "node:fs";
 import { readdir } from "node:fs/promises";
@@ -427,6 +427,21 @@ async function readIncludes(
 		texts[name] = await file.text();
 	}
 	return texts;
+}
+
+/**
+ * The text of the Project's `.vago/prompts/planning.md`, the instructions a
+ * planning item's agent starts from. Throws an Error naming the path and
+ * `vago update` when it's missing.
+ */
+export async function readPlanningPrompt(root: string): Promise<string> {
+	const file = Bun.file(join(root, vagoFolderName, "prompts", "planning.md"));
+	if (!(await file.exists())) {
+		throw new Error(
+			`The planning prompt ${file.name} doesn't exist; run vago update to add it`,
+		);
+	}
+	return file.text();
 }
 
 /** What an agent prompt's placeholders are filled with. */

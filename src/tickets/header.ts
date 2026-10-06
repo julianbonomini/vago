@@ -1,6 +1,7 @@
 // The `+++` TOML header that opens `goal.md` and every Ticket file: parsing
 // and checking it, writing it back, and rewriting a Ticket's or `goal.md`'s
-// header in place atomically with its body kept byte for byte.
+// header in place atomically with its body kept byte for byte. Also owns
+// that atomic write, which `planning-chat.ts` shares.
 
 import { rename } from "node:fs/promises";
 import { parse, stringify } from "smol-toml";
@@ -131,8 +132,7 @@ export function rewriteGoalHeader<Change>(
 }
 
 // Reads `file` with `read`, lets `change` edit the header, and writes the
-// header and the body back through a temp file renamed over `file`, so a
-// crash never leaves half of each.
+// header and the body back atomically.
 async function rewriteWith<Header extends Record<string, unknown>, Change>(
 	file: string,
 	read: (file: string) => Promise<{ header: Header; body: string }>,
@@ -140,10 +140,21 @@ async function rewriteWith<Header extends Record<string, unknown>, Change>(
 ): Promise<Change> {
 	const { header, body } = await read(file);
 	const changed = change(header);
-	const temp = `${file}.tmp`;
-	await Bun.write(temp, headedText(header, body));
-	await rename(temp, file);
+	await writeFileAtomically(file, headedText(header, body));
 	return changed;
+}
+
+/**
+ * Writes `text` to `file` through a temp file renamed over it, so a crash
+ * leaves the old file or the new one, never half of each.
+ */
+export async function writeFileAtomically(
+	file: string,
+	text: string,
+): Promise<void> {
+	const temp = `${file}.tmp`;
+	await Bun.write(temp, text);
+	await rename(temp, file);
 }
 
 // The checked header of the `goal.md` at `file` and its body exactly as

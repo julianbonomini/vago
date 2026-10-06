@@ -59,11 +59,11 @@ test("n asks for a name and opens a new planning item, which Esc leaves in the l
 	await view.mockInput.typeText("search");
 	view.mockInput.pressEnter();
 
-	const opened = await frameWith(view, "Nothing planned yet.");
+	const opened = await frameWith(view, "No messages yet.");
 	expect(opened).toContain(" search ");
 	expect(await readdir(join(root, ".vago-goals"))).toContain("search");
 	view.mockInput.pressEscape();
-	const list = await frameWithout(view, "Nothing planned yet.");
+	const list = await frameWithout(view, "No messages yet.");
 	expect(rowOf(list, "search")).toContain("planning");
 	expect(list).toContain(" 1/2 ");
 	expect(existsSync(join(root, ".vago-goals/search/goal.md"))).toBe(false);
@@ -123,7 +123,7 @@ test("a planning item opens again after the TUI closes and opens", async () => {
 	await selectRow(view, "search");
 	view.mockInput.pressEnter();
 
-	expect(await frameWith(view, "Nothing planned yet.")).toContain(" search ");
+	expect(await frameWith(view, "No messages yet.")).toContain(" search ");
 });
 
 test("r renames the selected planning item, and the other one stays as it was", async () => {

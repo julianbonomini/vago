@@ -22,6 +22,7 @@ import {
 	discardPlanningItem,
 	renamePlanningItem,
 } from "../tickets/tickets.ts";
+import { startGoal } from "./detached-vago.ts";
 import { GoalPreview } from "./goal-preview.tsx";
 import {
 	type GoalRow,
@@ -31,7 +32,6 @@ import {
 	readGoalRows,
 	ticketTotal,
 } from "./goal-rows.ts";
-import { startGoal } from "./goal-start.ts";
 import { GoalView } from "./goal-view.tsx";
 import { usePane } from "./pane-grid.ts";
 import { PaneTitle } from "./pane-title.tsx";
@@ -114,11 +114,13 @@ function liveGoalRows(root: string): {
  * opens the selected Goal, unless it is broken, in the Goal view in place of
  * all this; its `[` and `]` open the Goal before and after, passing over
  * broken ones and stopping at the ends, and its Esc leaves the selection on
- * the Goal last open. `s` starts the selected Goal in a `vago run` of its
- * own, through the command `vago` (`startGoal`), and the footer says what
- * came of it until the next key. Reads the Goals itself, and again every
- * second, so changes on disk show without a key; the selection stays on its
- * Goal when the rows reorder. Throws what the first read throws.
+ * the Goal last open. Enter on a planning item opens it in the planning
+ * view, which sends its messages through the command `vago`. `s` starts
+ * the selected Goal in a `vago run` of its own, through the command `vago`
+ * (`startGoal`), and the footer says what came of it until the next key.
+ * Reads the Goals itself, and again every second, so changes on disk show
+ * without a key; the selection stays on its Goal when the rows reorder.
+ * Throws what the first read throws.
  */
 export function ProjectView(props: {
 	root: string;
@@ -344,6 +346,8 @@ export function ProjectView(props: {
 							}
 						>
 							<PlanningView
+								root={props.root}
+								vago={props.vago}
 								name={row().goal}
 								onClose={() => setOpened(undefined)}
 							/>

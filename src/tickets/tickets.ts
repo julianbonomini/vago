@@ -5,7 +5,9 @@
 // Ticket and of the Goal's Goal Steps and where each Run's log goes, how a
 // Ticket number is spelled, the lock that marks a Goal as taken by a
 // `vago run`, and the planning items that share `.vago-goals/` with the
-// Goals. Only this file is imported from outside `tickets/`.
+// Goals, with each item's planning chat, its turns' logs and the rule that
+// one turn is open at a time. Only this file is imported from outside
+// `tickets/`.
 
 import { mkdir, readdir, rename, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
@@ -21,6 +23,11 @@ import {
 	type TicketHeader,
 	type TicketRunTable,
 } from "./header.ts";
+import {
+	type PlanningTurnTable,
+	readPlanningChatFile,
+	rewritePlanningChatFile,
+} from "./planning-chat.ts";
 import { readTicketFolder, ticketFilePath } from "./ticket-folder.ts";
 
 /** Where a Ticket stands. Only Alpha writes it. */
@@ -381,7 +388,8 @@ export async function createPlanningItem(
  * Gives planning item `name` of the Project at `root` the name `newName`,
  * with everything it holds. Throws an Error naming the problem, and changes
  * nothing, when there is no such item, `name` is a Goal, a Goal or planning
- * item already has `newName`, or `newName` isn't a valid name.
+ * item already has `newName`, `newName` isn't a valid name, or a response
+ * to the item's chat is still being written.
  */
 export async function renamePlanningItem(
 	root: string,
@@ -389,6 +397,9 @@ export async function renamePlanningItem(
 	newName: string,
 ): Promise<void> {
 	const folder = await existingPlanningItem(root, name);
+	// The `vago plan say` writing it records its end under the old name.
+	const chat = await readPlanningChatFile(planningFolder(folder));
+	if (isOpen(chat.turns?.at(-1))) throw new Error(stillAnswering(name));
 	const newFolder = goalFolder(root, newName);
 	if (await exists(newFolder)) {
 		throw new Error(alreadyExists(newName, newFolder));
@@ -406,6 +417,141 @@ export async function discardPlanningItem(
 	name: string,
 ): Promise<void> {
 	await rm(await existingPlanningItem(root, name), { recursive: true });
+}
+
+/**
+ * One message the human sent a planning item's agent and the agent's
+ * response to it. `log` is the absolute path of the response's stream.
+ * `outcome` is absent while the response is being written; otherwise it is
+ * spelled like a Run's (`ok`, `exit 1`, `permission-mode default`,
+ * `interrupted`), or `error` for a turn that stopped before or around its
+ * session, with `reason` saying why.
+ */
+export type PlanningTurn = {
+	number: number;
+	message: string;
+	startedAt: Date;
+	endedAt?: Date;
+	outcome?: string;
+	reason?: string;
+	log: string;
+};
+
+/**
+ * The conversation of planning item `item`. `harness` and `sessionId` are
+ * absent until a turn's session reports them.
+ */
+export type PlanningChat = {
+	item: string;
+	harness?: string;
+	sessionId?: string;
+	turns: PlanningTurn[];
+};
+
+/** Where `planning-runner.ts` records a turn it started. */
+export type PlanningTurnEntry = {
+	root: string;
+	item: string;
+	number: number;
+	log: string;
+};
+
+/**
+ * The conversation of planning item `item` of the Project at `root`; no
+ * turns when none was sent. Throws an Error naming the folder when `item`
+ * is a Goal or no planning item, and naming the file when its chat is bad.
+ */
+export async function readPlanningChat(
+	root: string,
+	item: string,
+): Promise<PlanningChat> {
+	const folder = planningFolder(await existingPlanningItem(root, item));
+	const chat = await readPlanningChatFile(folder);
+	return {
+		item,
+		harness: chat.harness,
+		sessionId: chat.session_id,
+		turns: (chat.turns ?? []).map((turn, index) => ({
+			number: index + 1,
+			message: turn.message,
+			startedAt: turn.started,
+			endedAt: turn.ended,
+			outcome: turn.outcome,
+			reason: turn.reason,
+			log: join(folder, turn.log),
+		})),
+	};
+}
+
+/**
+ * Appends an open turn holding `message` to `item`'s chat, recording
+ * `harness` as the chat's when it has none, and gives back where the turn
+ * is recorded and its log goes. Throws "a response is still being written"
+ * when the last turn is open, and as `readPlanningChat` does. Survives a
+ * crash (temp file and rename).
+ */
+export async function recordPlanningTurnStart(
+	root: string,
+	item: string,
+	message: string,
+	harness: string,
+): Promise<PlanningTurnEntry> {
+	const folder = planningFolder(await existingPlanningItem(root, item));
+	const { number, log } = await rewritePlanningChatFile(folder, (chat) => {
+		const turns = chat.turns ?? [];
+		if (isOpen(turns.at(-1))) throw new Error(stillAnswering(item));
+		const number = turns.length + 1;
+		const log = `logs/turn-${ticketNumberText(number)}.jsonl`;
+		turns.push({ message, started: new Date(), log });
+		chat.harness ??= harness;
+		chat.turns = turns;
+		return { number, log };
+	});
+	return { root, item, number, log: join(folder, log) };
+}
+
+/** Saves the chat's session id as soon as the Harness reports it. */
+export async function recordPlanningSession(
+	entry: PlanningTurnEntry,
+	sessionId: string,
+): Promise<void> {
+	await rewritePlanningChatFile(entryFolder(entry), (chat) => {
+		chat.session_id = sessionId;
+	});
+}
+
+/** Closes the turn with `outcome`, and `reason` for an `error`. */
+export async function recordPlanningTurnEnd(
+	entry: PlanningTurnEntry,
+	outcome: string,
+	reason?: string,
+): Promise<void> {
+	const folder = entryFolder(entry);
+	await rewritePlanningChatFile(folder, (chat) => {
+		const turn = chat.turns?.[entry.number - 1];
+		if (turn === undefined) {
+			throw new Error(
+				`The planning chat in ${folder} has no turn ${entry.number}`,
+			);
+		}
+		turn.ended = new Date();
+		turn.outcome = outcome;
+		if (reason !== undefined) turn.reason = reason;
+	});
+}
+
+// A turn with no end is one whose response is still being written.
+function isOpen(turn: PlanningTurnTable | undefined): boolean {
+	return turn !== undefined && turn.ended === undefined;
+}
+
+function stillAnswering(item: string): string {
+	return `${item}: a response is still being written`;
+}
+
+// The `planning/` folder of the item `entry` was recorded in.
+function entryFolder(entry: PlanningTurnEntry): string {
+	return planningFolder(goalFolder(entry.root, entry.item));
 }
 
 // Every folder in `.vago-goals`, in name order, with what it holds.
