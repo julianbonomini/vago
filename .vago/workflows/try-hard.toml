@@ -15,6 +15,15 @@
 # {{steps.<id>.output}} and log file names use, and a Step without a name
 # shows its id.
 #
+# Besides [[steps]], which every Ticket goes through, a Workflow can list two
+# groups of Goal Steps, which take the same types and options. [[before_all]]
+# runs once, before the Goal's first Ticket, and not again once it has
+# succeeded. [[after_all]] runs once no Tickets are left, and again after any
+# Ticket added later is done, so a Step that mustn't repeat checks for itself.
+# Goal Steps run in the Goal's worktree on vago/<goal>, with $VAGO_GOAL and
+# $VAGO_PROJECT_ROOT but no Ticket, and {{steps.<id>.output}} reads only Steps
+# of its own group. This Workflow has no before_all.
+#
 # An agent Step with goal_report = true puts its output in the Goal report,
 # which `vago goal report` prints and merge.sh makes the PR's body, collapsed
 # under the Ticket.
@@ -90,3 +99,9 @@ id   = "merge"
 name = "Squash merge"
 type = "shell"
 run  = "sh .vago/scripts/merge.sh"
+
+[[after_all]]
+id   = "ready"
+name = "Ready for review"
+type = "shell"
+run  = "sh .vago/scripts/ready.sh"

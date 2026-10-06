@@ -1,18 +1,18 @@
 # Squash-merges this Ticket's branch as one commit into vago/<goal>, the
 # Goal's branch, which Vago creates and owns, pushes it and makes sure it has
 # a PR to the repo's default branch, described by `vago goal report`, and
-# writes the report's Runs to the end of the Goal's goal.md too. After the
-# Goal's last Ticket, the PR also gets the ready-for-review label and a
-# comment mentioning the human `gh` is logged in as.
+# writes the report's Runs to the end of the Goal's goal.md too. ready.sh,
+# an after_all Step, marks the PR ready for review.
 #
 # Changes a Step left uncommitted go in with the Ticket's work. Calls to
 # GitHub that fail on the network or the service are tried again. Safe to run
 # again after failing or stopping partway: it carries on from the squash, the
-# push or the PR, and never squashes, opens or mentions anything twice. Fails,
-# and so leaves the Ticket stuck, when the Ticket conflicts with vago/<goal>
-# or changed nothing, or when a call fails for good, and its last line says
-# why.
+# push or the PR, and never squashes or opens anything twice. Fails, and so
+# leaves the Ticket stuck, when the Ticket conflicts with vago/<goal> or
+# changed nothing, or when a call fails for good, and its last line says why.
 set -eu
+
+. "$(dirname "$0")/github.sh"
 
 goal="vago/$VAGO_GOAL"
 ticket="$VAGO_GOAL/$VAGO_TICKET"
@@ -26,28 +26,6 @@ fail() {
 	trap - EXIT
 	echo "$1"
 	exit 1
-}
-
-# GitHub's 5xx answers and dropped connections, as gh and git print them.
-transient='HTTP 5[0-9][0-9]|status code:? 5[0-9][0-9]|returned error: 5[0-9][0-9]|service unavailable|bad gateway|gateway time-?out|timed out|connection reset|connection refused|could not resolve host|hung up unexpectedly|tls handshake'
-
-# Runs a command that talks to GitHub, and again after 1, 2 and 4 seconds
-# while it fails on the network or the service. Any other failure, and the
-# last, comes back at once with the command's stderr.
-retrying() {
-	errors="$(mktemp)"
-	for wait in 1 2 4 0; do
-		status=0
-		"$@" 2>"$errors" || status=$?
-		if [ "$status" = 0 ] || [ "$wait" = 0 ] ||
-			! grep -Eqi "$transient" "$errors"; then
-			cat "$errors" >&2
-			rm -f "$errors"
-			return "$status"
-		fi
-		echo "$(tail -n 1 "$errors"), trying again in ${wait}s." >&2
-		sleep "$wait"
-	done
 }
 
 # Whether the Ticket's squashed commit is already on vago/<goal>.
@@ -112,19 +90,4 @@ elif printf '%s\n' "$lookup" | grep -q "no pull requests found"; then
 else
 	printf '%s\n' "$lookup"
 	exit 1
-fi
-
-if [ "$VAGO_LAST_TICKET" = true ]; then
-	doing="marking the PR of $goal ready for review"
-	retrying gh label create ready-for-review --force --color 0e8a16 \
-		--description "Every Ticket of the Goal is done"
-	retrying gh pr edit "$goal" --add-label ready-for-review
-	# A comment, not the body: the body is rewritten after every Ticket, and
-	# GitHub notifies a mention only when it's first posted. Posted once, so
-	# a later last merge doesn't ping the human again.
-	ping="@$(retrying gh api user --jq .login) every Ticket of this Goal is done, it's ready for your review."
-	comments="$(retrying gh pr view "$goal" --json comments --jq '.comments[].body')"
-	if ! printf '%s\n' "$comments" | grep -qxF "$ping"; then
-		retrying gh pr comment "$goal" --body "$ping"
-	fi
 fi
