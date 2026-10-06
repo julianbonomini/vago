@@ -220,15 +220,14 @@ const terminalForeground = RGBA.defaultForeground();
 const terminalBackground = RGBA.defaultBackground();
 
 // One orange accent on the terminal's own background, which every cell
-// shares, the panes' lines included. Done is a muted blue, orange's
-// complement, so it stays apart from the warm accent, warn and bad.
+// shares, the panes' lines included.
 const palette: ThemeColors = {
 	bg: terminalBackground,
 	fg: "#d6d6d6",
 	faint: "#4a4a4a",
 	border: "#5c5c5c",
 	accent: "#ff8a3d",
-	ok: "#7aa6c2",
+	ok: "#8fae8b",
 	bad: "#e5736b",
 	warn: "#e0b357",
 	raised: "#1b1b1b",

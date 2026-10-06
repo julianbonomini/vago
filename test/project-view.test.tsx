@@ -426,7 +426,7 @@ test("a Goal with no Tickets is ready to start, with none done of none", async (
 	expect(row).toContain("0/0");
 });
 
-const ok = RGBA.fromHex("#7aa6c2");
+const ok = RGBA.fromHex("#8fae8b");
 const bad = RGBA.fromHex("#e5736b");
 const faint = RGBA.fromHex("#4a4a4a");
 
@@ -699,7 +699,7 @@ const tokens = [
 	"#4a4a4a",
 	"#5c5c5c",
 	"#ff8a3d",
-	"#7aa6c2",
+	"#8fae8b",
 	"#e5736b",
 	"#e0b357",
 	"#f0f0f0",
