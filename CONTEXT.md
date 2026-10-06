@@ -24,6 +24,10 @@ _Avoid_: pipeline, process
 One entry in a Workflow, either an agent Step, which a Harness performs as one Run, or a shell Step, which runs a command.
 _Avoid_: stage, phase, task
 
+**Goal Step**:
+A Step of a Workflow's `before_all` or `after_all` list, run once for the whole Goal in its worktree, and recorded in `goal.md`.
+_Avoid_: hook, setup step
+
 **Milestone**:
 A large outcome made of several Goals, such as "build a Slack clone"; done when all its Goals are done. Not part of Alpha.
 _Avoid_: mission, epic, initiative
@@ -33,15 +37,15 @@ An outcome the human wants for a Project, from a one-Ticket feature to a whole a
 _Avoid_: epic, mission
 
 **Run**:
-One Harness session performing one agent Step on one Ticket, such as implement, review or discuss; a Ticket usually takes several.
+One Harness session performing one agent Step on one Ticket, or for the Goal in a Goal Step, such as implement, review or discuss; a Ticket usually takes several.
 _Avoid_: session, job, attempt
 
 **Pass**:
-A Ticket's way through its Workflow from its first Step; a reset Ticket starts a new one, and a picked-up Ticket continues its latest.
+A Ticket's, or a Goal Step list's, way through its Steps from the first; a reset Ticket starts a new one, and a picked-up pass continues its latest.
 _Avoid_: attempt, round
 
 **Lost**:
-A Goal whose Ticket says `running` while no live `vago run` has the Goal. The next `vago run` ends that Ticket's open Run with outcome `lost` and picks the Ticket up at that Run's Step.
+A Goal whose Ticket says `running` while no live `vago run` has the Goal. The next `vago run` ends that Ticket's open Run with outcome `lost` and picks the Ticket up at that Run's Step. A Goal Step Run left open is ended `lost` the same way, and its pass is picked up at that Step.
 _Avoid_: crashed, orphaned
 
 **Resume**:

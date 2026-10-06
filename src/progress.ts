@@ -1,15 +1,18 @@
 // Everything `vago run` prints to stdout while it runs: the Goal's worktree,
-// one line naming each Ticket as it starts, and under it a line when each
-// Step starts, one when it ends and one when it waits to retry, where to
-// look when a Ticket goes stuck, why a stuck Ticket can't be picked up, the
-// Goal summary table on exit, and what became of the Goal's worktree, after
-// the summary. Also the Goal report `vago goal report` prints. Hides the
-// line formats, columns and colours, and how durations and costs read.
+// one line naming each Ticket or Goal Step group as its pass starts, and
+// under it a line when each Step starts, one when it ends and one when it
+// waits to retry, where to look when a Ticket or the Goal goes stuck, why a
+// pass can't be picked up, the Goal summary table on exit, and what became
+// of the Goal's worktree, after the summary. Also the Goal report
+// `vago goal report` prints. Hides the line formats, columns and colours, and
+// how durations and costs read.
 
 import { relative } from "node:path";
 import { joinParagraphLines } from "./markdown-paragraphs.ts";
 import {
 	type GoalState,
+	type RunOwner,
+	runOwnerGoal,
 	type Ticket,
 	type TicketRun,
 	type TicketStatus,
@@ -24,14 +27,14 @@ export function printWorktree(path: string): void {
 }
 
 /**
- * Prints the line naming `ticket`, under which its Step lines follow,
- * indented, saying it was picked up at Step `pickedUpAt` when given.
+ * Prints the line naming the pass of `owner` that starts, the Ticket's name
+ * or the Goal Step group's, like `before_all`, under which its Step lines
+ * follow, indented, saying it was picked up at Step `pickedUpAt` when given.
  */
-export function printTicketStarted(ticket: Ticket, pickedUpAt?: string): void {
+export function printPassStarted(owner: RunOwner, pickedUpAt?: string): void {
+	const name = owner.kind === "ticket" ? owner.ticket.name : owner.group;
 	console.log(
-		pickedUpAt === undefined
-			? ticket.name
-			: `${ticket.name}, picked up at ${pickedUpAt}`,
+		pickedUpAt === undefined ? name : `${name}, picked up at ${pickedUpAt}`,
 	);
 }
 
@@ -79,45 +82,52 @@ export function printStepRetry(
 }
 
 /**
- * Prints that `ticket` went stuck after Step `stepName`, whose Run ended with
- * `outcome` as spelled in the header, with what the human needs next: the
- * Run's log at the absolute path `log`, the command that resumes its Harness
- * session when there is one, the `vago run` that picks the Ticket up at that
- * Step again, and the command that resets the Ticket.
+ * Prints that `owner`, a Ticket or the Goal for a Goal Step, went stuck
+ * after Step `stepName`, whose Run ended with `outcome` as spelled in the
+ * header, with what the human needs next: the Run's log at the absolute path
+ * `log`, the command that resumes its Harness session when there is one, the
+ * `vago run` that picks it up at that Step again, and for a Ticket the
+ * command that resets it. A Goal Step has no reset.
  */
 export function printStuck(
-	ticket: Ticket,
+	owner: RunOwner,
 	stepName: string,
 	outcome: string,
 	log: string,
 	resumeHint?: string,
 ): void {
-	console.log(
-		paint(`${ticket.name} is stuck after ${stepName}: ${outcome}`, "red"),
-	);
+	const { root, goal } = runOwnerGoal(owner);
+	const name = owner.kind === "ticket" ? owner.ticket.name : goal;
+	console.log(paint(`${name} is stuck after ${stepName}: ${outcome}`, "red"));
 	// Relative to the repo root, which `vago run` runs in, so it's short
 	// enough to read and still opens from where the human is.
-	console.log(`  log:    ${relative(ticket.root, log)}`);
+	console.log(`  log:    ${relative(root, log)}`);
 	if (resumeHint !== undefined) console.log(`  resume: ${resumeHint}`);
-	console.log(`  again:  vago run ${ticket.goal}`);
-	console.log(`  reset:  ${resetCommand(ticket)}`);
+	console.log(`  again:  vago run ${goal}`);
+	if (owner.kind === "ticket") {
+		console.log(`  reset:  ${resetCommand(owner.ticket)}`);
+	}
 }
 
 /**
- * Prints that `ticket` can't be picked up because of Step `stepName`, with
- * `reason` saying why after the Step's name, as in `implement has no log
- * left to rebuild its output from`, and the command that makes it start
- * over.
+ * Prints that `owner`'s pass, a Ticket's or a Goal Step group's, can't be
+ * picked up because of Step `stepName`, with `reason` saying why after the
+ * Step's name, as in `implement has no log left to rebuild its output from`,
+ * and for a Ticket the command that makes it start over. A Goal Step has no
+ * reset.
  */
 export function printPickUpRefusal(
-	ticket: Ticket,
+	owner: RunOwner,
 	stepName: string,
 	reason: string,
 ): void {
+	const name = owner.kind === "ticket" ? owner.ticket.name : owner.goal;
 	console.log(
-		paint(`${ticket.name} can't be picked up: ${stepName} ${reason}`, "red"),
+		paint(`${name} can't be picked up: ${stepName} ${reason}`, "red"),
 	);
-	console.log(`  reset:  ${resetCommand(ticket)}`);
+	if (owner.kind === "ticket") {
+		console.log(`  reset:  ${resetCommand(owner.ticket)}`);
+	}
 }
 
 /**
