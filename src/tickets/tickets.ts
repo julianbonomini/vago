@@ -293,7 +293,7 @@ export async function createGoal(
 ): Promise<string> {
 	const folder = goalFolder(root, goal);
 	if (body !== undefined) checkBody(`Goal ${goal}`, body);
-	const goalFile = join(folder, "goal.md");
+	const goalFile = goalFilePath(root, goal);
 	if (await Bun.file(goalFile).exists()) {
 		throw new Error(`Goal ${goal} already exists: ${goalFile}`);
 	}
@@ -528,7 +528,7 @@ export async function readGoalBody(
 	root: string,
 	goal: string,
 ): Promise<string> {
-	const path = join(goalFolder(root, goal), "goal.md");
+	const path = goalFilePath(root, goal);
 	if (!(await Bun.file(path).exists())) throw new Error(`${path} not found`);
 	return (await readGoalFile(path)).body;
 }
@@ -702,7 +702,7 @@ function rewriteRuns<Change>(
 function ownerFile(owner: RunOwner): string {
 	return owner.kind === "ticket"
 		? ticketFile(owner.ticket)
-		: join(goalFolder(owner.root, owner.goal), "goal.md");
+		: goalFilePath(owner.root, owner.goal);
 }
 
 /**
@@ -771,7 +771,7 @@ function checkBody(label: string, body: string): void {
 }
 
 async function existingGoalFile(root: string, goal: string): Promise<string> {
-	const goalFile = join(goalFolder(root, goal), "goal.md");
+	const goalFile = goalFilePath(root, goal);
 	if (!(await Bun.file(goalFile).exists())) {
 		throw new Error(`Goal ${goal} not found: ${goalFile} doesn't exist`);
 	}
@@ -781,6 +781,10 @@ async function existingGoalFile(root: string, goal: string): Promise<string> {
 function goalFolder(root: string, goal: string): string {
 	checkName("Goal name", goal);
 	return join(root, goalsFolderName, goal);
+}
+
+function goalFilePath(root: string, goal: string): string {
+	return join(goalFolder(root, goal), "goal.md");
 }
 
 // The log path, as the header spells it and without its extension, of a Run

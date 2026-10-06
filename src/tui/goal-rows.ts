@@ -297,7 +297,7 @@ function goalRow(
 }
 
 // The totals of each Step the Runs of `tickets` went through, in the order
-// the Steps first ran, Ticket by Ticket.
+// the Steps first ran, entry by entry, its Goal Step groups' included.
 function stepTotals(tickets: GoalTicket[]): GoalStepTotal[] {
 	const totals = new Map<string, GoalStepTotal>();
 	for (const run of tickets.flatMap(({ runs }) => runs)) {

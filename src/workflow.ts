@@ -229,7 +229,7 @@ export async function loadWorkflow(
 						name,
 						type: step.type,
 						run: step.run,
-						onFail: step.on_fail ?? "stop",
+						onFail: stepOnFail(step),
 						when,
 					}),
 				);
@@ -344,7 +344,7 @@ export async function readWorkflowStepNames(
 			(step): NamedStep => ({
 				id: step.id,
 				name: stepName(step),
-				onFail: step.type === "shell" ? (step.on_fail ?? "stop") : "stop",
+				onFail: step.type === "shell" ? stepOnFail(step) : "stop",
 			}),
 		);
 	return {
@@ -363,6 +363,13 @@ function stepLabel(group: StepGroup, id: string): string {
 // A Step without a `name` goes by its `id`.
 function stepName(step: { id: string; name?: string | undefined }): string {
 	return step.name ?? step.id;
+}
+
+// A shell Step without `on_fail` stops its pass when it exits non-zero.
+function stepOnFail(step: {
+	on_fail?: "stop" | "continue" | undefined;
+}): "stop" | "continue" {
+	return step.on_fail ?? "stop";
 }
 
 // The path of Workflow `name`'s TOML and its content checked against the

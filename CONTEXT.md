@@ -25,8 +25,16 @@ One entry in a Workflow, either an agent Step, which a Harness performs as one R
 _Avoid_: stage, phase, task
 
 **Goal Step**:
-A Step of a Workflow's `before_all` or `after_all` list, run once for the whole Goal in its worktree, and recorded in `goal.md`.
+A Step of a Workflow's `before_all` or `after_all` list, run for the whole Goal in its worktree rather than for a Ticket, and recorded in `goal.md`. Only the Goal's own Workflow's Goal Steps run.
 _Avoid_: hook, setup step
+
+**`before_all`**:
+A Workflow's list of Goal Steps that runs once, before the Goal's first Ticket, and not again once it has gone through.
+_Avoid_: on start, setup
+
+**`after_all`**:
+A Workflow's list of Goal Steps that runs once every Ticket is done, and again after any Tickets added since then are done. A Goal isn't done until it has gone through.
+_Avoid_: on end, teardown
 
 **Milestone**:
 A large outcome made of several Goals, such as "build a Slack clone"; done when all its Goals are done. Not part of Alpha.
