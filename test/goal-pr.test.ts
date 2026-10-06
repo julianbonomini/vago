@@ -63,7 +63,7 @@ type GoalRepo = {
 // A Project initialised from the starter, with its default branch, `main`
 // unless named, pushed to a local origin whose HEAD points to it, Goal `ship`
 // and Tickets `01-one` and `02-two`. The Goal's Workflow is the Ticket Steps
-// above and the after_all of the starter Workflow `starter`.
+// above and the starter Workflow `starter`'s last after_all Step, ready.
 async function makeGoalRepo({
 	defaultBranch = "main",
 	starter = "small",
@@ -85,7 +85,10 @@ async function makeGoalRepo({
 	const starterText = await Bun.file(
 		join(root, `.vago/workflows/${starter}.toml`),
 	).text();
-	const afterAll = starterText.slice(starterText.indexOf("\n[[after_all]]"));
+	// Only the ready Step: describe is an agent Step, so it needs a Harness.
+	const afterAll = starterText.slice(
+		starterText.lastIndexOf("\n[[after_all]]"),
+	);
 	await Bun.write(
 		join(root, ".vago/workflows/ship.toml"),
 		`${ticketSteps}\n${afterAll}`,

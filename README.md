@@ -45,9 +45,10 @@ vago init
 - `prompts/`, the prompt of each agent Step.
 - `scripts/branch.sh` and `scripts/merge.sh`, the git work of the `branch` and `merge` Steps.
 
-It also puts five skills into `.claude/skills/`, where Claude Code finds them, and the same five into `.agents/skills/`, where Codex finds them, so the starter prompts work on either Harness:
+It also puts six skills into `.claude/skills/`, where Claude Code finds them, and the same six into `.agents/skills/`, where Codex finds them, so the starter prompts work on either Harness:
 
 - `vago-write-code`, `vago-check-red-flags` and `vago-design-module` hold the design and code rules, from John Ousterhout's *A Philosophy of Software Design*. Each starter prompt names the ones its Step runs, and you can use them in your own sessions too.
+- `vago-pr` writes a PR body as a summary, evidence and merge danger. The `describe` Step runs it on the Goal's PR.
 - `vago-to-goal` and `vago-to-tickets` are for you, after a planning conversation: `/vago-to-goal` writes the conversation up as a Goal, and `/vago-to-tickets` slices that Goal into Tickets. They run only when you type their name.
 
 Before it writes anything, it asks `Commit the Workflow? [y/N]`. Answer `y` to leave `.vago/` and the skills for git, so everyone who clones the repo gets your Workflows. Any other answer adds `.vago/` and each skill's folder, in both places, to `.git/info/exclude`, so they stay in your checkout. Anything else in `.claude/` and `.agents/` stays as git saw it. Either way it adds `.vago-goals/`, where Goals and Tickets live, to `.git/info/exclude`.
@@ -66,7 +67,7 @@ It overwrites each starter file that differs, writes any that are missing, and p
 
 ### Pick a Workflow
 
-Both starter Workflows run each Ticket through these Steps, in order, with Claude Opus as the model, and run one more Step, `ready`, once every Ticket is done (see [Run Steps once per Goal](#run-steps-once-per-goal)):
+Both starter Workflows run each Ticket through these Steps, in order, with Claude Opus as the model, and run two more Steps, `describe` and `ready`, once every Ticket is done (see [Run Steps once per Goal](#run-steps-once-per-goal)):
 
 | Workflow | Steps | Pick it when |
 |---|---|---|
@@ -76,7 +77,7 @@ Both starter Workflows run each Ticket through these Steps, in order, with Claud
 The starter files are yours to change, and a few of them assume things about the Project that you may need to change first:
 
 - The `check` Step runs `bun run check`, and the prompts tell every agent Step to make it pass before it finishes. In a Project without that script, change the command in `.vago/workflows/*.toml` and the prompts that name it.
-- `merge.sh` pushes the Goal's branch to `origin` and opens its PR with `gh`, against the repo's default branch, and `ready.sh` labels and comments on that PR.
+- `merge.sh` pushes the Goal's branch to `origin` and opens its PR with `gh`, against the repo's default branch, with the Goal report as its body. `describe` rewrites the body with the `vago-pr` skill once every Ticket is done, and `ready.sh` labels and comments on that PR.
 - The prompts send agents to the docs that the Project's `AGENTS.md` names.
 
 ### Run Steps once per Goal
@@ -84,6 +85,12 @@ The starter files are yours to change, and a few of them assume things about the
 Besides `[[steps]]`, which every Ticket goes through, a Workflow can list Goal Steps, which run for the whole Goal: `[[before_all]]` runs once before the Goal's first Ticket, and `[[after_all]]` once every Ticket is done. They take the same types and options as `[[steps]]`. This is the starter's `after_all`:
 
 ```toml
+[[after_all]]
+id     = "describe"
+name   = "PR description"
+type   = "agent"
+prompt = "prompts/describe.md"
+
 [[after_all]]
 id   = "ready"
 name = "Ready for review"
