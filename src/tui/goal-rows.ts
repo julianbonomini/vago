@@ -202,10 +202,11 @@ function projectMessage(error: unknown, root: string): string {
 
 /** The header line's counts of the Goals of a Project and their spend. */
 export type ProjectTotals = {
-	goals: number;
+	done: number;
+	ready: number;
 	running: number;
 	/** Stuck, lost and broken: the Goals waiting on the human. */
-	needYou: number;
+	stuck: number;
 	costUsd: number;
 };
 
@@ -214,9 +215,10 @@ export function projectTotals(rows: GoalRow[]): ProjectTotals {
 	const inStanding = (...standings: GoalStanding[]) =>
 		rows.filter((row) => standings.includes(row.standing)).length;
 	return {
-		goals: rows.length,
+		done: inStanding("done"),
+		ready: inStanding("ready"),
 		running: inStanding("running"),
-		needYou: inStanding("stuck", "lost", "broken"),
+		stuck: inStanding("stuck", "lost", "broken"),
 		costUsd: rows.reduce((sum, row) => sum + row.costUsd, 0),
 	};
 }

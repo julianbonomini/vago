@@ -70,7 +70,7 @@ for (const size of [
 	{ width: 80, height: 24 },
 ]) {
 	for (const look of ["colour", "NO_COLOR", "VAGO_ASCII=1"]) {
-		test(`at ${size.width}×${size.height} in ${look} every screen has the Project's header and its panes edge to edge`, async () => {
+		test(`at ${size.width}×${size.height} in ${look} every screen has the Project's header and its panes edge to edge, framed by lines`, async () => {
 			if (look === "NO_COLOR") setEnv({ NO_COLOR: "1" });
 			if (look === "VAGO_ASCII=1") setEnv({ VAGO_ASCII: "1" });
 			const root = await stuckGoal();
@@ -84,9 +84,14 @@ for (const size of [
 				const lines = frame.split("\n").slice(0, size.height);
 
 				// The header is the same line on every screen.
-				expect(lines[0]).toMatch(/ [·|] 1 Goals .* spent/);
+				expect(lines[0]).toMatch(
+					/ 0 done [·|] 0 ready [·|] 0 running [·|] 1 stuck [·|] \$2\.50 spent $/,
+				);
 				header ??= lines[0];
 				expect(lines[0]).toBe(header ?? "");
+				// A line under the header and one over the footer frame the panes.
+				expect(lines[1]).toMatch(divider);
+				expect(lines.at(-2)).toMatch(divider);
 				// Between the header and the footer every row spans the screen, no
 				// pane sits empty between two lines, and no two lines sit side by
 				// side.

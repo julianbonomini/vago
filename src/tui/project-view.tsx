@@ -352,40 +352,51 @@ const helpKeys = (upDown: string): HelpKey[] => [
 ];
 
 // The Project's name and its counts on one line at the top of every screen,
-// `width` columns wide, the counts on the right. The name is cut first when
-// the line is short of room. Not drawn until the Goals are read, so a slow
-// read never shows zero Goals.
+// `width` columns wide: the name on the left, then the Goals done, ready,
+// running and stuck on the right, and last the spend, bright and bold, the
+// number the human reads first. The stuck count takes in the lost and broken
+// Goals and says so while the whole name still fits, and is then just
+// "stuck"; past that the name is cut. Not drawn until the Goals are read, so
+// a slow read never shows zero Goals.
 function HeaderLine(props: {
 	root: string;
 	rows: GoalRow[];
 	width: number;
 }): JSX.Element {
-	const { symbol, dimText } = theme();
-	const line = () => {
-		const totals = projectTotals(props.rows);
-		const goals = ` ${symbol.sep} ${totals.goals} Goals`;
-		const counts = [
-			`${totals.running} running`,
-			`${totals.needYou} need you`,
-			`${money(totals.costUsd)} spent`,
-		].join(` ${symbol.sep} `);
-		// A space at each end of the line and one before the counts.
-		const left = props.width - 3 - Bun.stringWidth(counts);
-		const name = fitText(
-			basename(props.root),
-			Math.min(
-				Bun.stringWidth(basename(props.root)),
-				left - Bun.stringWidth(goals),
-			),
-		);
-		return ` ${fitText(`${name}${goals}`, left)} ${counts}`;
+	const { color, symbol, dimSpan } = theme();
+	const name = () => basename(props.root);
+	const totals = () => projectTotals(props.rows);
+	const spend = () => money(totals().costUsd);
+	const countsWith = (stuckLabel: string) => {
+		const { done, ready, running, stuck } = totals();
+		return `${[
+			`${done} done`,
+			`${ready} ready`,
+			`${running} running`,
+			`${stuck} ${stuckLabel}`,
+		].join(` ${symbol.sep} `)} ${symbol.sep} `;
+	};
+	// The room left for the name, past a space before it and one after it.
+	const nameRoom = (counts: string) =>
+		props.width - 2 - Bun.stringWidth(`${counts}${spend()}${spentLabel}`);
+	const counts = () => {
+		const spelledOut = countsWith("stuck, lost or broken");
+		return nameRoom(spelledOut) >= Bun.stringWidth(name())
+			? spelledOut
+			: countsWith("stuck");
 	};
 	return (
-		<text {...dimText} flexShrink={0} wrapMode="none">
-			{line()}
+		<text fg={color.fg} flexShrink={0} wrapMode="none">
+			{` ${fitText(name(), nameRoom(counts()))} `}
+			<span style={dimSpan}>{counts()}</span>
+			<span style={{ fg: color.bright, bold: true }}>{spend()}</span>
+			<span style={dimSpan}>{spentLabel}</span>
 		</text>
 	);
 }
+
+// With the space that ends the line.
+const spentLabel = " spent ";
 
 // The Goals box's border and padding, on both sides.
 const boxEdges = 4;

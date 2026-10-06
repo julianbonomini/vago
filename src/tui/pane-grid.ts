@@ -1,9 +1,9 @@
 // The lines between the panes, drawn as one grid: where two panes share an
-// edge it is one line, joined where lines meet. The outer edge of the panes
-// together draws nothing, so only the lines between them show, and none
-// carries text: a pane's title is its own first row. Hides the junction
-// glyphs, the pass after each frame that draws them, and the order panes
-// draw in.
+// edge it is one line, joined where lines meet. Of the outer edge of the
+// panes together only the top and the bottom draw, the lines to the header
+// above and the footer below, and none carries text: a pane's title is its
+// own first row. Hides the junction glyphs, the pass after each frame that
+// draws them, and the order panes draw in.
 
 import {
 	type BorderCharacters,
@@ -129,21 +129,14 @@ function drawGrid(grid: Grid, buffer: OptimizedBuffer): void {
 			: [rect];
 	});
 
-	// The edge of all the panes together, which draws no line.
-	const outer = {
-		left: Math.min(...panes.map((rect) => rect.x)),
-		top: Math.min(...panes.map((rect) => rect.y)),
-		right: Math.max(...panes.map((rect) => rect.x + rect.width - 1)),
-		bottom: Math.max(...panes.map((rect) => rect.y + rect.height - 1)),
-	};
-	// The arms of a cell's glyph without those along the outer edge, so a
-	// line between panes runs to the edge without a junction there.
-	const innerArms = (x: number, y: number, arms: number) => {
-		let inner = arms;
-		if (x === outer.left || x === outer.right) inner &= ~(up | down);
-		if (y === outer.top || y === outer.bottom) inner &= ~(left | right);
-		return inner;
-	};
+	// The sides of all the panes together, which draw no line.
+	const outerLeft = Math.min(...panes.map((rect) => rect.x));
+	const outerRight = Math.max(...panes.map((rect) => rect.x + rect.width - 1));
+	// The arms of a cell's glyph without those along the outer sides, so the
+	// lines under the header, over the footer and between panes run to the
+	// sides without a corner or junction there.
+	const drawnArms = (x: number, arms: number) =>
+		x === outerLeft || x === outerRight ? arms & ~(up | down) : arms;
 
 	// Every pane's outline adds its arms to the cells it passes, so a cell
 	// two outlines pass gets the junction of both.
@@ -172,7 +165,7 @@ function drawGrid(grid: Grid, buffer: OptimizedBuffer): void {
 	for (const [key, allArms] of cells) {
 		const x = key % buffer.width;
 		const y = Math.floor(key / buffer.width);
-		const arms = innerArms(x, y, allArms);
+		const arms = drawnArms(x, allArms);
 		if (arms === 0 || covered(x, y)) continue;
 		buffer.setCell(x, y, glyph(border, arms), borderColor, bg);
 	}
