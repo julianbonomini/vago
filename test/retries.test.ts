@@ -64,6 +64,17 @@ test("a failed agent Step resumes its session after 1, 1 and 5 minutes, and the 
 		["exit 1", "resumed"],
 		["ok", "resumed"],
 	]);
+	// Each failed Run says when its retry was due, a wait after it ended, in
+	// the test's minutes of 100ms.
+	const waitMinutes = runsOf(greet)
+		.slice(0, 3)
+		.map(({ ended, retry_at }) =>
+			retry_at instanceof Date && ended instanceof Date
+				? Math.round((retry_at.getTime() - ended.getTime()) / 100)
+				: undefined,
+		);
+	expect(waitMinutes).toEqual([1, 1, 5]);
+	expect(runsOf(greet)[3]?.retry_at).toBeUndefined();
 });
 
 test("the Ticket goes stuck when the third retry fails too", async () => {

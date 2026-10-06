@@ -11,6 +11,7 @@ import {
 	listGoals,
 	readGoal,
 	runLogLastWritten,
+	type TicketRunResume,
 	type TicketStatus,
 } from "../tickets/tickets.ts";
 import { readWorkflowStepNames } from "../workflow.ts";
@@ -20,7 +21,6 @@ import {
 	type GoalTicketMark,
 	type GoalWorkflowSteps,
 	goalTickets,
-	runningStep,
 } from "./goal-tickets.ts";
 import { joinParagraphs } from "./text-fit.ts";
 
@@ -99,6 +99,8 @@ export type GoalRowRun = {
 	/** The Run's Ticket number as file names spell it, like `02`. */
 	ticketNumber: string;
 	stepName: string;
+	/** Absent for a Run that started a fresh session as usual. */
+	resume?: TicketRunResume;
 	state: GoalRunState;
 	/** As spelled in the header, like `ok`; absent while the Run is open. */
 	outcome?: string;
@@ -292,6 +294,7 @@ function goalRow(
 					started: run.started,
 					ticketNumber: number,
 					stepName: run.stepName,
+					resume: run.resume,
 					state: run.state,
 					outcome: run.outcome,
 					durationMs: run.durationMs,
@@ -317,7 +320,7 @@ function goalStanding(
 		tickets.find((ticket) => marks.includes(ticket.mark));
 	// A running Ticket is marked lost while no `vago run` holds the Goal.
 	const running = first("running", "lost");
-	const runningOn = running && `${running.number} ${runningStep(running.runs)}`;
+	const runningOn = running && `${running.number} ${running.onStep}`;
 	if (claimed) {
 		return { standing: "running", phrase: runningOn ?? "between Tickets" };
 	}

@@ -18,6 +18,8 @@ const RunEntry = z.looseObject({
 	session_id: z.string().optional(),
 	// Absent for a Run that started a fresh session as usual.
 	resume: z.enum(["resumed", "fell-back"]).optional(),
+	// Set on a failed Run whose retry a `vago run` waits for.
+	retry_at: z.date().optional(),
 	tokens: z.object({ input: z.number(), output: z.number() }).optional(),
 	cost_usd: z.number().optional(),
 	goal_report: z.boolean().optional(),

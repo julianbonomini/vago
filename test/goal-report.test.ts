@@ -167,6 +167,34 @@ log = "logs/01-check-2.log"
 `);
 });
 
+test("goal report marks the Runs that resumed a session and those that fell back to a fresh one", async () => {
+	const run = (outcome: string, resume?: string) =>
+		[
+			"",
+			"[[runs]]",
+			'step = "implement"',
+			"started = 2026-10-02T10:00:00.000Z",
+			"ended = 2026-10-02T10:01:00.000Z",
+			`outcome = "${outcome}"`,
+			'log = "logs/01-implement.jsonl"',
+			'harness = "claude-code"',
+			'model = "claude-opus-5-5"',
+			...(resume === undefined ? [] : [`resume = "${resume}"`]),
+		].join("\n");
+	const root = await makeProject({
+		[`${goalDir}/goal.md`]: goalText("small"),
+		[`${goalDir}/tickets/01-greet.md`]: `+++\nstatus = "done"\n${run("exit 1")}${run("exit 1", "resumed")}${run("ok", "fell-back")}\n+++\n\n# Greet\n`,
+	});
+
+	const result = await runVago(root, ["goal", "report", "hello"]);
+
+	expect(result.exitCode).toBe(0);
+	expect(result.stdout).toContain(`| 01-greet | implement | exit 1 | 1m00s |  |
+| 01-greet | implement | exit 1, resumed | 1m00s |  |
+| 01-greet | implement | ok, fell back to a fresh session | 1m00s |  |
+`);
+});
+
 test("goal report counts a Ticket with no Runs as nothing", async () => {
 	const root = await makeProject({
 		[`${goalDir}/goal.md`]: goalText("small"),

@@ -61,6 +61,21 @@ export type TicketRunEntry = {
  */
 export const goalsFolderName = ".vago-goals";
 
+/**
+ * How an agent Run set out: `resumed` an earlier Run's Harness session, or
+ * set out to and `fell-back` to a fresh one when the resume failed to start.
+ */
+export type TicketRunResume = "resumed" | "fell-back";
+
+/**
+ * How the Goal report and the TUI spell a `TicketRunResume`, after the Run's
+ * outcome.
+ */
+export const ticketRunResumeWords: Record<TicketRunResume, string> = {
+	resumed: "resumed",
+	"fell-back": "fell back to a fresh session",
+};
+
 /** One entry of a Ticket's `[[runs]]` as `readGoal` found it. */
 export type TicketRun = {
 	step: string;
@@ -83,6 +98,14 @@ export type TicketRun = {
 	 * reported it, so a Run still going or one cut off has it too.
 	 */
 	sessionId?: string;
+	/** Absent for a Run that started a fresh session as usual. */
+	resume?: TicketRunResume;
+	/**
+	 * When a `vago run` set out to retry the Run, which had failed; absent
+	 * for a Run it didn't. Kept once the retry starts, or once the `vago run`
+	 * stops waiting.
+	 */
+	retryAt?: Date;
 	/** What the Harness reported the Run used. Absent like `costUsd`. */
 	tokens?: { input: number; output: number };
 	/** What the Harness reported the Run cost. Absent for a shell Step. */
@@ -250,6 +273,8 @@ export async function readGoal(root: string, goal: string): Promise<GoalState> {
 			harness: run.harness,
 			model: run.model,
 			sessionId: run.session_id,
+			resume: run.resume,
+			retryAt: run.retry_at,
 			tokens: run.tokens,
 			costUsd: run.cost_usd,
 			inGoalReport: run.goal_report === true,
@@ -530,6 +555,20 @@ function runTable(header: TicketHeader, entry: TicketRunEntry): TicketRunTable {
 		);
 	}
 	return table;
+}
+
+/**
+ * Writes `retryAt`, when a `vago run` will retry the Ticket's last Run, to
+ * that Run's `[[runs]]` entry. Does nothing when the Ticket has no Runs.
+ */
+export async function recordRunRetry(
+	ticket: Ticket,
+	retryAt: Date,
+): Promise<void> {
+	await rewriteHeader(ticketFile(ticket), (header) => {
+		const last = header.runs?.at(-1);
+		if (last !== undefined) last.retry_at = retryAt;
+	});
 }
 
 /**

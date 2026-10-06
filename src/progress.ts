@@ -14,6 +14,7 @@ import {
 	type TicketRun,
 	type TicketStatus,
 	ticketNumberText,
+	ticketRunResumeWords,
 } from "./tickets/tickets.ts";
 import type { WorktreeClose } from "./worktree.ts";
 
@@ -200,7 +201,8 @@ export function printWorktreeClose(close: WorktreeClose): void {
  * on one line, and then in Markdown what each Ticket's Steps put in the Goal
  * report, collapsed by Ticket, the Workflow the Goal names and what the
  * Goal's Runs took and cost: a table with one row per Ticket and a total, and
- * every Run in a collapsed table under it. Made to be a PR description.
+ * every Run in a collapsed table under it, its outcome marked when it
+ * resumed a session or fell back to a fresh one. Made to be a PR description.
  * `outputs` holds the output of each Run whose Step puts it in the report, by
  * the Run's log; a Ticket shows the latest such Run of each Step that ended
  * `ok`, and nothing when none did. A Run still going counts toward neither
@@ -254,8 +256,12 @@ export function printGoalReport(
 				run.ended === undefined
 					? ""
 					: duration(run.ended.getTime() - run.started.getTime());
+			const outcome = [
+				run.outcome ?? "running",
+				...(run.resume === undefined ? [] : [ticketRunResumeWords[run.resume]]),
+			].join(", ");
 			lines.push(
-				`| ${ticket.name} | ${run.step} | ${run.outcome ?? "running"} | ${took} | ${dollars(run.costUsd)} |`,
+				`| ${ticket.name} | ${run.step} | ${outcome} | ${took} | ${dollars(run.costUsd)} |`,
 			);
 		}
 	}

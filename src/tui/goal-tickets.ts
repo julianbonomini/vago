@@ -1,5 +1,6 @@
 // What the Goal view knows of each Ticket of a Goal: the mark its symbol and
-// colour come from, the state word before its title, its blockers, its
+// colour come from, the state word before its title, the Step it is on with
+// the time left while it waits to retry it, its blockers, its
 // Workflow's Steps marked from its latest pass, its Runs, live or lost while
 // open, and their totals, and its text as paragraphs. Hides the rules behind
 // each.
@@ -7,11 +8,13 @@
 import {
 	type GoalState,
 	latestPassStart,
+	type TicketRunResume,
 	type TicketStatus,
 	ticketNumberText,
 } from "../tickets/tickets.ts";
 import type { NamedStep } from "../workflow.ts";
 import { joinParagraphs } from "./text-fit.ts";
+import { duration } from "./time-and-money.ts";
 
 /**
  * How a Ticket stands in the Goal view: its status, except `lost` for a
@@ -33,10 +36,17 @@ export type GoalTicket = {
 	title: string;
 	mark: GoalTicketMark;
 	/**
-	 * Shown before the title: the running Step, `lost`, `stuck`, or the
-	 * blockers waited on, like `after 02`; "" for a done or ready Ticket.
+	 * Shown before the title: `onStep` while running, `lost`, `stuck`, or
+	 * the blockers waited on, like `after 02`; "" for a done or ready Ticket.
 	 */
 	stateWord: string;
+	/**
+	 * The Step a running or lost Ticket is on, as the Goals table's "now"
+	 * phrase spells it: its latest Run's, or `starting` before its first,
+	 * with the time left while a `vago run` waits to retry it, like
+	 * `review retries in 42s`.
+	 */
+	onStep: string;
 	/** Every blocker as file names spell it, done or not. */
 	blockedBy: string[];
 	/** The text after the title as `joinParagraphs` gives it. */
@@ -77,6 +87,8 @@ export type GoalTicketRun = {
 	 * absent for a shell Step's, whose log is text.
 	 */
 	harness?: string;
+	/** Absent for a Run that started a fresh session as usual. */
+	resume?: TicketRunResume;
 	/** As spelled in the header, like `ok` or `exit 1`; absent while open. */
 	outcome?: string;
 	started: Date;
@@ -152,6 +164,7 @@ export function goalTickets(
 				stepName: steps.find(({ id }) => id === run.step)?.name ?? run.step,
 				state: runState,
 				harness: run.harness,
+				resume: run.resume,
 				outcome: run.outcome,
 				started: run.started,
 				durationMs: Math.max(0, end.getTime() - run.started.getTime()),
@@ -159,15 +172,22 @@ export function goalTickets(
 				log: run.log,
 			};
 		});
+		const retryAt = ticket.runs.at(-1)?.retryAt;
+		const retryInMs =
+			claimed && ticket.status === "running" && retryAt !== undefined
+				? Math.max(0, retryAt.getTime() - now.getTime())
+				: undefined;
+		const onStep = runningStep(runs, retryInMs);
 		return {
 			number: ticketNumberText(ticket.ticket.number),
 			title: ticket.title,
 			...markAndStateWord(
 				ticket.status,
-				runningStep(runs),
+				onStep,
 				claimed,
 				ticket.blockedBy.filter((blocker) => !done.includes(blocker)),
 			),
+			onStep,
 			blockedBy: ticket.blockedBy.map(ticketNumberText),
 			description: joinParagraphs(ticket.description),
 			steps: markSteps(steps, runs.slice(passStart)),
@@ -193,13 +213,16 @@ function markSteps(
 	});
 }
 
-/**
- * The Step a running Ticket whose Runs are `runs` is on, as its state word
- * and the Goals table's "now" phrase spell it: its latest Run's, or
- * `starting` before its first.
- */
-export function runningStep(runs: GoalTicketRun[]): string {
-	return runs.at(-1)?.stepName ?? "starting";
+// `GoalTicket.onStep` of a Ticket whose Runs are `runs`, which a `vago run`
+// retries in `retryInMs` when it is waiting to.
+function runningStep(
+	runs: GoalTicketRun[],
+	retryInMs: number | undefined,
+): string {
+	const step = runs.at(-1)?.stepName ?? "starting";
+	return retryInMs === undefined
+		? step
+		: `${step} retries in ${duration(retryInMs)}`;
 }
 
 // A Ticket's mark and state word from its status, the Step it is on while

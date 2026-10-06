@@ -93,6 +93,10 @@ export type FixtureRun = {
 	model?: string;
 	/** An agent Run's Harness, Claude Code unless given. */
 	harness?: string;
+	/** How an agent Run set out, when not in a fresh session as usual. */
+	resume?: "resumed" | "fell-back";
+	/** When a `vago run` retries the Run, which it waits for meanwhile. */
+	retryAt?: Date;
 };
 
 /**
@@ -134,6 +138,10 @@ export function ticketText(
 				`harness = "${run.harness ?? "claude-code"}"`,
 				`model = "${run.model}"`,
 			);
+		}
+		if (run.resume !== undefined) lines.push(`resume = "${run.resume}"`);
+		if (run.retryAt !== undefined) {
+			lines.push(`retry_at = ${run.retryAt.toISOString()}`);
 		}
 		const extension = run.model === undefined ? "log" : "jsonl";
 		lines.push(`log = "logs/${run.step}-${index + 1}.${extension}"`);

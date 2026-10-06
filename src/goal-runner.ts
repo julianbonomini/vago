@@ -30,6 +30,7 @@ import {
 	isLastTicket,
 	latestPassStart,
 	readGoal,
+	recordRunRetry,
 	setStatus,
 	type Ticket,
 	type TicketRun,
@@ -263,7 +264,10 @@ async function runStepWithRetries(
 	for (const minutes of waits) {
 		if (run.outcome.kind === "ok" || run.outcome.kind === "interrupted") break;
 		const waitMs = minutes * retryMinuteMs;
-		printStepRetry(step.name, new Date(), waitMs);
+		const now = new Date();
+		// For the TUI, which shows the wait from the Ticket file.
+		await recordRunRetry(ticket, new Date(now.getTime() + waitMs));
+		printStepRetry(step.name, now, waitMs);
 		if (!(await waitUnlessInterrupted(waitMs))) break;
 		run = await runStep(step, ticket, worktree, stepOutputs, run.sessionId);
 	}

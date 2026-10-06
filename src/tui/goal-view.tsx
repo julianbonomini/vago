@@ -24,7 +24,7 @@ import {
 	type RunActivity,
 	type RunToolCalls,
 } from "../harness/registry.ts";
-import { readRunLog } from "../tickets/tickets.ts";
+import { readRunLog, ticketRunResumeWords } from "../tickets/tickets.ts";
 import { type GoalRow, ticketTotal } from "./goal-rows.ts";
 import { startGoal } from "./goal-start.ts";
 import type {
@@ -916,8 +916,9 @@ function liveRunLog(
 
 // The `selected`th Run of `ticket` across the screen, `width` columns wide
 // with its border, titled with its position, Ticket and Step, its outcome,
-// duration and, for an agent Step, cost beside the title, or while it is
-// open its tokens and cost so far. An agent Step's Run shows its `activity`, the
+// whether it resumed a session or fell back to a fresh one, duration and,
+// for an agent Step, cost beside the title, or while it is open its tokens
+// and cost so far. An agent Step's Run shows its `activity`, the
 // `selectedEdit`th item selected, or in its place the edit `diff`'s diff, and
 // a shell Step's Run its `log` as text, both scrolled by the wheel, and
 // both undefined until the log is first read. An open Run opens at its
@@ -952,17 +953,21 @@ function RunPane(props: {
 		const shown = run();
 		if (shown === undefined) return "";
 		const mark = runMarkLook(shown.state, shown.outcome).text;
+		const resume =
+			shown.resume === undefined ? [] : [ticketRunResumeWords[shown.resume]];
 		if (shown.state !== "ended") {
 			const after = shown.state === "lost" ? "after " : "";
 			const spent = props.activity?.spent;
 			return [
 				`${mark} ${after}${duration(shown.durationMs)}`,
+				...resume,
 				...(spent === undefined ? [] : [`${tokenCount(spent.tokens)} tokens`]),
 				...(spent?.costUsd === undefined ? [] : [money(spent.costUsd)]),
 			].join(` ${symbol.sep} `);
 		}
 		return [
 			mark,
+			...resume,
 			duration(shown.durationMs),
 			...(shown.costUsd === undefined ? [] : [money(shown.costUsd)]),
 		].join(` ${symbol.sep} `);
