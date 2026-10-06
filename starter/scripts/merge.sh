@@ -7,10 +7,11 @@
 #
 # Changes a Step left uncommitted go in with the Ticket's work. Calls to
 # GitHub that fail on the network or the service are tried again. Safe to run
-# again after failing partway: a Ticket already squashed into vago/<goal>
-# isn't squashed twice. Fails, and so leaves the Ticket stuck, when the
-# Ticket conflicts with vago/<goal> or changed nothing, or when a call fails
-# for good, and its last line says why.
+# again after failing or stopping partway: it carries on from the squash, the
+# push or the PR, and never squashes, opens or mentions anything twice. Fails,
+# and so leaves the Ticket stuck, when the Ticket conflicts with vago/<goal>
+# or changed nothing, or when a call fails for good, and its last line says
+# why.
 set -eu
 
 goal="vago/$VAGO_GOAL"
@@ -49,28 +50,39 @@ retrying() {
 	done
 }
 
-if [ -n "$(git status --porcelain)" ]; then
-	git add -A
-	git commit -qm "changes left uncommitted"
-fi
+# Whether the Ticket's squashed commit is already on vago/<goal>.
+squashed() {
+	git log --format=%s "$goal" | grep -qxF "$message"
+}
 
-git switch -q "$goal"
-if ! git merge --squash "$ticket"; then
-	conflicts="$(git diff --name-only --diff-filter=U | paste -sd ' ' -)"
-	# Back to where the Ticket's Steps left the worktree, clean for a rerun.
-	git reset -q --hard
-	git switch -q "$ticket"
-	fail "$ticket conflicts with $goal in $conflicts."
+# A Ticket whose branch is gone was squashed and its branch deleted by an
+# earlier attempt that stopped after that, and this one picks up at the push.
+if ! git rev-parse -q --verify "refs/heads/$ticket" >/dev/null; then
+	squashed || fail "$ticket has no branch, so there is nothing to merge."
+else
+	if [ -n "$(git status --porcelain)" ]; then
+		git add -A
+		git commit -qm "changes left uncommitted"
+	fi
+
+	git switch -q "$goal"
+	if ! git merge --squash "$ticket"; then
+		conflicts="$(git diff --name-only --diff-filter=U | paste -sd ' ' -)"
+		# Back to where the Ticket's Steps left the worktree, clean for a rerun.
+		git reset -q --hard
+		git switch -q "$ticket"
+		fail "$ticket conflicts with $goal in $conflicts."
+	fi
+	# With nothing to squash, a Ticket whose commit is already on vago/<goal>
+	# is a rerun of an attempt that stopped before deleting the branch.
+	if ! git diff --cached --quiet; then
+		git commit -qm "$message"
+	elif ! squashed; then
+		git switch -q "$ticket"
+		fail "$ticket changed nothing, so it isn't done."
+	fi
+	git branch -D "$ticket"
 fi
-# With nothing to squash, a Ticket whose commit is already on vago/<goal> is
-# a rerun after a failure past the squash, which picks up from there.
-if ! git diff --cached --quiet; then
-	git commit -qm "$message"
-elif ! git log --format=%s "$goal" | grep -qxF "$message"; then
-	git switch -q "$ticket"
-	fail "$ticket changed nothing, so it isn't done."
-fi
-git branch -D "$ticket"
 
 doing="pushing $goal to origin"
 retrying git push -u origin "$goal"
