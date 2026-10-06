@@ -678,3 +678,156 @@ test("a before_all pass that can't be picked up stops the Goal, naming the Step,
 	expect(header.runs).toBeUndefined();
 	expect(await Bun.file(join(root, goalDir, "goal.md")).text()).toBe(goalFile);
 });
+
+// One shell Ticket Step, `work`, which fails until `fixed` is at the Project
+// root, and one shell `after_all` Step, `wrap`.
+const workThenWrap = `
+[[steps]]
+id   = "work"
+type = "shell"
+run  = 'test -f "$VAGO_PROJECT_ROOT/fixed"'
+
+[[after_all]]
+id   = "wrap"
+type = "shell"
+run  = "echo wrapped"
+`;
+
+test("after_all runs once after the last Ticket is done, not while a Ticket is left, and the Goal is then done", async () => {
+	const root = await makeProject({
+		".vago/workflows/w.toml": workThenWrap,
+		[`${goalDir}/goal.md`]: goalText("w"),
+		[`${goalDir}/tickets/01-greet.md`]: ticketText("ready"),
+		[`${goalDir}/tickets/02-again.md`]: ticketText("ready"),
+	});
+
+	const stuck = await runVago(root, ["run", "hello"]);
+
+	expect(stuck.exitCode).not.toBe(0);
+	expect(stuck.stdout).not.toContain("after_all");
+	expect(await goalRuns(root)).toEqual([]);
+
+	await Bun.write(join(root, "fixed"), "");
+	const done = await runVago(root, ["run", "hello"]);
+
+	expect(done.stderr).toBe("");
+	expect(done.exitCode).toBe(0);
+	const lines = done.stdout.split("\n");
+	const again = lines.indexOf("02-again");
+	const heading = lines.indexOf("after_all");
+	expect(again).toBeGreaterThan(-1);
+	expect(heading).toBeGreaterThan(again);
+	expect(lines.slice(heading).some((line) => / wrap ok$/.test(line))).toBe(
+		true,
+	);
+	expect(
+		(await goalRuns(root)).map(({ step, outcome, log }) => [
+			step,
+			outcome,
+			log,
+		]),
+	).toEqual([["wrap", "ok", "logs/after_all-wrap-1.log"]]);
+
+	const later = await runVago(root, ["run", "hello"]);
+
+	expect(later.exitCode).toBe(0);
+	expect(later.stdout).not.toContain("after_all");
+	expect(await goalRuns(root)).toHaveLength(1);
+});
+
+test("Tickets an after_all Step adds run next, and then the whole after_all list runs again", async () => {
+	const more = "$VAGO_PROJECT_ROOT/.vago-goals/hello/tickets/02-more.md";
+	const root = await makeProject({
+		".vago/workflows/w.toml": `
+[[steps]]
+id   = "work"
+type = "shell"
+run  = "echo working"
+
+[[after_all]]
+id   = "wrap"
+type = "shell"
+run  = "echo wrapped"
+
+[[after_all]]
+id   = "find"
+type = "shell"
+run  = '''test -e "${more}" || printf '+++\\nstatus = "ready"\\n+++\\n# More\\n' > "${more}"'''
+`,
+		[`${goalDir}/goal.md`]: goalText("w"),
+		[`${goalDir}/tickets/01-greet.md`]: ticketText("ready"),
+	});
+
+	const result = await runVago(root, ["run", "hello"]);
+
+	expect(result.stderr).toBe("");
+	expect(result.exitCode).toBe(0);
+	const lines = result.stdout.split("\n");
+	const passes = lines.flatMap((line, index) =>
+		line === "after_all" ? [index] : [],
+	);
+	expect(passes).toHaveLength(2);
+	expect(lines.indexOf("02-more")).toBeGreaterThan(passes[0] ?? -1);
+	expect(lines.indexOf("02-more")).toBeLessThan(passes[1] ?? -1);
+	const { header } = await readTicketFile(
+		root,
+		`${goalDir}/tickets/02-more.md`,
+	);
+	expect(header.status).toBe("done");
+	expect((await goalRuns(root)).map(({ step }) => step)).toEqual([
+		"wrap",
+		"find",
+		"wrap",
+		"find",
+	]);
+});
+
+test("a failed after_all Step leaves the Goal stuck, and the next vago run picks it up at that Step and finishes the Goal", async () => {
+	const root = await makeProject({
+		".vago/workflows/w.toml": `
+[[steps]]
+id   = "work"
+type = "shell"
+run  = "echo working"
+
+[[after_all]]
+id   = "wrap"
+type = "shell"
+run  = "echo wrapped"
+
+[[after_all]]
+id   = "check"
+name = "Check"
+type = "shell"
+run  = 'test -f "$VAGO_PROJECT_ROOT/fixed"'
+`,
+		[`${goalDir}/goal.md`]: goalText("w"),
+		[`${goalDir}/tickets/01-greet.md`]: ticketText("ready"),
+	});
+
+	const stuck = await runVago(root, ["run", "hello"]);
+
+	expect(stuck.exitCode).not.toBe(0);
+	expect(stuck.stdout).toContain(
+		"hello is stuck after Check: exit 1\n  log:    .vago-goals/hello/logs/after_all-check-2.log\n  again:  vago run hello\n",
+	);
+	const { header } = await readTicketFile(
+		root,
+		`${goalDir}/tickets/01-greet.md`,
+	);
+	expect(header.status).toBe("done");
+
+	await Bun.write(join(root, "fixed"), "");
+	const picked = await runVago(root, ["run", "hello"]);
+
+	expect(picked.stderr).toBe("");
+	expect(picked.exitCode).toBe(0);
+	expect(picked.stdout).toContain("after_all, picked up at Check\n");
+	expect(
+		(await goalRuns(root)).map(({ step, outcome }) => [step, outcome]),
+	).toEqual([
+		["wrap", "ok"],
+		["check", "exit 1"],
+		["check", "ok"],
+	]);
+});
