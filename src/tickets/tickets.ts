@@ -61,6 +61,21 @@ export type TicketRunEntry = {
  */
 export const goalsFolderName = ".vago-goals";
 
+/**
+ * How an agent Run set out: `resumed` an earlier Run's Harness session, or
+ * set out to and `fell-back` to a fresh one when the resume failed to start.
+ */
+export type TicketRunResume = "resumed" | "fell-back";
+
+/**
+ * How the Goal report and the TUI spell a `TicketRunResume`, after the Run's
+ * outcome.
+ */
+export const ticketRunResumeWords: Record<TicketRunResume, string> = {
+	resumed: "resumed",
+	"fell-back": "fell back to a fresh session",
+};
+
 /** One entry of a Ticket's `[[runs]]` as `readGoal` found it. */
 export type TicketRun = {
 	step: string;
@@ -83,6 +98,14 @@ export type TicketRun = {
 	 * reported it, so a Run still going or one cut off has it too.
 	 */
 	sessionId?: string;
+	/** Absent for a Run that started a fresh session as usual. */
+	resume?: TicketRunResume;
+	/**
+	 * When a `vago run` set out to retry the Run, which had failed; absent
+	 * for a Run it didn't. Kept once the retry starts, or once the `vago run`
+	 * stops waiting.
+	 */
+	retryAt?: Date;
 	/** What the Harness reported the Run used. Absent like `costUsd`. */
 	tokens?: { input: number; output: number };
 	/** What the Harness reported the Run cost. Absent for a shell Step. */
@@ -126,14 +149,37 @@ export type GoalState = {
 		runs: TicketRun[];
 	}[];
 	/**
-	 * The lowest-numbered Ticket that is `ready` and whose blockers are all
-	 * `done`, with the name of the Workflow it goes through, or undefined
-	 * when there is none.
+	 * The lowest-numbered Ticket that is `ready` or `stuck` and whose
+	 * blockers are all `done`, with its status, the name of the Workflow it
+	 * goes through and its Runs, or undefined when there is none.
 	 */
-	nextReady: { ticket: Ticket; workflow: string } | undefined;
+	next:
+		| {
+				ticket: Ticket;
+				workflow: string;
+				status: "ready" | "stuck";
+				runs: TicketRun[];
+		  }
+		| undefined;
 	/** Whether every Ticket is `done`, which a Goal with no Tickets is. */
 	done: boolean;
 };
+
+/**
+ * The index in `runs`, a Ticket's `[[runs]]` in the order they ran, where
+ * its latest pass through its Workflow starts: its last Run of Step
+ * `firstStepId`, the Workflow's first, since a Ticket that starts over
+ * starts there. 0 when no Run is of that Step.
+ */
+export function latestPassStart(
+	runs: TicketRun[],
+	firstStepId: string,
+): number {
+	return Math.max(
+		0,
+		runs.findLastIndex(({ step }) => step === firstStepId),
+	);
+}
 
 /**
  * Creates Goal `goal` with an empty `tickets/` and a `goal.md` whose `+++`
@@ -227,14 +273,16 @@ export async function readGoal(root: string, goal: string): Promise<GoalState> {
 			harness: run.harness,
 			model: run.model,
 			sessionId: run.session_id,
+			resume: run.resume,
+			retryAt: run.retry_at,
 			tokens: run.tokens,
 			costUsd: run.cost_usd,
 			inGoalReport: run.goal_report === true,
 		})),
 	}));
-	const nextReady = tickets.find(
+	const next = tickets.find(
 		({ ticket, status }) =>
-			status === "ready" &&
+			(status === "ready" || status === "stuck") &&
 			(byNumber.get(ticket.number)?.header.blocked_by ?? []).every(
 				(blocker) => byNumber.get(blocker)?.header.status === "done",
 			),
@@ -245,10 +293,16 @@ export async function readGoal(root: string, goal: string): Promise<GoalState> {
 		workflow,
 		created,
 		tickets,
-		nextReady:
-			nextReady === undefined
+		// The status is checked again only so its type is `ready` or `stuck`.
+		next:
+			next === undefined || (next.status !== "ready" && next.status !== "stuck")
 				? undefined
-				: { ticket: nextReady.ticket, workflow: nextReady.workflow },
+				: {
+						ticket: next.ticket,
+						workflow: next.workflow,
+						status: next.status,
+						runs: next.runs,
+					},
 		done: entries.every(({ header }) => header.status === "done"),
 	};
 }
@@ -405,14 +459,16 @@ export async function setStatus(
 /**
  * Appends a `[[runs]]` entry for `step`, started at `started`, naming the
  * Harness and model for an agent Step, and whether the Goal report carries
- * its output. Call it before the Step starts, so a crash mid-Step still
- * leaves a trace. Returns the entry, which carries the path the Run's log
- * must be written to.
+ * its output. For a Run that resumes Harness session `resumes`, the entry
+ * names that session and is marked `resume = "resumed"`. Call it before the
+ * Step starts, so a crash mid-Step still leaves a trace. Returns the entry,
+ * which carries the path the Run's log must be written to.
  */
 export async function recordRunStart(
 	ticket: Ticket,
 	step: Step,
 	started: Date,
+	resumes?: string,
 ): Promise<TicketRunEntry> {
 	const { position, log } = await rewriteHeader(
 		ticketFile(ticket),
@@ -427,6 +483,9 @@ export async function recordRunStart(
 							step: step.id,
 							harness: step.harness,
 							model: step.model,
+							...(resumes === undefined
+								? {}
+								: { session_id: resumes, resume: "resumed" as const }),
 							started,
 							log: `${logStem}.jsonl`,
 							// Left out when false, so most entries read as before.
@@ -452,6 +511,17 @@ export async function recordRunSession(
 ): Promise<void> {
 	await rewriteHeader(ticketFile(entry.ticket), (header) => {
 		runTable(header, entry).session_id = sessionId;
+	});
+}
+
+/**
+ * Marks `entry`, a Run that set out to resume a session, as having fallen
+ * back to a fresh one: `resume = "fell-back"`. Its new session's id is
+ * `recordRunSession`'s to write.
+ */
+export async function recordRunFellBack(entry: TicketRunEntry): Promise<void> {
+	await rewriteHeader(ticketFile(entry.ticket), (header) => {
+		runTable(header, entry).resume = "fell-back";
 	});
 }
 
@@ -485,6 +555,20 @@ function runTable(header: TicketHeader, entry: TicketRunEntry): TicketRunTable {
 		);
 	}
 	return table;
+}
+
+/**
+ * Writes `retryAt`, when a `vago run` will retry the Ticket's last Run, to
+ * that Run's `[[runs]]` entry. Does nothing when the Ticket has no Runs.
+ */
+export async function recordRunRetry(
+	ticket: Ticket,
+	retryAt: Date,
+): Promise<void> {
+	await rewriteHeader(ticketFile(ticket), (header) => {
+		const last = header.runs?.at(-1);
+		if (last !== undefined) last.retry_at = retryAt;
+	});
 }
 
 /**

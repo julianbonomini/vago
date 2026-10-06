@@ -41,8 +41,9 @@ export type ThemeColors = {
  * `bar` one cell of a progress bar, `sep` the mark between items on a line,
  * `cut` the end of a text cut short, `prose` the mark before the agent's
  * prose, `times` the mark of a count, like `×5`, `rule` one cell of a
- * divider, and `upDown` and `leftRight` the arrow keys as a footer names
- * them.
+ * divider, `upDown` and `leftRight` the arrow keys as a footer names
+ * them, and `resumed` and `fell-back` the mark of a Run that resumed a
+ * session or fell back to a fresh one.
  */
 export type ThemeSymbols = {
 	done: string;
@@ -61,6 +62,8 @@ export type ThemeSymbols = {
 	rule: string;
 	upDown: string;
 	leftRight: string;
+	resumed: string;
+	"fell-back": string;
 };
 
 /** How the selected row of a list is drawn. */
@@ -277,6 +280,8 @@ const glyphs: ThemeSymbols = {
 	rule: "─",
 	upDown: "↑↓",
 	leftRight: "←→",
+	resumed: "↻",
+	"fell-back": "↯",
 };
 
 const asciiGlyphs: ThemeSymbols = {
@@ -296,6 +301,8 @@ const asciiGlyphs: ThemeSymbols = {
 	rule: "-",
 	upDown: "Up Dn",
 	leftRight: "Lt Rt",
+	resumed: "r",
+	"fell-back": "f",
 };
 
 const lines: BorderCharacters = {

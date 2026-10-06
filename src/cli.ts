@@ -8,7 +8,7 @@
 import { newGoal, newTicket, resetTicket, runGoal } from "./goal-runner.ts";
 import { initProject, updateProject } from "./init.ts";
 import { printGoalReport } from "./progress.ts";
-import { readAgentRunOutput } from "./step-runner.ts";
+import { readRunOutput } from "./step-runner.ts";
 import { readGoal, readGoalBody } from "./tickets/tickets.ts";
 import { projectRoot } from "./worktree.ts";
 
@@ -183,14 +183,15 @@ run vago init.`,
 	},
 	{
 		name: "run",
-		summary: "Take a Goal's ready Tickets through its Workflow",
-		description: `Runs each ready Ticket of the Goal through every Step of the Workflow the Goal
-names, one Ticket at a time, until no Ticket is ready or one goes stuck. It
-prints a line per Step and a summary at the end. While any Ticket of the Goal
-is stuck it runs nothing and says which. Exits 0 only when every Ticket is
-done. The Steps run in the Goal's own worktree, outside the repo on branch
-vago/<goal>, whose path it prints. It refuses a Goal another vago run is
-running.`,
+		summary: "Take a Goal's Tickets through its Workflow",
+		description: `Runs the Goal's ready and stuck Tickets through the Steps of the Workflow the
+Goal names, one Ticket at a time, until no Ticket is left to run or one goes
+stuck. A ready Ticket starts at the first Step, and a stuck, interrupted or
+lost one continues at the Step it stopped on. It
+prints a line per Step and a summary at the end. Exits 0 only when every
+Ticket is done. The Steps run in the Goal's own worktree, outside the repo on
+branch vago/<goal>, whose path it prints. It refuses a Goal another vago run
+is running.`,
 		operands: [goalToRun],
 		flags: [],
 		example: "vago run search",
@@ -233,7 +234,7 @@ how long they took and what they cost, ready to paste into a PR description.`,
 			const outputs = new Map<string, string>();
 			for (const run of state.tickets.flatMap(({ runs }) => runs)) {
 				if (run.inGoalReport) {
-					outputs.set(run.log, await readAgentRunOutput(run));
+					outputs.set(run.log, (await readRunOutput(run)) ?? "");
 				}
 			}
 			printGoalReport(await readGoalBody(root, goal), state, outputs);
@@ -269,9 +270,10 @@ when vago run would refuse that Workflow.`,
 	},
 	{
 		name: "ticket reset",
-		summary: "Make a stuck Ticket ready to run again",
-		description: `Sets a stuck Ticket back to ready, so the next vago run takes it again. Its Runs
-stay in the Ticket file. It refuses a Ticket that isn't stuck.`,
+		summary: "Make a stuck Ticket start over from its first Step",
+		description: `Sets a stuck Ticket so the next vago run starts it over from its first Step,
+instead of picking it up at the Step it stopped on. Its Runs stay in the
+Ticket file. It refuses a Ticket that isn't stuck.`,
 		operands: [ticketGoal, ticketNumber],
 		flags: [],
 		example: "vago ticket reset search 2",

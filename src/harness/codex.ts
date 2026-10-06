@@ -83,16 +83,12 @@ const FileChange = z.object({
 export const codex: HarnessCli = {
 	command(model, args) {
 		// "-" reads the prompt from stdin, where the kernel writes it.
-		return [
-			"codex",
-			"exec",
-			"--json",
-			guardedMode,
-			"--model",
-			model,
-			...args,
-			"-",
-		];
+		return [...execCommand(model, args), "-"];
+	},
+	resumeCommand(sessionId, model, args) {
+		// `resume` takes no --approve-for-me of its own, so every flag goes
+		// before it, to `exec`.
+		return [...execCommand(model, args), "resume", sessionId, "-"];
 	},
 	events(line, command) {
 		const event = parseJson(line);
@@ -143,6 +139,11 @@ export const codex: HarnessCli = {
 		return `codex resume ${sessionId}`;
 	},
 };
+
+// What a fresh session and a resumed one both run with.
+function execCommand(model: string, args: readonly string[]): string[] {
+	return ["codex", "exec", "--json", guardedMode, "--model", model, ...args];
+}
 
 // A command shows from its start; a file change, which Codex applies at
 // once, shows when it's done, the only event sure to carry it.

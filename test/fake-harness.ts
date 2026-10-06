@@ -67,27 +67,54 @@ export type FakeHarness = {
 /**
  * Writes a fake `claude` into a fresh temp directory. Each call replays
  * `fixturePath`, one of the fixtures above, then runs the shell command
- * `afterFixture`, such as `exit 3` or `sleep 30`.
+ * `afterFixture`, such as `exit 3` or `sleep 30`. With `resume` set to
+ * `refused`, a call that resumes a session fails as `claude` does when it
+ * can't find the session: an error on stderr, exit 1 and no stream.
  */
 export async function makeFakeClaude(
 	afterFixture = "exit 0",
 	fixturePath = sessionFixture,
+	resume: "accepted" | "refused" = "accepted",
 ): Promise<FakeHarness> {
-	return makeFake("claude", afterFixture, fixturePath);
+	const refusal =
+		resume === "refused"
+			? `case " $* " in *" --resume "*) echo "No conversation found with session ID" >&2; exit 1;; esac`
+			: "";
+	return makeFake("claude", afterFixture, fixturePath, refusal);
 }
 
-/** A fake `codex`, otherwise as `makeFakeClaude`. */
+/**
+ * A fake `codex`, otherwise as `makeFakeClaude`. A refused resume fails as
+ * `codex exec resume` does when it finds no session: an error on stderr,
+ * exit 1 and no stream.
+ */
 export async function makeFakeCodex(
 	afterFixture = "exit 0",
 	fixturePath = codexSessionFixture,
+	resume: "accepted" | "refused" = "accepted",
 ): Promise<FakeHarness> {
-	return makeFake("codex", afterFixture, fixturePath);
+	const refusal =
+		resume === "refused"
+			? `case " $* " in *" resume "*) echo "Error: thread/resume: thread/resume failed: no rollout found" >&2; exit 1;; esac`
+			: "";
+	return makeFake("codex", afterFixture, fixturePath, refusal);
+}
+
+/**
+ * A shell command for a fake's `afterFixture` that runs `command` on the
+ * fake's first `calls` calls and exits 0 on every later one, so a session can
+ * fail and the resumes that retry it succeed.
+ */
+export function onFirstCalls(calls: number, command: string): string {
+	// `$call` is the folder of this call, named by its number from 0.
+	return `[ "$(basename "$call")" -lt ${calls} ] && { ${command}; }; exit 0`;
 }
 
 async function makeFake(
 	name: string,
 	afterFixture: string,
 	fixturePath: string,
+	beforeFixture = "",
 ): Promise<FakeHarness> {
 	const dir = await mkdtemp(join(tmpdir(), `vago-fake-${name}-`));
 	const program = join(dir, name);
@@ -101,6 +128,7 @@ call="${dir}/calls/$(ls "${dir}/calls" | wc -l | tr -d ' ')"
 mkdir "$call"
 printf '%s\\n' "$@" > "$call/argv"
 cat > "$call/stdin"
+${beforeFixture}
 cat "${fixturePath}"
 ${afterFixture}
 `;

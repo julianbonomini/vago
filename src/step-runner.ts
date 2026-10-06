@@ -13,6 +13,7 @@ import {
 	readRunLog,
 	readTicketBody,
 	recordRunEnd,
+	recordRunFellBack,
 	recordRunSession,
 	recordRunStart,
 	type Ticket,
@@ -46,6 +47,11 @@ export type FinishedRun = {
 	/** Absolute path of the Run's log. */
 	log: string;
 	/**
+	 * The id of the Run's Harness session, to resume it. Absent for a shell
+	 * Step, and for a session that ended before reporting its id.
+	 */
+	sessionId?: string;
+	/**
 	 * The command that resumes the Run's Harness session. Absent for a shell
 	 * Step, and for a session that ended before reporting its id.
 	 */
@@ -66,15 +72,22 @@ export type FinishedRun = {
  * gets `VAGO_PROJECT_ROOT`, the main checkout's path.
  * SIGINT or SIGTERM while the Step runs kills every process it started
  * and ends the Run `interrupted`, instead of ending `vago`.
+ * Given `resume`, the id of an earlier Run's session of an agent Step on
+ * the same Harness, the Run resumes that session with a fixed message
+ * to continue, in place of the prompt, and is recorded as resuming it. When
+ * the resume fails to start, the Run says so in its log and its entry, and
+ * starts a fresh session with the prompt instead.
  */
 export async function runStep(
 	step: Step,
 	ticket: Ticket,
 	worktree: string,
 	stepOutputs: ReadonlyMap<string, string>,
+	resume?: string,
 ): Promise<FinishedRun> {
 	const started = new Date();
-	const entry = await recordRunStart(ticket, step, started);
+	const resumes = step.type === "agent" ? resume : undefined;
+	const entry = await recordRunStart(ticket, step, started, resumes);
 	printStepStarted(step.name, started);
 	await mkdir(dirname(entry.log), { recursive: true });
 	// One descriptor for both streams keeps stdout and stderr in the order the
@@ -97,6 +110,7 @@ export async function runStep(
 				entry,
 				worktree,
 				stepOutputs,
+				resumes,
 				fd,
 				interrupt.signal,
 			));
@@ -126,7 +140,7 @@ export async function runStep(
 			outcome = outcomeOf(code);
 			// Read back from the log, so a review prompt sees stdout and stderr
 			// interleaved the way the Step wrote them.
-			output = `exit code ${code}\n${await Bun.file(entry.log).text()}`;
+			output = shellOutput(code, await Bun.file(entry.log).text());
 		}
 	} finally {
 		process.off("SIGINT", interruptRun);
@@ -138,18 +152,31 @@ export async function runStep(
 	const spelled = spellOutcome(outcome);
 	await recordRunEnd(entry, spelled, ended, session);
 	printStepEnded(step.name, spelled, started, ended, session?.costUsd);
-	return { outcome, output, log: entry.log, resumeHint };
+	return {
+		outcome,
+		output,
+		log: entry.log,
+		sessionId: session?.sessionId,
+		resumeHint,
+	};
 }
 
 /**
- * The output an agent Run gave later Steps, its session's final answer, read
- * back from the Run's log. "" for a shell Run and for a session that ended
- * without an answer, or whose log is gone.
+ * The output `run` gave later Steps, rebuilt from its log and its
+ * `[[runs]]` entry: an agent Run's final result text, "" when its session
+ * gave none, and for a shell Run `exit code N` and its log. Undefined when
+ * the log is gone, or for a shell Run whose outcome isn't `ok` or `exit N`.
  */
-export async function readAgentRunOutput(run: TicketRun): Promise<string> {
-	if (run.harness === undefined) return "";
-	const harness = findHarness(run.harness);
+export async function readRunOutput(
+	run: TicketRun,
+): Promise<string | undefined> {
+	if (!(await Bun.file(run.log).exists())) return undefined;
 	const { added } = await readRunLog(run.log);
+	if (run.harness === undefined) {
+		const code = shellExitCode(run.outcome);
+		return code === undefined ? undefined : shellOutput(code, added);
+	}
+	const harness = findHarness(run.harness);
 	let resultText: string | undefined;
 	for (const line of added.split("\n")) {
 		// The command only tells a permission mode fallback apart, which the
@@ -159,25 +186,20 @@ export async function readAgentRunOutput(run: TicketRun): Promise<string> {
 	return resultText ?? "";
 }
 
-/**
- * The command that resumes `run`'s Harness session, or undefined for a shell
- * Run and for a session that never reported its id.
- */
-export function resumeHintFor(run: TicketRun): string | undefined {
-	if (run.harness === undefined || run.sessionId === undefined)
-		return undefined;
-	return findHarness(run.harness).resumeHint(run.sessionId);
-}
+// What a resumed session is handed in place of the Step's prompt.
+const continueMessage =
+	"You were interrupted. Continue the task from where you stopped; check the working tree first.\n";
 
-// The log gets the raw stream and stderr together, so a Harness that fails
-// before streaming (bad login, unknown model) still leaves its reason there.
-// The session id goes to `entry` as soon as the Harness reports it, so a Run
-// still going, or one whose `vago` died, can be resumed.
+// Runs the agent Step's session, resuming session `resumes` when given. A
+// resume that ended on its own without the Harness reporting a session
+// never started, so the Step gets one fresh session in its place; one cut
+// off by the human or the idle timeout ended as the Run does.
 async function runAgent(
 	step: AgentStep,
 	entry: TicketRunEntry,
 	worktree: string,
 	stepOutputs: ReadonlyMap<string, string>,
+	resumes: string | undefined,
 	fd: number,
 	interrupt: AbortSignal,
 ): Promise<{
@@ -185,18 +207,98 @@ async function runAgent(
 	session: HarnessSessionReport;
 	resumeHint?: string;
 }> {
-	const { ticket } = entry;
-	const prompt = buildPrompt(step, {
-		ticket: await readTicketBody(ticket),
-		goal: await readGoalBody(ticket.root, ticket.goal),
-		goalName: ticket.goal,
-		stepOutputs,
-	});
 	const harness = findHarness(step.harness);
-	const command = harness.command(step.model, step.args);
+	let ran: HarnessSessionRun | undefined;
+	if (resumes !== undefined) {
+		ran = await runSession(
+			harness.resumeCommand(resumes, step.model, step.args),
+			continueMessage,
+			step,
+			entry,
+			worktree,
+			fd,
+			interrupt,
+		);
+		if (
+			ran.session.sessionId === undefined &&
+			!ran.idleTimedOut &&
+			!interrupt.aborted
+		) {
+			writeSync(
+				fd,
+				`vago: session ${resumes} couldn't be resumed; running the Step in a fresh session\n`,
+			);
+			await recordRunFellBack(entry);
+			ran = undefined;
+		}
+	}
+	if (ran === undefined) {
+		const { ticket } = entry;
+		const prompt = buildPrompt(step, {
+			ticket: await readTicketBody(ticket),
+			goal: await readGoalBody(ticket.root, ticket.goal),
+			goalName: ticket.goal,
+			stepOutputs,
+		});
+		ran = await runSession(
+			harness.command(step.model, step.args),
+			prompt,
+			step,
+			entry,
+			worktree,
+			fd,
+			interrupt,
+		);
+	}
+	const { session, code, idleTimedOut } = ran;
+	// A session out of the mode asked for is why its calls were denied, so
+	// the fallback is the reason to name.
+	let outcome: RunOutcome;
+	if (idleTimedOut) {
+		outcome = { kind: "idle-timeout" };
+	} else if (session.permissionModeFallback !== undefined) {
+		outcome = { kind: "permission-mode", mode: session.permissionModeFallback };
+	} else if (session.permissionDenied) {
+		outcome = { kind: "permission-denied" };
+	} else {
+		outcome = outcomeOf(code);
+	}
+	return {
+		outcome,
+		session,
+		resumeHint:
+			session.sessionId === undefined
+				? undefined
+				: harness.resumeHint(session.sessionId),
+	};
+}
+
+// How one Harness session of a Run ended.
+type HarnessSessionRun = {
+	session: HarnessSessionReport;
+	code: number;
+	idleTimedOut: boolean;
+};
+
+// Spawns `command`, a Harness session of `step`, with `stdin` as its input,
+// and waits for it to end. The log gets the raw stream and stderr together,
+// so a Harness that fails before streaming (bad login, unknown model) still
+// leaves its reason there. The session id goes to `entry` as soon as the
+// Harness reports it, so a Run still going, or one whose `vago` died, can be
+// resumed.
+async function runSession(
+	command: string[],
+	stdin: string,
+	step: AgentStep,
+	entry: TicketRunEntry,
+	worktree: string,
+	fd: number,
+	interrupt: AbortSignal,
+): Promise<HarnessSessionRun> {
+	const harness = findHarness(step.harness);
 	const child = Bun.spawn(command, {
 		cwd: worktree,
-		stdin: new Blob([prompt]),
+		stdin: new Blob([stdin]),
 		stdout: "pipe",
 		stderr: fd,
 		detached: true,
@@ -230,26 +332,7 @@ async function runAgent(
 	clearTimeout(idleTimer);
 	await readLine(partial + decoder.decode());
 	const code = await exit;
-	// A session out of the mode asked for is why its calls were denied, so
-	// the fallback is the reason to name.
-	let outcome: RunOutcome;
-	if (idle.signal.aborted) {
-		outcome = { kind: "idle-timeout" };
-	} else if (session.permissionModeFallback !== undefined) {
-		outcome = { kind: "permission-mode", mode: session.permissionModeFallback };
-	} else if (session.permissionDenied) {
-		outcome = { kind: "permission-denied" };
-	} else {
-		outcome = outcomeOf(code);
-	}
-	return {
-		outcome,
-		session,
-		resumeHint:
-			session.sessionId === undefined
-				? undefined
-				: harness.resumeHint(session.sessionId),
-	};
+	return { session, code, idleTimedOut: idle.signal.aborted };
 }
 
 /**
@@ -263,6 +346,21 @@ export function spellOutcome(outcome: RunOutcome): string {
 		return `permission-mode ${outcome.mode}`;
 	}
 	return outcome.kind;
+}
+
+/**
+ * The exit code of a shell Run whose outcome, as `spellOutcome` spelled it,
+ * is `outcome`: 0 for `ok`, N for `exit N`, and undefined for any other.
+ */
+export function shellExitCode(outcome: string | undefined): number | undefined {
+	if (outcome === "ok") return 0;
+	const exit = /^exit (\d+)$/.exec(outcome ?? "");
+	return exit?.[1] === undefined ? undefined : Number(exit[1]);
+}
+
+// A shell Run's output for later Steps' prompts.
+function shellOutput(code: number, log: string): string {
+	return `exit code ${code}\n${log}`;
 }
 
 // Stops the child's group when `stop` aborts, at once if it already has, as

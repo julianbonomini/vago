@@ -137,18 +137,20 @@ test("a vago run killed with SIGKILL doesn't block the next one", async () => {
 	await waitFor(join(signals, "started"));
 	killed.kill("SIGKILL");
 	await killed.exited;
+	// Lets the killed run's Step, which outlived it, end, and the next run's
+	// own Run of it go straight through.
+	await Bun.write(join(signals, "go"), "");
 
 	const next = await runVago(root, ["run", "hello"]);
 
 	expect(next.stderr).not.toContain("already being run");
+	expect(next.exitCode).toBe(0);
 	const { header } = await readTicketFile(root, helloTicket);
-	expect(header.status).toBe("stuck");
-	const [lost] = runsOf(header);
+	expect(header.status).toBe("done");
+	const [lost, again] = runsOf(header);
 	expect(lost?.outcome).toBe("lost");
 	expect(lost?.ended).toBeInstanceOf(Date);
-	expect(next.stdout).toContain("01-work: vago ticket reset hello 01");
-	// The killed run's Step outlived it, still waiting.
-	await Bun.write(join(signals, "go"), "");
+	expect(again?.outcome).toBe("ok");
 });
 
 test("after a run ends, the Goal can be run again", async () => {

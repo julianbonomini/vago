@@ -19,7 +19,6 @@ import {
 	type GoalTicketMark,
 	type GoalWorkflowSteps,
 	goalTickets,
-	runningStep,
 } from "./goal-tickets.ts";
 import { joinParagraphs } from "./text-fit.ts";
 
@@ -326,7 +325,7 @@ function goalStanding(
 		tickets.find((ticket) => marks.includes(ticket.mark));
 	// A running Ticket is marked lost while no `vago run` holds the Goal.
 	const running = first("running", "lost");
-	const runningOn = running && `${running.number} ${runningStep(running.runs)}`;
+	const runningOn = running && `${running.number} ${running.onStep}`;
 	if (claimed) {
 		return { standing: "running", phrase: runningOn ?? "between Tickets" };
 	}

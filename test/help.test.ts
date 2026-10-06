@@ -76,6 +76,20 @@ test("vago help <command> prints what <command> --help prints", async () => {
 	expect(viaHelp.stdout).toBe(viaFlag.stdout);
 });
 
+test("vago ticket reset --help says the Ticket starts over from its first Step", async () => {
+	const root = await makeProject({});
+
+	const result = await runVago(root, ["ticket", "reset", "--help"]);
+	const summary = await runVago(root, ["help"]);
+
+	expect(summary.stdout).toContain(
+		"ticket reset  Make a stuck Ticket start over from its first Step\n",
+	);
+	expect(result.stdout.replace(/\s+/g, " ")).toContain(
+		"the next vago run starts it over from its first Step, instead of picking it up at the Step it stopped on",
+	);
+});
+
 test("--help among a command's arguments writes no file", async () => {
 	const root = await makeProject({ ".vago/workflows/test.toml": workflow });
 

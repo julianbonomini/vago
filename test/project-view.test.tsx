@@ -277,6 +277,32 @@ test("a Goal whose lock a live process holds is running, and shows its Ticket's 
 	expect(row).toContain("04 review");
 });
 
+test("a running Goal whose Ticket waits to retry its failed Step says so and the time left", async () => {
+	const ended = new Date(Date.now() - 1000);
+	const root = await makeProject({
+		".vago-goals/a/goal.md": goalText("w"),
+		".vago-goals/a/tickets/04-now.md": ticketText("running", {
+			runs: [
+				{
+					step: "review",
+					model: "opus",
+					started: new Date(ended.getTime() - 60_000),
+					ended,
+					outcome: "exit 1",
+					retryAt: new Date(ended.getTime() + 60_000),
+				},
+			],
+		}),
+	});
+	await heldLock(root, "a");
+
+	const view = await renderView(root);
+	const row = rowOf(await frameWith(view, "04 review"), "a");
+
+	expect(row).toContain("● running");
+	expect(row).toMatch(/04 review retries in \d+s/);
+});
+
 const warn = RGBA.fromHex("#e0b357");
 
 // The span in the row showing Goal `goal` whose text holds `text`.

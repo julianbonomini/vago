@@ -68,6 +68,7 @@ Worktree ${await goalWorktree(root, "hello")}
   2026-10-02T10:00:00Z    1.0s          check-everything exit 1
 03-fail is stuck after check-everything: exit 1
   log:    .vago-goals/hello/logs/03-check-everything-2.log
+  again:  vago run hello
   reset:  vago ticket reset hello 03
 
 hello: 2 of 4 Tickets done

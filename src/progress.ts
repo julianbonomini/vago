@@ -1,8 +1,9 @@
 // Everything `vago run` prints to stdout while it runs: the Goal's worktree,
 // one line naming each Ticket as it starts, and under it a line when each
-// Step starts and one when it ends, where to look when a Ticket goes stuck,
-// the Goal summary table on exit, and what became of the Goal's worktree,
-// after the summary. Also the Goal report `vago goal report` prints. Hides the
+// Step starts, one when it ends and one when it waits to retry, where to
+// look when a Ticket goes stuck, why a stuck Ticket can't be picked up, the
+// Goal summary table on exit, and what became of the Goal's worktree, after
+// the summary. Also the Goal report `vago goal report` prints. Hides the
 // line formats, columns and colours, and how durations and costs read.
 
 import { relative } from "node:path";
@@ -13,6 +14,7 @@ import {
 	type TicketRun,
 	type TicketStatus,
 	ticketNumberText,
+	ticketRunResumeWords,
 } from "./tickets/tickets.ts";
 import type { WorktreeClose } from "./worktree.ts";
 
@@ -21,9 +23,16 @@ export function printWorktree(path: string): void {
 	console.log(`Worktree ${path}`);
 }
 
-/** Prints the line naming `ticket`, under which its Step lines follow, indented. */
-export function printTicketStarted(ticket: Ticket): void {
-	console.log(ticket.name);
+/**
+ * Prints the line naming `ticket`, under which its Step lines follow,
+ * indented, saying it was picked up at Step `pickedUpAt` when given.
+ */
+export function printTicketStarted(ticket: Ticket, pickedUpAt?: string): void {
+	console.log(
+		pickedUpAt === undefined
+			? ticket.name
+			: `${ticket.name}, picked up at ${pickedUpAt}`,
+	);
 }
 
 /** Prints the indented line saying Step `stepName` started at `started`. */
@@ -56,10 +65,25 @@ export function printStepEnded(
 }
 
 /**
+ * Prints the indented line saying Step `stepName`, which just failed at `at`,
+ * is retried in `waitMs` milliseconds.
+ */
+export function printStepRetry(
+	stepName: string,
+	at: Date,
+	waitMs: number,
+): void {
+	console.log(
+		paint(stepLine(at, stepName, `retries in ${duration(waitMs)}`), "dim"),
+	);
+}
+
+/**
  * Prints that `ticket` went stuck after Step `stepName`, whose Run ended with
  * `outcome` as spelled in the header, with what the human needs next: the
  * Run's log at the absolute path `log`, the command that resumes its Harness
- * session when there is one, and the command that resets the Ticket.
+ * session when there is one, the `vago run` that picks the Ticket up at that
+ * Step again, and the command that resets the Ticket.
  */
 export function printStuck(
 	ticket: Ticket,
@@ -75,25 +99,25 @@ export function printStuck(
 	// enough to read and still opens from where the human is.
 	console.log(`  log:    ${relative(ticket.root, log)}`);
 	if (resumeHint !== undefined) console.log(`  resume: ${resumeHint}`);
+	console.log(`  again:  vago run ${ticket.goal}`);
 	console.log(`  reset:  ${resetCommand(ticket)}`);
 }
 
 /**
- * Prints why `vago run` won't start `goal`: the Tickets in `stuck`, each with
- * the command that resets it and, when given, the command that resumes its
- * last Run's Harness session.
+ * Prints that `ticket` can't be picked up because of Step `stepName`, with
+ * `reason` saying why after the Step's name, as in `implement has no log
+ * left to rebuild its output from`, and the command that makes it start
+ * over.
  */
-export function printStuckRefusal(
-	goal: string,
-	stuck: { ticket: Ticket; resumeHint?: string }[],
+export function printPickUpRefusal(
+	ticket: Ticket,
+	stepName: string,
+	reason: string,
 ): void {
 	console.log(
-		`${goal} has stuck Tickets. Check the Goal's worktree, then reset each one:`,
+		paint(`${ticket.name} can't be picked up: ${stepName} ${reason}`, "red"),
 	);
-	for (const { ticket, resumeHint } of stuck) {
-		console.log(`  ${ticket.name}: ${resetCommand(ticket)}`);
-		if (resumeHint !== undefined) console.log(`    resume: ${resumeHint}`);
-	}
+	console.log(`  reset:  ${resetCommand(ticket)}`);
 }
 
 /**
@@ -177,7 +201,8 @@ export function printWorktreeClose(close: WorktreeClose): void {
  * on one line, and then in Markdown what each Ticket's Steps put in the Goal
  * report, collapsed by Ticket, the Workflow the Goal names and what the
  * Goal's Runs took and cost: a table with one row per Ticket and a total, and
- * every Run in a collapsed table under it. Made to be a PR description.
+ * every Run in a collapsed table under it, its outcome marked when it
+ * resumed a session or fell back to a fresh one. Made to be a PR description.
  * `outputs` holds the output of each Run whose Step puts it in the report, by
  * the Run's log; a Ticket shows the latest such Run of each Step that ended
  * `ok`, and nothing when none did. A Run still going counts toward neither
@@ -231,8 +256,12 @@ export function printGoalReport(
 				run.ended === undefined
 					? ""
 					: duration(run.ended.getTime() - run.started.getTime());
+			const outcome = [
+				run.outcome ?? "running",
+				...(run.resume === undefined ? [] : [ticketRunResumeWords[run.resume]]),
+			].join(", ");
 			lines.push(
-				`| ${ticket.name} | ${run.step} | ${run.outcome ?? "running"} | ${took} | ${dollars(run.costUsd)} |`,
+				`| ${ticket.name} | ${run.step} | ${outcome} | ${took} | ${dollars(run.costUsd)} |`,
 			);
 		}
 	}

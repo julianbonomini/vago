@@ -208,6 +208,31 @@ test("a running Goal's Tickets show the Step, the blockers waited on and nothing
 	expect(frame).toMatch(/\n ● run {2}Hello +\n RUNNING .* Goal 1 of 1 /);
 });
 
+test("a Ticket waiting to retry its failed Step says so and the time left before its title", async () => {
+	const ended = new Date(Date.now() - 1000);
+	const root = await makeProject({
+		".vago/workflows/small.toml": workflowOf("implement", "review"),
+		".vago-goals/run/goal.md": goalText("small"),
+		".vago-goals/run/tickets/01-first.md": titled("running", "First", {
+			runs: [
+				{
+					step: "implement",
+					model: "opus",
+					started: new Date(ended.getTime() - 60_000),
+					ended,
+					outcome: "exit 1",
+					retryAt: new Date(ended.getTime() + 5 * 60_000),
+				},
+			],
+		}),
+	});
+	await heldLock(root, "run");
+
+	const { frame } = await openFirstGoal(root);
+
+	expect(frame).toMatch(/ ● 01 implement retries in 4m \d+s {2}First /);
+});
+
 test("a stuck Goal's stuck Ticket says so before its title", async () => {
 	const { frame } = await openFirstGoal(await stuckGoal());
 
@@ -530,6 +555,37 @@ test("the Runs pane lists the selected Ticket's Runs and follows ↑↓", async 
 	const first = await frameWith(view, " Runs of Ticket 01 ");
 	expect(first).toMatch(/ 1 {2}implement +✓ ok +30m 0s +\$1\.25 +│/);
 	expect(first).not.toContain("exit 1");
+});
+
+test("the Runs pane marks a Run that resumed its session and one that fell back to a fresh one, and the Run's title says so", async () => {
+	const run = (minute: number, outcome: string) => ({
+		step: "implement",
+		model: "opus",
+		started: at(`10:0${minute}`),
+		ended: at(`10:0${minute + 1}`),
+		outcome,
+	});
+	const { view } = await openTicket(
+		ticketText("done", {
+			runs: [
+				run(0, "exit 1"),
+				{ ...run(2, "exit 1"), resume: "resumed" },
+				{ ...run(4, "ok"), resume: "fell-back" },
+			],
+		}),
+	);
+
+	// The Runs pane shows two Runs, scrolled to the third, the selected one.
+	const last = await frameWith(view, " 3  implement");
+	expect(last).toMatch(/ 2 {2}implement {2}↻ ✗ exit 1 +1m 0s +│/);
+	expect(last).toMatch(/ 3 {2}implement {2}↯ ✓ ok +1m 0s +│/);
+	expect(last).toContain("✓ ok · fell back to a fresh session · 1m 0s");
+
+	view.mockInput.pressArrow("left");
+	view.mockInput.pressArrow("left");
+	const first = await frameWith(view, "Run 1 ");
+	expect(first).toMatch(/ 1 {2}implement {4}✗ exit 1 +1m 0s +│/);
+	expect(first).toContain("✗ exit 1 · 1m 0s");
 });
 
 // Goal `many` whose only Ticket, done, ran its Step `step-N` N times over,

@@ -31,7 +31,7 @@ UX IMPROVEMENTS
 - [x] make UI match more missions -> no space between boxes, constant header across all pages
 - [x] attach a bit more metadata to goals, like created at, size, and some stuff like that, we later might want to show it on TUI
 - [x] workflow steps to have user specified names, then show those in the UI
-- [ ] pick up from failure... properly (resume session instead of starting from scratch) (needs grilling)
+- [x] pick up from failure... properly (resume session instead of starting from scratch) (needs grilling)
 - [x] fix merge step, it fails all the time should be quite bullet proof...
 - [x] The PR body carries the Goal's design choices ("Design it twice": the options, the pick and why) from the design and architecture Steps. Agent Steps can't reach `goal.md` or the PR body today.
   - [x] pr descrition does not use full width. it has weird enters. it comes from goals
