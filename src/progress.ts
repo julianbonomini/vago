@@ -1,10 +1,10 @@
 // Everything `vago run` prints to stdout while it runs: the Goal's worktree,
 // one line naming each Ticket as it starts, and under it a line when each
-// Step starts and one when it ends, where to look when a Ticket goes stuck,
-// why a stuck Ticket can't be picked up, the Goal summary table on exit, and
-// what became of the Goal's worktree, after the summary. Also the Goal report
-// `vago goal report` prints. Hides the line formats, columns and colours, and
-// how durations and costs read.
+// Step starts, one when it ends and one when it waits to retry, where to
+// look when a Ticket goes stuck, why a stuck Ticket can't be picked up, the
+// Goal summary table on exit, and what became of the Goal's worktree, after
+// the summary. Also the Goal report `vago goal report` prints. Hides the
+// line formats, columns and colours, and how durations and costs read.
 
 import { relative } from "node:path";
 import { joinParagraphLines } from "./markdown-paragraphs.ts";
@@ -60,6 +60,20 @@ export function printStepEnded(
 	const colour = outcome === "ok" ? "green" : "red";
 	console.log(
 		stepLine(ended, stepName, outcome, colour, took, dollars(costUsd)),
+	);
+}
+
+/**
+ * Prints the indented line saying Step `stepName`, which just failed at `at`,
+ * is retried in `waitMs` milliseconds.
+ */
+export function printStepRetry(
+	stepName: string,
+	at: Date,
+	waitMs: number,
+): void {
+	console.log(
+		paint(stepLine(at, stepName, `retries in ${duration(waitMs)}`), "dim"),
 	);
 }
 

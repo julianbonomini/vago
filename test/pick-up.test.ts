@@ -378,8 +378,9 @@ prompt = "prompts/implement.md"
 	expect(resume?.argv.slice(0, 3)).toEqual(["-p", "--resume", sessionId]);
 	expect(resume?.argv).toContain("--model");
 	expect(resume?.stdin).toBe(continueMessage);
-	const [failed, resumed] = runsOf(await headerOf(root));
-	expect(failed).not.toHaveProperty("resume");
+	const runs = runsOf(await headerOf(root));
+	expect(runs[0]).not.toHaveProperty("resume");
+	const resumed = runs.at(-1);
 	expect(resumed).toMatchObject({
 		step: "implement",
 		outcome: "ok",

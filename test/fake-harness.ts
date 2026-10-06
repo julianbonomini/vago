@@ -100,6 +100,16 @@ export async function makeFakeCodex(
 	return makeFake("codex", afterFixture, fixturePath, refusal);
 }
 
+/**
+ * A shell command for a fake's `afterFixture` that runs `command` on the
+ * fake's first `calls` calls and exits 0 on every later one, so a session can
+ * fail and the resumes that retry it succeed.
+ */
+export function onFirstCalls(calls: number, command: string): string {
+	// `$call` is the folder of this call, named by its number from 0.
+	return `[ "$(basename "$call")" -lt ${calls} ] && { ${command}; }; exit 0`;
+}
+
 async function makeFake(
 	name: string,
 	afterFixture: string,

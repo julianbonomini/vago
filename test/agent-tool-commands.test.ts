@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
-import { makeFakeClaude } from "./fake-harness.ts";
+import { makeFakeClaude, onFirstCalls } from "./fake-harness.ts";
 import {
 	goalText,
 	goalWorktree,
@@ -73,13 +73,12 @@ function alive(pid: number): boolean {
 
 test("after an idle timeout, no command the agent started is alive", async () => {
 	const root = await project("1s");
-	const claude = await makeFakeClaude(startsToolCommand);
+	const claude = await makeFakeClaude(onFirstCalls(1, startsToolCommand));
 
-	const result = await runVago(root, ["run", "hello"], claude.env);
+	await runVago(root, ["run", "hello"], claude.env);
 
-	expect(result.exitCode).not.toBe(0);
 	expect(alive(await waitForPid(root, "tool.pid"))).toBe(false);
-	expect(await outcomesOf(root)).toEqual(["idle-timeout"]);
+	expect(await outcomesOf(root)).toEqual(["idle-timeout", "ok"]);
 });
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
@@ -103,15 +102,15 @@ test("an agent that ignores SIGTERM still ends within the grace period", async (
 	// `sleep` inherits the ignored SIGTERM and holds the stream open, so only
 	// SIGKILL ends the Run.
 	const claude = await makeFakeClaude(
-		"trap '' TERM; echo $$ > claude.pid; sleep 60",
+		onFirstCalls(1, "trap '' TERM; echo $$ > claude.pid; sleep 60"),
 	);
 
-	// The 1s idle timeout, Vago's 5s grace period, and slack for startup.
+	// The 1s idle timeout, Vago's 5s grace period, and slack for startup and
+	// the retry.
 	const started = Date.now();
-	const result = await runVago(root, ["run", "hello"], claude.env);
+	await runVago(root, ["run", "hello"], claude.env);
 
 	expect(Date.now() - started).toBeLessThan(9_000);
-	expect(result.exitCode).not.toBe(0);
 	expect(alive(-(await waitForPid(root, "claude.pid")))).toBe(false);
-	expect(await outcomesOf(root)).toEqual(["idle-timeout"]);
+	expect(await outcomesOf(root)).toEqual(["idle-timeout", "ok"]);
 }, 15_000);

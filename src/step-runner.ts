@@ -47,6 +47,11 @@ export type FinishedRun = {
 	/** Absolute path of the Run's log. */
 	log: string;
 	/**
+	 * The id of the Run's Harness session, to resume it. Absent for a shell
+	 * Step, and for a session that ended before reporting its id.
+	 */
+	sessionId?: string;
+	/**
 	 * The command that resumes the Run's Harness session. Absent for a shell
 	 * Step, and for a session that ended before reporting its id.
 	 */
@@ -147,7 +152,13 @@ export async function runStep(
 	const spelled = spellOutcome(outcome);
 	await recordRunEnd(entry, spelled, ended, session);
 	printStepEnded(step.name, spelled, started, ended, session?.costUsd);
-	return { outcome, output, log: entry.log, resumeHint };
+	return {
+		outcome,
+		output,
+		log: entry.log,
+		sessionId: session?.sessionId,
+		resumeHint,
+	};
 }
 
 /**

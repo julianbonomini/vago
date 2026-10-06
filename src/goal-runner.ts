@@ -1,13 +1,15 @@
 // A Goal's lifecycle: creating it and its Tickets with the Workflows they
 // name, the main loop of `vago run`, which takes the Goal's Tickets one at a
 // time through the Steps of their Workflow in the Goal's worktree, a stuck
-// one from the Step it stopped on, and closes it once every Ticket is done,
-// and resetting a stuck Ticket. Hides the order of a Goal's lifecycle, where
-// its Steps run and where a Ticket picks up.
+// one from the Step it stopped on, retries a failed agent Step, and closes
+// it once every Ticket is done, and resetting a stuck Ticket. Hides the order
+// of a Goal's lifecycle, where its Steps run, where a Ticket picks up and
+// when a Step is retried.
 
 import {
 	printGoalSummary,
 	printPickUpRefusal,
+	printStepRetry,
 	printStepSkipped,
 	printStuck,
 	printTicketStarted,
@@ -15,6 +17,7 @@ import {
 	printWorktreeClose,
 } from "./progress.ts";
 import {
+	type FinishedRun,
 	readRunOutput,
 	runStep,
 	shellExitCode,
@@ -32,7 +35,7 @@ import {
 	type TicketRun,
 	withGoalClaimed,
 } from "./tickets/tickets.ts";
-import { loadWorkflow, type Workflow } from "./workflow.ts";
+import { loadWorkflow, type Step, type Workflow } from "./workflow.ts";
 import { closeWorktree, openWorktree } from "./worktree.ts";
 
 /** How `vago run` left the Goal: every Ticket `done`, or not. */
@@ -189,10 +192,10 @@ export async function resetTicket(
 // on, with `stepOutputs` the outputs of the Steps before it and `resume` the
 // Harness session Step `from` resumes, if any, skipping a
 // `last-ticket` Step unless this is the Goal's last Ticket, and returns
-// whether the Ticket got to `done`. A failed Step leaves it `stuck`,
-// unless it's a shell Step whose failure the Workflow lets the Ticket go on
-// from. `on_fail` covers a Step that exits non-zero, never one the human
-// interrupted.
+// whether the Ticket got to `done`. A failed Step leaves it `stuck`, once
+// its retries failed too, unless it's a shell Step whose failure the
+// Workflow lets the Ticket go on from. `on_fail` covers a Step that exits
+// non-zero, never one the human interrupted.
 async function runTicket(
 	workflow: Workflow,
 	ticket: Ticket,
@@ -208,7 +211,7 @@ async function runTicket(
 			printStepSkipped(step.name, new Date());
 			continue;
 		}
-		const run = await runStep(
+		const run = await runStepWithRetries(
 			step,
 			ticket,
 			worktree,
@@ -235,6 +238,53 @@ async function runTicket(
 	}
 	await setStatus(ticket, "done");
 	return true;
+}
+
+// How many minutes a failed agent Step waits before each of its retries.
+const retryWaitMinutes = [1, 1, 5];
+
+// Tests set `VAGO_RETRY_MINUTE_MS` to shorten the waits without changing
+// their count or proportions.
+const retryMinuteMs = Number(process.env.VAGO_RETRY_MINUTE_MS ?? 60_000);
+
+// Runs `step` as `runStep` does, then, while an agent Step's Run fails, waits
+// and resumes its session in a new Run, up to one Run per wait in
+// `retryWaitMinutes`. Returns the last Run. A Run the human interrupted, or
+// SIGINT or SIGTERM during a wait, ends the retries there.
+async function runStepWithRetries(
+	step: Step,
+	ticket: Ticket,
+	worktree: string,
+	stepOutputs: ReadonlyMap<string, string>,
+	resume: string | undefined,
+): Promise<FinishedRun> {
+	let run = await runStep(step, ticket, worktree, stepOutputs, resume);
+	const waits = step.type === "agent" ? retryWaitMinutes : [];
+	for (const minutes of waits) {
+		if (run.outcome.kind === "ok" || run.outcome.kind === "interrupted") break;
+		const waitMs = minutes * retryMinuteMs;
+		printStepRetry(step.name, new Date(), waitMs);
+		if (!(await waitUnlessInterrupted(waitMs))) break;
+		run = await runStep(step, ticket, worktree, stepOutputs, run.sessionId);
+	}
+	return run;
+}
+
+// Resolves true after `ms`, or false as soon as SIGINT or SIGTERM comes,
+// which then ends only the wait instead of `vago`.
+function waitUnlessInterrupted(ms: number): Promise<boolean> {
+	return new Promise((resolve) => {
+		const finish = (waited: boolean) => {
+			clearTimeout(timer);
+			process.off("SIGINT", interrupted);
+			process.off("SIGTERM", interrupted);
+			resolve(waited);
+		};
+		const interrupted = () => finish(false);
+		const timer = setTimeout(() => finish(true), ms);
+		process.on("SIGINT", interrupted);
+		process.on("SIGTERM", interrupted);
+	});
 }
 
 // Where a stuck Ticket whose Runs are `runs` continues in `workflow`: at the

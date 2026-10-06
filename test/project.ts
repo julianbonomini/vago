@@ -16,6 +16,10 @@ const cli = join(import.meta.dir, "..", "src", "cli.ts");
  */
 export const vagoHome = mkdtempSync(join(tmpdir(), "vago-home-"));
 
+// What every `vago` child gets unless a test names its own: `vagoHome`, and
+// retry waits of no time, so a failing agent Step's retries don't slow a test.
+const testEnv = { VAGO_HOME: vagoHome, VAGO_RETRY_MINUTE_MS: "0" };
+
 /**
  * Flags that let a test's `git commit` run whatever the human's git config
  * says: a name and email, and no signing.
@@ -200,7 +204,7 @@ export function startVago(
 ): RunningVago {
 	const child = Bun.spawn([process.execPath, cli, ...args], {
 		cwd: root,
-		env: { ...process.env, VAGO_HOME: vagoHome, ...env },
+		env: { ...process.env, ...testEnv, ...env },
 		stdin: new Blob([stdin]),
 		stdout: "pipe",
 		stderr: "pipe",
@@ -276,7 +280,7 @@ export function runVagoInTerminal(
 	return new Promise((resolve) => {
 		Bun.spawn([process.execPath, cli, ...args], {
 			cwd: root,
-			env: { ...process.env, VAGO_HOME: vagoHome, ...env },
+			env: { ...process.env, ...testEnv, ...env },
 			terminal: {
 				cols: 200,
 				data: (_terminal, chunk) => {

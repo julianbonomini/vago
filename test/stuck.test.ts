@@ -65,7 +65,10 @@ test("claude exiting non-zero leaves the Ticket stuck and later Tickets ready", 
 	expect(result.exitCode).not.toBe(0);
 	const greet = await headerOf(root, "01-greet");
 	expect(greet.status).toBe("stuck");
-	expect(runsOf(greet).map((run) => run.outcome)).toEqual(["exit 3"]);
+	// The Run and its three retries.
+	expect(runsOf(greet).map((run) => run.outcome)).toEqual(
+		Array(4).fill("exit 3"),
+	);
 	const wave = await headerOf(root, "02-wave");
 	expect(wave.status).toBe("ready");
 	expect(runsOf(wave)).toEqual([]);
@@ -82,7 +85,10 @@ test("claude going silent past idle_timeout is killed and the Ticket goes stuck"
 	expect(result.exitCode).not.toBe(0);
 	const greet = await headerOf(root, "01-greet");
 	expect(greet.status).toBe("stuck");
-	expect(runsOf(greet).map((run) => run.outcome)).toEqual(["idle-timeout"]);
+	// The Run and its three retries.
+	expect(runsOf(greet).map((run) => run.outcome)).toEqual(
+		Array(4).fill("idle-timeout"),
+	);
 });
 
 test("a Step's idle_timeout replaces the Workflow's", async () => {
@@ -94,7 +100,10 @@ test("a Step's idle_timeout replaces the Workflow's", async () => {
 	await runVago(root, ["run", "hello"], claude.env);
 
 	const greet = await headerOf(root, "01-greet");
-	expect(runsOf(greet).map((run) => run.outcome)).toEqual(["idle-timeout"]);
+	// The Run and its three retries.
+	expect(runsOf(greet).map((run) => run.outcome)).toEqual(
+		Array(4).fill("idle-timeout"),
+	);
 });
 
 const acceptEditsArgs = `args = ["--permission-mode", "acceptEdits"]\n`;
@@ -128,7 +137,10 @@ for (const { session, workflow, fixture, outcome } of [
 		expect(result.exitCode).not.toBe(0);
 		const greet = await headerOf(root, "01-greet");
 		expect(greet.status).toBe("stuck");
-		expect(runsOf(greet).map((run) => run.outcome)).toEqual([outcome]);
+		// The Run and its three retries.
+		expect(runsOf(greet).map((run) => run.outcome)).toEqual(
+			Array(4).fill(outcome),
+		);
 		expect(result.stdout).toContain(
 			`01-greet is stuck after implement: ${outcome}\n`,
 		);
@@ -195,7 +207,7 @@ test("the stuck message shows the outcome, the log, the resume command, the comm
 	const result = await runVago(root, ["run", "hello"], claude.env);
 
 	expect(result.stdout).toContain(`01-greet is stuck after implement: exit 3
-  log:    .vago-goals/hello/logs/01-implement-1.jsonl
+  log:    .vago-goals/hello/logs/01-implement-4.jsonl
   resume: claude --resume f679b9c4-e75a-4f73-affd-0dedfe161e0d
   again:  vago run hello
   reset:  vago ticket reset hello 01
@@ -214,7 +226,7 @@ test("a Codex session with a refused call is stuck, and its resume command resum
 	expect(
 		result.stdout,
 	).toContain(`01-greet is stuck after implement: permission-denied
-  log:    .vago-goals/hello/logs/01-implement-1.jsonl
+  log:    .vago-goals/hello/logs/01-implement-4.jsonl
   resume: codex resume 01a10e2e-cf08-7251-946c-b9850a710ad9
 `);
 });
