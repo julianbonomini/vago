@@ -1327,3 +1327,46 @@ test("s starts the selected ready Goal in its own vago run, which shows as runni
 	expect(rowOf(await frameWith(view, "01 work"), "a")).toContain("running");
 	expect(rowOf(await frameWith(view, "finished"), "a")).toContain("done");
 });
+
+test("s picks up a stuck Goal in its own vago run, which finishes it", async () => {
+	setEnv({ VAGO_HOME: vagoHome });
+	const root = await makeProject({
+		".vago/workflows/w.toml": oneStep("sleep 1"),
+		".vago-goals/a/goal.md": goalText("w"),
+		".vago-goals/a/tickets/01-t.md": ticketText("stuck", {
+			runs: [
+				{
+					step: "work",
+					started: at("10:00"),
+					ended: at("10:01"),
+					outcome: "exit 1",
+				},
+			],
+		}),
+	});
+	const view = await renderView(root);
+	expect(rowOf(await frameWith(view, " 0/1 "), "a")).toContain("stuck");
+
+	view.mockInput.pressKey("s");
+
+	expect(await frameWith(view, "Started vago run a")).toBeDefined();
+	expect(rowOf(await frameWith(view, "finished"), "a")).toContain("done");
+});
+
+test("s picks up a lost Goal in its own vago run, which finishes it", async () => {
+	setEnv({ VAGO_HOME: vagoHome });
+	const root = await makeProject({
+		".vago/workflows/w.toml": oneStep("sleep 1"),
+		".vago-goals/a/goal.md": goalText("w"),
+		".vago-goals/a/tickets/01-t.md": ticketText("running", {
+			runs: [{ step: "work", started: at("10:00") }],
+		}),
+	});
+	const view = await renderView(root);
+	expect(rowOf(await frameWith(view, " 0/1 "), "a")).toContain("lost");
+
+	view.mockInput.pressKey("s");
+
+	expect(await frameWith(view, "Started vago run a")).toBeDefined();
+	expect(rowOf(await frameWith(view, "finished"), "a")).toContain("done");
+});

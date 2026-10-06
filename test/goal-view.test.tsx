@@ -1705,7 +1705,10 @@ test("s on a running Goal says it is running and starts nothing", async () => {
 	view.mockInput.pressKey("s");
 
 	expect(
-		await frameWith(view, "a is running; only a ready Goal starts"),
+		await frameWith(
+			view,
+			"a is running; only a ready, stuck or lost Goal starts",
+		),
 	).toBeDefined();
 	await Bun.sleep(1000);
 	expect(
