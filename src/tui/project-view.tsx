@@ -90,7 +90,8 @@ function liveGoalRows(root: string): () => GoalRow[] | undefined {
  * `vago goal new` while there are none. The box scrolls, by wheel or to
  * follow the selection, once the Goals outgrow its share of the screen.
  * Below it, the selected Goal's preview fills the rest of the screen, then
- * a footer names the keys, and `?` shows them all until `?` or Esc. Enter
+ * a footer names the keys, and `?` shows them all until `?` or Esc. Space
+ * and PgDn page the preview's description and PgUp pages it back. Enter
  * opens the selected Goal, unless it is broken, in the Goal view in place of
  * all this; its `[` and `]` open the Goal before and after, passing over
  * broken ones and stopping at the ends, and its Esc leaves the selection on
@@ -153,6 +154,7 @@ export function ProjectView(props: {
 			}
 		}
 	};
+	let description: ScrollBoxRenderable | undefined;
 	useKeyboard((key) => {
 		if (openedRow() !== undefined) return;
 		// A broken Goal has no Tickets to show; its preview says why.
@@ -169,6 +171,11 @@ export function ProjectView(props: {
 		if (key.name === "up" || key.name === "k") select(selectedIndex() - 1);
 		if (key.name === "down" || key.name === "j") select(selectedIndex() + 1);
 		if (key.name === "g") select(key.shift ? (rows() ?? []).length - 1 : 0);
+		if (helpShown()) return;
+		if (key.name === "space" || key.name === "pagedown") {
+			description?.scrollBy(1, "viewport");
+		}
+		if (key.name === "pageup") description?.scrollBy(-1, "viewport");
 	});
 	// No count until the Goals are read, so an empty Project and a slow read
 	// never look alike.
@@ -311,7 +318,13 @@ export function ProjectView(props: {
 				</box>
 				<Show when={rows()?.[selectedIndex()]}>
 					{(row: () => GoalRow) => (
-						<GoalPreview row={row()} width={terminal().width} />
+						<GoalPreview
+							row={row()}
+							width={terminal().width}
+							scrollRef={(box) => {
+								description = box;
+							}}
+						/>
 					)}
 				</Show>
 				<box flexShrink={0} paddingLeft={1} paddingRight={1}>
@@ -336,6 +349,7 @@ const footerKeys = (upDown: string): FooterKey[] => [
 	{ keys: "Enter", label: "Open", use: 5 },
 	{ keys: "s", label: "Start", use: 2 },
 	{ keys: "g G", label: "First, last", use: 1 },
+	{ keys: "PgUp PgDn", label: "Scroll", use: 2 },
 	{ keys: "?", label: "Help", use: 3 },
 	{ keys: "q", label: "Quit", use: 2 },
 ];
@@ -346,7 +360,9 @@ const helpKeys = (upDown: string): HelpKey[] => [
 	{ keys: "s", meaning: "start the selected Goal in vago run" },
 	{ keys: "g G", meaning: "select the first, the last Goal" },
 	{ keys: "click", meaning: "select the Goal clicked" },
-	{ keys: "wheel", meaning: "scroll the Goals" },
+	{ keys: "Space PgDn", meaning: "page the Goal's description" },
+	{ keys: "PgUp", meaning: "page back" },
+	{ keys: "wheel", meaning: "scroll the pane under the pointer" },
 	{ keys: "? Esc", meaning: "show, hide these keys" },
 	{ keys: "q Ctrl-C", meaning: "quit" },
 ];

@@ -399,6 +399,7 @@ const footerKeys = (upDown: string, leftRight: string): FooterKey[] => [
 	{ keys: upDown, label: "Move", use: 5 },
 	{ keys: leftRight, label: "Run", use: 4 },
 	{ keys: "Tab", label: "Pane", use: 3 },
+	{ keys: "PgUp PgDn", label: "Scroll", use: 3 },
 	{ keys: "[ ]", label: "Goal", use: 2 },
 	{ keys: "s", label: "Start", use: 2 },
 	{ keys: "t r", label: "Full screen", use: 2 },
@@ -628,12 +629,11 @@ function TicketsPane(props: {
 }
 
 // The selected Ticket, `width` columns wide with its border, its left edge
-// the Tickets' right one when `besideTickets`: its title,
-// the Tickets it comes after, its Workflow's Steps marked, or why the
-// Workflow can't be read, and its text wrapped to the pane, scrolled by the
-// wheel and in `scrollRef`'s scrollbox. Its Runs' totals sit on its title
-// row, the title in the focus look when `focused`. A click on it calls
-// `onClick`.
+// the Tickets' right one when `besideTickets`: its title, the Tickets it
+// comes after, its Workflow's Steps marked, or why the Workflow can't be
+// read, and its text wrapped to the pane, all of it scrolled by the wheel and
+// in `scrollRef`'s scrollbox. Its Runs' totals sit on its title row, the
+// title in the focus look when `focused`. A click on it calls `onClick`.
 function TicketPane(props: {
 	ticket: GoalTicket;
 	width: number;
@@ -667,59 +667,59 @@ function TicketPane(props: {
 				focused={props.focused}
 				width={inner()}
 			/>
-			<For each={wrapText(props.ticket.title, inner())}>
-				{(line) => (
-					<text
-						fg={color.fg}
-						attributes={TextAttributes.BOLD}
-						flexShrink={0}
-						wrapMode="none"
-					>
-						{line}
-					</text>
-				)}
-			</For>
-			<Show when={props.ticket.blockedBy.length > 0}>
-				<text {...dimText} flexShrink={0} wrapMode="none">
-					{fitText(`after ${props.ticket.blockedBy.join(", ")}`, inner())}
-				</text>
-			</Show>
-			<box height={1} flexShrink={0} />
-			<For each={stepLines(props.ticket.steps, inner())}>
-				{(line) => (
-					<text fg={color.fg} flexShrink={0} wrapMode="none">
-						<For each={line}>
-							{(step, index) => {
-								// A function, so a Step whose mark changes in place is
-								// drawn again.
-								const look = () => stepMarkLook(step.mark);
-								return (
-									<>
-										<Show when={index() > 0}>{stepGap}</Show>
-										<span style={look().style}>{look().symbol}</span>
-										<span style={{ fg: color.fg }}>{` ${step.name}`}</span>
-									</>
-								);
-							}}
-						</For>
-					</text>
-				)}
-			</For>
-			<Show when={props.ticket.workflowProblem !== undefined}>
-				<For each={wrapText(props.ticket.workflowProblem ?? "", inner())}>
-					{(line) => (
-						<text {...dimText} flexShrink={0} wrapMode="none">
-							{line}
-						</text>
-					)}
-				</For>
-			</Show>
-			<box height={1} flexShrink={0} />
 			<scrollbox
 				ref={props.scrollRef}
 				flexGrow={1}
 				verticalScrollbarOptions={{ visible: false }}
 			>
+				<For each={wrapText(props.ticket.title, inner())}>
+					{(line) => (
+						<text
+							fg={color.fg}
+							attributes={TextAttributes.BOLD}
+							flexShrink={0}
+							wrapMode="none"
+						>
+							{line}
+						</text>
+					)}
+				</For>
+				<Show when={props.ticket.blockedBy.length > 0}>
+					<text {...dimText} flexShrink={0} wrapMode="none">
+						{fitText(`after ${props.ticket.blockedBy.join(", ")}`, inner())}
+					</text>
+				</Show>
+				<box height={1} flexShrink={0} />
+				<For each={stepLines(props.ticket.steps, inner())}>
+					{(line) => (
+						<text fg={color.fg} flexShrink={0} wrapMode="none">
+							<For each={line}>
+								{(step, index) => {
+									// A function, so a Step whose mark changes in place is
+									// drawn again.
+									const look = () => stepMarkLook(step.mark);
+									return (
+										<>
+											<Show when={index() > 0}>{stepGap}</Show>
+											<span style={look().style}>{look().symbol}</span>
+											<span style={{ fg: color.fg }}>{` ${step.name}`}</span>
+										</>
+									);
+								}}
+							</For>
+						</text>
+					)}
+				</For>
+				<Show when={props.ticket.workflowProblem !== undefined}>
+					<For each={wrapText(props.ticket.workflowProblem ?? "", inner())}>
+						{(line) => (
+							<text {...dimText} flexShrink={0} wrapMode="none">
+								{line}
+							</text>
+						)}
+					</For>
+				</Show>
+				<box height={1} flexShrink={0} />
 				<For
 					each={props.ticket.description.flatMap((paragraph) =>
 						wrapText(paragraph, inner()),

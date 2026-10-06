@@ -258,9 +258,12 @@ test("the Ticket pane keeps a fenced code block's lines", async () => {
 });
 
 test("the footer names the Goal view's keys, and ? shows them all", async () => {
-	const { view, frame } = await openFirstGoal(await runningGoal());
+	const { view, frame } = await openFirstGoal(await runningGoal(), {
+		width: 160,
+		height: 30,
+	});
 	expect(frame.trimEnd().split("\n").at(-1)).toMatch(
-		/^ ↑↓ Move {3}←→ Run {3}Tab Pane {3}\[ \] Goal {3}s Start {3}t r Full screen {3}G Follow {3}e d Diff {3}Esc Goals {3}\? Help {3}q Quit *$/,
+		/^ ↑↓ Move {3}←→ Run {3}Tab Pane {3}PgUp PgDn Scroll {3}\[ \] Goal {3}s Start {3}t r Full screen {3}G Follow {3}e d Diff {3}Esc Goals {3}\? Help {3}q Quit *$/,
 	);
 
 	view.mockInput.pressKey("?");
@@ -1133,13 +1136,14 @@ test("↑↓ scroll the Ticket's text when the Ticket pane has focus", async () 
 	const view = await openLongTicket();
 
 	view.mockInput.pressKey("3");
-	for (let press = 0; press < 3; press++) view.mockInput.pressArrow("down");
+	// Past the title, the Steps and the blank lines around them.
+	for (let press = 0; press < 5; press++) view.mockInput.pressArrow("down");
 	const scrolled = await frameWithout(view, " para 1 ");
 	expect(scrolled).toContain(" para 3 ");
 	expect(scrolled).toContain(" 1/2 ");
 
 	view.mockInput.pressArrow("up");
-	await frameWith(view, " para 2 ");
+	await frameWith(view, " para 1 ");
 });
 
 test("↑↓ scroll the Run when the Run pane has focus", async () => {
@@ -1154,6 +1158,23 @@ test("↑↓ scroll the Run when the Run pane has focus", async () => {
 
 	view.mockInput.pressArrow("up");
 	await frameWith(view, " line 3 ");
+});
+
+test("a Ticket whose title and Steps outgrow its pane scrolls to the end of its text", async () => {
+	const steps = Array.from({ length: 30 }, (_, index) => `step-${index}`);
+	const root = await makeProject({
+		".vago/workflows/small.toml": workflowOf(...steps),
+		".vago-goals/tall/goal.md": goalText("small"),
+		".vago-goals/tall/tickets/01-tall.md": ticketText("ready", {
+			body: `# ${"a long title ".repeat(30)}\n\nfirst para\n\nlast para\n`,
+		}),
+	});
+	const { view } = await openFirstGoal(root, { width: 80, height: 24 });
+
+	view.mockInput.pressKey("3");
+	for (let press = 0; press < 30; press++) view.mockInput.pressArrow("down");
+	const end = await frameWith(view, " last para ");
+	expect(end).toContain(" Ticket 01 ");
 });
 
 test("Space, PgDn and PgUp page the Run from the Tickets and Runs panes", async () => {
@@ -1182,7 +1203,7 @@ test("t gives the Ticket the whole screen, which scrolls and keeps the focus, an
 
 	view.mockInput.pressTab();
 	view.mockInput.pressKey("1");
-	view.mockInput.pressArrow("down");
+	for (let press = 0; press < 5; press++) view.mockInput.pressArrow("down");
 	const scrolled = await frameWithout(view, " para 1 ");
 	expect(scrolled).toContain(" Ticket 01 ");
 
@@ -1292,7 +1313,7 @@ test("the wheel over the Ticket's text scrolls it, whatever has the focus", asyn
 	const view = await openLongTicket();
 	const text = placeOf(view.captureCharFrame(), "para 2");
 
-	for (let turn = 0; turn < 3; turn++)
+	for (let turn = 0; turn < 5; turn++)
 		await view.mockMouse.scroll(text.x, text.y, "down");
 	const scrolled = await frameWithout(view, " para 1 ");
 	expect(scrolled).toContain(" line 1 ");

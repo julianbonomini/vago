@@ -3,9 +3,9 @@
 // Hides the slots' sizes, which never depend on the Goal shown, so nothing
 // moves as the selection does.
 
-import { TextAttributes } from "@opentui/core";
+import { type ScrollBoxRenderable, TextAttributes } from "@opentui/core";
 import type { JSX } from "@opentui/solid";
-import { For, Show } from "solid-js";
+import { createEffect, For, on, Show } from "solid-js";
 import { type GoalRow, ticketTotal } from "./goal-rows.ts";
 import { sharedLine, usePane } from "./pane-grid.ts";
 import { PaneTitle } from "./pane-title.tsx";
@@ -18,11 +18,13 @@ import { day, duration, money } from "./time-and-money.ts";
  * The preview of the Goal `row` shows, `width` columns wide and as tall as
  * the space its parent gives it, its top line shared with the box over it.
  * Its title row names the Goal, and its Workflow, when it was created and its
- * last activity.
+ * last activity. The description scrolls by the wheel and in `scrollRef`'s
+ * scrollbox, and another Goal's opens at its top.
  */
 export function GoalPreview(props: {
 	row: GoalRow;
 	width: number;
+	scrollRef: (box: ScrollBoxRenderable) => void;
 }): JSX.Element {
 	const { color, symbol, dimText } = theme();
 	const inner = () => props.width - boxEdges;
@@ -43,6 +45,13 @@ export function GoalPreview(props: {
 		props.row.created === undefined
 			? ""
 			: ` ${symbol.sep} created ${day(props.row.created)}`;
+	let description: ScrollBoxRenderable | undefined;
+	createEffect(
+		on(
+			() => props.row.goal,
+			() => description?.scrollTo(0),
+		),
+	);
 	const pane = usePane();
 	return (
 		<box
@@ -144,17 +153,26 @@ export function GoalPreview(props: {
 					<text {...dimText} flexShrink={0} wrapMode="none">
 						{fitText("GOAL", descriptionColumn())}
 					</text>
-					<For
-						each={props.row.description.flatMap((paragraph) =>
-							wrapText(paragraph, descriptionColumn()),
-						)}
+					<scrollbox
+						ref={(box: ScrollBoxRenderable) => {
+							description = box;
+							props.scrollRef(box);
+						}}
+						flexGrow={1}
+						verticalScrollbarOptions={{ visible: false }}
 					>
-						{(line) => (
-							<text fg={color.fg} flexShrink={0} wrapMode="none">
-								{fitText(line, descriptionColumn())}
-							</text>
-						)}
-					</For>
+						<For
+							each={props.row.description.flatMap((paragraph) =>
+								wrapText(paragraph, descriptionColumn()),
+							)}
+						>
+							{(line) => (
+								<text fg={color.fg} flexShrink={0} wrapMode="none">
+									{fitText(line, descriptionColumn())}
+								</text>
+							)}
+						</For>
+					</scrollbox>
 				</box>
 			</box>
 		</box>

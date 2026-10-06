@@ -128,12 +128,12 @@ test("while the keys show, a click on a Goal beside them selects nothing", async
 
 test("the footer names the keys of the Project view", async () => {
 	const root = await projectWithGoals(["alpha"]);
-	const view = await renderView(root);
+	const view = await renderView(root, wide);
 
 	const frame = await frameWith(view, " 1/1 ");
 
 	expect(frame.trimEnd().split("\n").at(-1)).toMatch(
-		/^ ↑↓ Goal {3}Enter Open {3}s Start {3}g G First, last {3}\? Help {3}q Quit *$/,
+		/^ ↑↓ Goal {3}Enter Open {3}s Start {3}g G First, last {3}PgUp PgDn Scroll {3}\? Help {3}q Quit *$/,
 	);
 });
 
@@ -863,6 +863,47 @@ test("the description reads as paragraphs and is cut to the space it has", async
 	expect(frame).not.toContain("line39");
 	const lines = frame.trimEnd().split("\n");
 	expect(lines.at(-2)).toMatch(/^─+$/);
+});
+
+test("Space and PgDn page a long description to its end, PgUp pages back, and another Goal starts at its top", async () => {
+	const lines = Array.from({ length: 40 }, (_, index) => `line${index}`);
+	const root = await makeProject({
+		".vago-goals/a/goal.md": goalText("w", `# A\n\n${lines.join("\n\n")}\n`),
+		".vago-goals/b/goal.md": goalText("w", "# B\n\nb's own description\n"),
+	});
+	const view = await renderView(root, wide);
+	await frameWith(view, " line0 ");
+
+	view.mockInput.pressKey(" ");
+	expect(await frameWithout(view, " line0 ")).not.toContain(" line39 ");
+	for (let press = 0; press < 10; press++) {
+		view.mockInput.pressKey("\u001b[6~");
+	}
+	const end = await frameWith(view, " line39 ");
+	expect(end).toContain(" 1/2 ");
+	view.mockInput.pressKey("\u001b[5~");
+	await frameWithout(view, " line39 ");
+
+	view.mockInput.pressArrow("down");
+	await frameWith(view, " b's own description ");
+	view.mockInput.pressArrow("up");
+	await frameWith(view, " line0 ");
+});
+
+test("the wheel over the description scrolls it", async () => {
+	const lines = Array.from({ length: 40 }, (_, index) => `line${index}`);
+	const root = await makeProject({
+		".vago-goals/a/goal.md": goalText("w", `# A\n\n${lines.join("\n\n")}\n`),
+	});
+	const view = await renderView(root, wide);
+	const frame = await frameWith(view, " line0 ");
+	const row = lineOf(frame, " line0 ");
+	const column = (frame.split("\n")[row] ?? "").indexOf("line0");
+
+	for (let turn = 0; turn < 5; turn++) {
+		await view.mockMouse.scroll(column, row, "down");
+	}
+	await frameWithout(view, " line0 ");
 });
 
 test("moving the cursor shifts no row of the table or the preview", async () => {
