@@ -9,6 +9,9 @@ import { join } from "node:path";
 import architecturePrompt from "../starter/prompts/architecture.md" with {
 	type: "text",
 };
+import describePrompt from "../starter/prompts/describe.md" with {
+	type: "text",
+};
 import designPrompt from "../starter/prompts/design.md" with { type: "text" };
 import designChoicesPrompt from "../starter/prompts/design-choices.md" with {
 	type: "text",
@@ -40,6 +43,10 @@ import designModuleAposd from "../starter/skills/vago-design-module/aposd.md" wi
 import designModuleSkill from "../starter/skills/vago-design-module/SKILL.md" with {
 	type: "text",
 };
+import prCredits from "../starter/skills/vago-pr/CREDITS.md" with {
+	type: "text",
+};
+import prSkill from "../starter/skills/vago-pr/SKILL.md" with { type: "text" };
 import toGoalSkill from "../starter/skills/vago-to-goal/SKILL.md" with {
 	type: "text",
 };
@@ -62,6 +69,8 @@ const skillFiles: Record<string, string> = {
 	"vago-check-red-flags/SKILL.md": checkRedFlagsSkill,
 	"vago-design-module/SKILL.md": designModuleSkill,
 	"vago-design-module/aposd.md": designModuleAposd,
+	"vago-pr/CREDITS.md": prCredits,
+	"vago-pr/SKILL.md": prSkill,
 	"vago-to-goal/SKILL.md": toGoalSkill,
 	"vago-to-tickets/SKILL.md": toTicketsSkill,
 	"vago-write-code/SKILL.md": writeCodeSkill,
@@ -86,6 +95,7 @@ const starterFiles: Record<string, string> = {
 	".vago/prompts/small-implement.md": smallImplementPrompt,
 	".vago/prompts/small-review.md": smallReviewPrompt,
 	".vago/prompts/goal-review.md": goalReviewPrompt,
+	".vago/prompts/describe.md": describePrompt,
 	".vago/scripts/branch.sh": branchScript,
 	".vago/scripts/merge.sh": mergeScript,
 	".vago/scripts/github.sh": githubScript,
