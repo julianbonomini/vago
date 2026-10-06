@@ -126,14 +126,14 @@ test("the header area names the Goal, then its numbers with its place, then its 
 
 	const lines = frame.split("\n");
 	expect(lines[0]).toContain("$1.75 spent");
-	expect(lines[1]).toMatch(
+	expect(lines[2]).toMatch(
 		/^ ✗ worktrees {2}Each Goal runs in its own worktree +$/,
 	);
-	expect(lines[2]).toMatch(
+	expect(lines[3]).toMatch(
 		/^ STUCK {3}1h 1m run time {3}1\.5k tokens {3}\$1\.75 {3}Workflow small {3}Goal 1 of 1 +$/,
 	);
-	expect(lines[3]).toMatch(/^ ━+ {2}1\/2 Tickets $/);
-	expect(lines[4]).toMatch(/^─+┬─+$/);
+	expect(lines[4]).toMatch(/^ ━+ {2}1\/2 Tickets $/);
+	expect(lines[5]).toMatch(/^─+┬─+$/);
 	expect(frame).not.toContain("█");
 	for (const value of [
 		"STUCK",
@@ -1033,9 +1033,9 @@ test("a lost Goal marks its Ticket, Step and open Run lost and says what to do",
 
 	const frame = await frameWith(view, " line 3 ");
 	const lines = frame.split("\n");
-	expect(lines[1]).toMatch(/^ \? lost /);
-	expect(lines[2]).toMatch(/^ LOST .* Goal 1 of 1 /);
-	expect(lines[4]).toContain(
+	expect(lines[2]).toMatch(/^ \? lost /);
+	expect(lines[3]).toMatch(/^ LOST .* Goal 1 of 1 /);
+	expect(lines[5]).toContain(
 		" ? No vago run process runs this Goal; the next records its open Run as lost.",
 	);
 	expect(frame).toContain(" ? 01 lost  A Ticket ");
@@ -1440,17 +1440,17 @@ for (const size of [
 		const frame = await frameWith(view, "  line 60 ");
 
 		const lines = frame.split("\n");
-		expect(lines[1]).toMatch(/^ \? small {2}A Goal with a long title/);
-		expect(lines[2]).toMatch(/^ LOST {3}/);
-		expect(lines[3]).toMatch(/^ ━+ {2}0\/2 Tickets $/);
-		expect(lines[4]).toContain("No vago run process runs this Goal");
-		expect(lines[5]).toMatch(/^─+┬─+$/);
-		expect(lines[6]).toMatch(/^ {2}Tickets .*│ Ticket 01 /);
+		expect(lines[2]).toMatch(/^ \? small {2}A Goal with a long title/);
+		expect(lines[3]).toMatch(/^ LOST {3}/);
+		expect(lines[4]).toMatch(/^ ━+ {2}0\/2 Tickets $/);
+		expect(lines[5]).toContain("No vago run process runs this Goal");
+		expect(lines[6]).toMatch(/^─+┬─+$/);
+		expect(lines[7]).toMatch(/^ {2}Tickets .*│ Ticket 01 /);
 		expect(frame).toContain("02 after 01");
 		expect(frame).toContain("· merge");
 		expect(frame).toContain(" Runs of Ticket 01 ");
 		expect(frame).toContain(" Run 2 · 01 check ");
-		for (const line of lines.slice(5, -2)) {
+		for (const line of lines.slice(6, -2)) {
 			expect(Bun.stringWidth(line)).toBe(size.width);
 			expect(line).toMatch(/^( {2}.* {2}|[─┬┴┼├┤]+|─+┤ .*)$/);
 		}

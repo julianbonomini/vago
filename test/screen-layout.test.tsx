@@ -52,7 +52,7 @@ const screens: {
 		name: "the Goal view",
 		open: (view) => view.mockInput.pressEnter(),
 		shows: "1/2 Tickets",
-		headerRows: 4,
+		headerRows: 5,
 	},
 	{
 		name: "the Ticket full screen",
@@ -61,7 +61,7 @@ const screens: {
 			view.mockInput.pressKey("t");
 		},
 		shows: "Ticket 02",
-		headerRows: 4,
+		headerRows: 5,
 	},
 	{
 		name: "the Run full screen",
@@ -70,7 +70,7 @@ const screens: {
 			view.mockInput.pressKey("r");
 		},
 		shows: "Run 1",
-		headerRows: 4,
+		headerRows: 5,
 	},
 ];
 

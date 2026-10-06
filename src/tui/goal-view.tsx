@@ -61,7 +61,7 @@ import { duration, money, tokenCount } from "./time-and-money.ts";
 /**
  * The Goal view of the Goal `row` shows, of the Project at `root`, the
  * `position`th of `count` Goals in the Project list. Under the Project
- * view's header line, in the same header area, sit the Goal's name, its
+ * view's header line and a rule under it sit the Goal's name, its
  * numbers with its place in the list, and its one-row progress bar. Below
  * the line under them come its Tickets on the left with `n/N` on their
  * border and the selected Ticket's Runs under them, three quarters and a
@@ -96,7 +96,7 @@ export function GoalView(props: {
 	onClose: () => void;
 	onNeighbour: (step: -1 | 1) => void;
 }): JSX.Element {
-	const { symbol } = theme();
+	const { color, symbol } = theme();
 	const terminal = useTerminalDimensions();
 	const [chosen, setChosen] = createSignal<string>();
 	const selectedIndex = () => {
@@ -285,6 +285,9 @@ export function GoalView(props: {
 		);
 	return (
 		<box flexDirection="column" flexGrow={1}>
+			<text fg={color.border} flexShrink={0} wrapMode="none">
+				{symbol.rule.repeat(terminal().width)}
+			</text>
 			<GoalHeader
 				row={props.row}
 				position={props.position}
@@ -435,8 +438,9 @@ const runsShare = 0.25;
 const minRunsRows = 4;
 // A box's border and padding, on both sides.
 const paneEdges = 4;
-// The Project view's header line over the Goal view, and the footer.
-const headerRows = 1;
+// The Project view's header line over the Goal view with the rule under it,
+// and the footer.
+const headerRows = 2;
 const footerRows = 1;
 
 // The Goal's rows in the header area: its name, its numbers, its bar, and,
