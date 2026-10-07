@@ -90,7 +90,8 @@ function planningModel(harness: string): string {
  * Harness's own interactive session on this process's terminal until it
  * ends, and returns how it ended. The item is held for the whole session.
  * The session resumes the item's saved session id, or starts a fresh one
- * whose id is saved as soon as it is known. The planning prompt is added on
+ * whose id is saved as soon as it is known and whose agent starts at once,
+ * on a first message naming the item. The planning prompt is added on
  * every start. Once, a resume that ends `exit N` is replaced by a fresh
  * session. While it runs, every proposal block the agent writes is saved as
  * the item's Proposal, and the run's start, end and cost are recorded. For
@@ -130,8 +131,9 @@ export async function runPlanningSession(
 		const onTranscript = (transcript: HarnessTranscript) =>
 			recordPlanningTranscript(root, item, transcript);
 		const saved = held.sessionId;
+		const fresh = { ...session, kickoff: kickoff(item) };
 		const ran = await runInteractiveReadOnlySession(
-			{ ...session, resume: saved },
+			saved === undefined ? fresh : { ...session, resume: saved },
 			onSessionId,
 			onTranscript,
 		);
@@ -140,8 +142,14 @@ export async function runPlanningSession(
 		// message, so an item opened and left before that has an id with
 		// nothing behind it, and resuming it fails. That is the common case,
 		// so a fresh session replaces it, once.
-		return runInteractiveReadOnlySession(session, onSessionId, onTranscript);
+		return runInteractiveReadOnlySession(fresh, onSessionId, onTranscript);
 	});
+}
+
+// The first message of item `item`'s fresh session, so that the agent
+// starts planning without waiting for the human.
+function kickoff(item: string): string {
+	return `Plan the Goal "${item}" with me.`;
 }
 
 // The fresh session of the planning item whose chat is `chat`, in the

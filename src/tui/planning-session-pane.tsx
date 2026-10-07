@@ -24,7 +24,8 @@ import {
  * key and paste goes to the session. Once the session has exited, a line
  * under the title says so, until the pane is mounted again. `onOpen` gets,
  * as the session starts, a function that ends it and resolves once it has
- * exited.
+ * exited. `onExit` gets the exit code of a session that ended on its own,
+ * not through that function or an unmount.
  */
 export function PlanningSessionPane(props: {
 	vago: string[];
@@ -36,6 +37,7 @@ export function PlanningSessionPane(props: {
 	visible: boolean;
 	width: number;
 	onOpen(end: () => Promise<void>): void;
+	onExit(code: number): void;
 }): JSX.Element {
 	const { dimText } = theme();
 	const renderer = useRenderer();
@@ -45,6 +47,7 @@ export function PlanningSessionPane(props: {
 	const inner = () => props.width - 4;
 	let terminal: EmbeddedTerminalRenderable | undefined;
 	let session: PlanningSessionProcess | undefined;
+	let stopping = false;
 	const mount = (box: BoxRenderable) => {
 		// Corrected to the pane's height by the first layout.
 		const size = { cols: inner(), rows: 24 };
@@ -65,8 +68,12 @@ export function PlanningSessionPane(props: {
 			onOutput: (bytes) => shown.write(bytes),
 		});
 		session = started;
-		started.exited.then(setExitCode);
+		started.exited.then((code) => {
+			setExitCode(code);
+			if (!stopping) props.onExit(code);
+		});
 		props.onOpen(async () => {
+			stopping = true;
 			started.stop();
 			await started.exited;
 		});
@@ -76,6 +83,7 @@ export function PlanningSessionPane(props: {
 		else terminal?.blur();
 	});
 	onCleanup(() => {
+		stopping = true;
 		session?.stop();
 		terminal?.destroy();
 	});

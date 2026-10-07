@@ -42,6 +42,7 @@ export type HarnessCli = {
 		model: string;
 		instructions: string;
 		resume?: string;
+		kickoff?: string;
 	}): HarnessInteractiveCommand;
 	/**
 	 * The events one stream line carries, in the order it carries them; none

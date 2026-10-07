@@ -260,6 +260,17 @@ test("a session that ends on its own says how it ended", async () => {
 	await frameWith(view, "The session ended (exit 3).");
 });
 
+test("a session that ends cleanly closes the view, back to the Goals", async () => {
+	const fake = await makeFakeInteractiveClaude();
+	const view = await sessionView(await planningProject(), fake);
+	await openSession(view);
+
+	await view.mockInput.typeText("quit");
+
+	const frame = await frameWith(view, " 1/1 ");
+	expect(frame).not.toContain("The session ended");
+});
+
 test("? in the Preview shows the planning keys, and Esc hides them", async () => {
 	const fake = await makeFakeInteractiveClaude();
 	const view = await sessionView(await planningProject(), fake);

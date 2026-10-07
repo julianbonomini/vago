@@ -226,7 +226,8 @@ export type FakeInteractiveOptions = {
  * `afterStart`, with `TRANSCRIPT` set to the session's transcript. It then
  * asks for the kitty keyboard protocol, reads its terminal raw, and prints
  * `key <name>` for each key: `key q`, `key escape`, `key ctrl+c`,
- * `key enter`, `key shift+enter`. On each Enter it appends the next of
+ * `key enter`, `key shift+enter`. Typing `exit` ends it with exit 3, and
+ * `quit` with exit 0. On each Enter it appends the next of
  * `answers` to its transcript as one line of the agent's text, shaped as
  * `fakeTranscriptLine` makes it, a message of its own costing $0.80, and
  * prints `answered N`. With `answerAtOnce`, it writes every answer right
@@ -383,6 +384,7 @@ process.stdin.on("data", (chunk) => {
 		if (name === "enter") answer();
 		typed += name.length === 1 ? name : " ";
 		if (typed.endsWith("exit")) process.exit(3);
+		if (typed.endsWith("quit")) process.exit(0);
 	}
 });
 `;

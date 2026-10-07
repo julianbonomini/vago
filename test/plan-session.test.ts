@@ -27,6 +27,9 @@ const cli = join(import.meta.dir, "..", "src", "cli.ts");
 
 const planningPrompt = "You help plan a Goal.\nAsk before you propose.\n";
 
+// The first message of a fresh session of item `search`.
+const kickoff = 'Plan the Goal "search" with me.';
+
 // The flags that keep Claude Code's tools from changing a file.
 const readOnlyFlags = [
 	"--permission-mode",
@@ -121,6 +124,7 @@ test("a fresh item starts its Harness's own session, read-only, under an id save
 		...readOnlyFlags,
 		"--model",
 		"opus",
+		kickoff,
 	]);
 	session.close();
 	await session.exited;
@@ -141,6 +145,7 @@ test("a second session resumes the saved id", async () => {
 	const calls = await fake.calls();
 	expect(calls[1]?.argv.slice(0, 2)).toEqual(["--resume", id]);
 	expect(calls[1]?.argv).toContain(planningPrompt.trimEnd());
+	expect(calls[1]?.argv).not.toContain(kickoff);
 	expect(await savedSessionId(root)).toBe(id);
 	second.close();
 	await second.exited;
@@ -501,7 +506,7 @@ test("a Codex item saves the id Codex picks once it answers, and its proposal is
 		line.slice("fake codex fresh ".length),
 	);
 	const [call] = await fake.calls();
-	expect(call?.argv).toEqual(codexFlags);
+	expect(call?.argv).toEqual([...codexFlags, kickoff]);
 	await expectAcceptedSessionProposal(root);
 });
 

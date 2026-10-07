@@ -149,12 +149,14 @@ export type Harness = {
 	 * The Harness's own interactive UI, for a terminal, on `model`. Its tools
 	 * can read files and load Skills but never change a file. It resumes
 	 * session `resume`, or starts a fresh one when `resume` is absent, with
-	 * `instructions` added to the agent's system prompt.
+	 * `instructions` added to the agent's system prompt. A fresh session
+	 * starts with `kickoff`, when given, as the human's first message.
 	 */
 	interactiveReadOnlyCommand(session: {
 		model: string;
 		instructions: string;
 		resume?: string;
+		kickoff?: string;
 	}): HarnessInteractiveCommand;
 	/**
 	 * Where the transcript of the Harness's interactive session `sessionId`,

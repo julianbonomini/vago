@@ -211,6 +211,8 @@ export type InteractiveReadOnlySession = {
 	instructions: string;
 	/** The session to resume; absent to start a fresh one. */
 	resume?: string;
+	/** A fresh session's first message, as if the human sent it. */
+	kickoff?: string;
 	/** The working directory, which nothing the session starts can write under. */
 	folder: string;
 };

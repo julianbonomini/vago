@@ -59,7 +59,9 @@ type PlanningViewPane = "session" | "preview";
  * `vago plan accept` (`runPlanAccept`) that the view waits on, any other
  * key cancelling. A refusal shows in the footer and starts the session
  * again, resuming it; an acceptance calls `onClose` with the notice to
- * show. Once the item was accepted its session still opens, to read, but
+ * show. A session that ends on its own with exit 0, as when the human quits
+ * the Harness, calls `onClose` with no notice; any other exit stays, saying
+ * how it ended. Once the item was accepted its session still opens, to read, but
  * there is no `a` or `w`. Esc from the Preview calls `onClose` with no
  * notice. Reads the chat and the Proposal itself, and again every second.
  */
@@ -186,6 +188,9 @@ export function PlanningView(props: {
 						width={sessionWidth()}
 						onOpen={(end) => {
 							endSession = end;
+						}}
+						onExit={(code) => {
+							if (code === 0) props.onClose();
 						}}
 					/>
 				</Show>

@@ -195,7 +195,7 @@ export const claudeCode: HarnessCli = {
 	},
 	// An interactive `claude` reports no session id, so a fresh session runs
 	// under one Vago names.
-	interactiveReadOnlyCommand({ model, instructions, resume }) {
+	interactiveReadOnlyCommand({ model, instructions, resume, kickoff }) {
 		const sessionId = resume ?? crypto.randomUUID();
 		const argv = [
 			program,
@@ -206,6 +206,8 @@ export const claudeCode: HarnessCli = {
 			...readOnlyPermissions,
 			"--model",
 			model,
+			// Last, so that no flag that takes a list reads it as a value.
+			...(resume === undefined && kickoff !== undefined ? [kickoff] : []),
 		];
 		return { argv, sessionId };
 	},

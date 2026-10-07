@@ -138,7 +138,7 @@ export const codex: HarnessCli = {
 		return [...execCommand(model, args), "resume", sessionId, "-"];
 	},
 	// Codex picks a fresh session's id itself, and only its transcript tells.
-	interactiveReadOnlyCommand({ model, instructions, resume }) {
+	interactiveReadOnlyCommand({ model, instructions, resume, kickoff }) {
 		const flags = [
 			// The shared server, when one runs, would run the agent's commands
 			// outside the sandbox Vago wraps this command in.
@@ -156,7 +156,11 @@ export const codex: HarnessCli = {
 			"--model",
 			model,
 		];
-		if (resume === undefined) return { argv: [program, ...flags] };
+		if (resume === undefined) {
+			return {
+				argv: [program, ...flags, ...(kickoff === undefined ? [] : [kickoff])],
+			};
+		}
 		return { argv: [program, "resume", resume, ...flags], sessionId: resume };
 	},
 	events(line, command) {
