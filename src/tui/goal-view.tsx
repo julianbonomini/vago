@@ -439,7 +439,10 @@ const helpKeys = (
 	{ keys: "e E", meaning: "select the Run's edit before, after" },
 	{ keys: "d", meaning: "show, hide the selected edit's diff" },
 	{ keys: "[ ]", meaning: "open the Goal before, after" },
-	{ keys: "s", meaning: "start this Goal in vago run" },
+	{
+		keys: "s",
+		meaning: "start this Goal in vago run, or pick it up if stuck or lost",
+	},
 	...(planned
 		? [
 				{

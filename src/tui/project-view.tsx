@@ -515,7 +515,11 @@ const footerKeys = (
 const helpKeys = (upDown: string): HelpKey[] => [
 	{ keys: `${upDown} j k`, meaning: "select the Goal above, below" },
 	{ keys: "Enter", meaning: "open the selected Goal, or its chat" },
-	{ keys: "s", meaning: "start the selected Goal in vago run" },
+	{
+		keys: "s",
+		meaning:
+			"start the selected Goal in vago run, or pick up a stuck or lost one",
+	},
 	{ keys: "n", meaning: "plan a New Goal in a chat, named first" },
 	{ keys: "r", meaning: "rename the selected planning item" },
 	{ keys: "d", meaning: "discard the selected planning item" },

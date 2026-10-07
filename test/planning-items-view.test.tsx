@@ -314,7 +314,9 @@ test("a planning item is offered no Start, and s starts nothing", async () => {
 	expect(frame).toContain("r Rename");
 	view.mockInput.pressKey("s");
 
-	expect(await frameWith(view, "only a ready Goal starts")).toBeDefined();
+	expect(
+		await frameWith(view, "only a ready, stuck or lost Goal starts"),
+	).toBeDefined();
 	expect(existsSync(join(root, ".vago-goals/search/goal.md"))).toBe(false);
 });
 

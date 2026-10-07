@@ -164,7 +164,7 @@ test("typing the Goals view's keys in the field types them and triggers nothing"
 	expect(typed).not.toContain("New Goal name:");
 	expect(typed).not.toContain("Rename search to:");
 	expect(typed).not.toContain("Discard search");
-	expect(typed).not.toContain("only a ready Goal starts");
+	expect(typed).not.toContain("only a ready, stuck or lost Goal starts");
 	expect(typed).not.toContain("show, hide these keys");
 	expect(typed).toContain("No messages yet.");
 	view.mockInput.pressEscape();
