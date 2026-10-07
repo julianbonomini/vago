@@ -5,6 +5,7 @@ import type { TestRendererSetup } from "@opentui/core/testing";
 import {
 	type FakeInteractiveHarness,
 	makeFakeInteractiveClaude,
+	makeFakeInteractiveCodex,
 } from "./fake-harness.ts";
 import { makeProject, oneStep } from "./project.ts";
 import { frameWith, frameWithout, renderView } from "./view-render.tsx";
@@ -106,6 +107,26 @@ test("Enter on a planning item shows its session beside the Preview", async () =
 	expect(frame.split("\n").find((row) => row.includes(" search "))).toContain(
 		"Preview",
 	);
+});
+
+test("a Codex item shows Codex's session beside the Preview", async () => {
+	const fake = await makeFakeInteractiveCodex();
+	const root = await makeProject({
+		".vago/prompts/planning.md": "You help plan a Goal.\n",
+		".vago/workflows/small.toml": oneStep("true"),
+		".vago-goals/search/planning/chat.toml": 'harness = "codex"\n',
+		".vago-goals/search/planning/proposal.toml": proposalToml,
+	});
+	const view = await sessionView(root, fake);
+	await frameWith(view, " 1/1 ");
+
+	view.mockInput.pressEnter();
+
+	const frame = await frameWith(view, "fake codex fresh ");
+	expect(frame.split("\n").find((row) => row.includes(" search "))).toContain(
+		"Preview",
+	);
+	expect(frame).toContain("Score each result");
 });
 
 test("q, Esc, Ctrl-C and Shift+Enter all reach the session, and the view stays", async () => {

@@ -1,7 +1,10 @@
 // The Codex Harness: the `codex exec` command and how its JSON events read
-// as a Harness session's events. Hides Codex's flags, event shapes, how it
-// wraps a command in a shell, and its models' prices.
+// as a Harness session's events, and the interactive `codex` with its
+// transcript. Hides Codex's flags, event shapes, how it wraps a command in a
+// shell, its models' prices, and where its interactive transcript is and
+// its line shapes.
 
+import { join } from "node:path";
 import { z } from "zod";
 import type {
 	HarnessCli,
@@ -74,6 +77,28 @@ const FileChange = z.object({
 	status: z.enum(["in_progress", "completed", "failed"]),
 });
 
+// The first line of an interactive session's transcript, a rollout file.
+const SessionMetaLine = z.object({
+	type: z.literal("session_meta"),
+	payload: z.object({ id: z.string(), cwd: z.string(), timestamp: z.string() }),
+});
+
+// A line of the transcript holding one message, the agent's when its role
+// is `assistant`.
+const MessageLine = z.object({
+	type: z.literal("response_item"),
+	payload: z.object({
+		type: z.literal("message"),
+		role: z.string(),
+		content: z.array(z.unknown()),
+	}),
+});
+
+const OutputText = z.object({
+	type: z.literal("output_text"),
+	text: z.string(),
+});
+
 const program = "codex";
 
 /**
@@ -101,9 +126,27 @@ export const codex: HarnessCli = {
 	readOnlyResumeCommand(sessionId, model) {
 		return [...readOnlyExecCommand(model), "resume", sessionId, "-"];
 	},
-	interactiveReadOnlyCommand() {
-		// TODO(planning-real-session 03): Codex's interactive session
-		throw new Error("A Codex planning session isn't built yet");
+	// Codex picks a fresh session's id itself, and only its transcript tells.
+	interactiveReadOnlyCommand({ model, instructions, resume }) {
+		const flags = [
+			// The shared server, when one runs, would run the agent's commands
+			// outside the sandbox Vago wraps this command in.
+			"--no-daemon",
+			// Codex's own sandbox can't start inside Vago's, which macOS
+			// refuses to nest, and every command would fail. Vago's is the
+			// guard that keeps the Project unchanged.
+			"--sandbox",
+			"danger-full-access",
+			"--ask-for-approval",
+			"never",
+			// A JSON string is a TOML string, which `-c` parses its value as.
+			"-c",
+			`developer_instructions=${JSON.stringify(instructions)}`,
+			"--model",
+			model,
+		];
+		if (resume === undefined) return { argv: [program, ...flags] };
+		return { argv: [program, "resume", resume, ...flags], sessionId: resume };
 	},
 	events(line, command) {
 		const event = parseJson(line);
@@ -149,13 +192,39 @@ export const codex: HarnessCli = {
 			},
 		];
 	},
-	interactiveTranscriptPath() {
-		// TODO(planning-real-session 03): Codex's interactive transcript, under $CODEX_HOME/sessions/
-		return undefined;
+	// A session's transcript is one rollout file per branch of its
+	// conversation, `rollout-<time>-<id>.jsonl` and, once the human edits a
+	// message, `rollout-<time>-<id>_<branch>.jsonl`, in a folder by date. The
+	// time in the name orders them.
+	interactiveTranscript({ sessionId }, home, env) {
+		return {
+			folder: join(env.CODEX_HOME ?? join(home, ".codex"), "sessions"),
+			pattern:
+				sessionId === undefined
+					? "**/rollout-*.jsonl"
+					: `**/rollout-*-${sessionId}*.jsonl`,
+		};
 	},
-	transcriptAnswers() {
-		// TODO(planning-real-session 03): Codex's interactive transcript, under $CODEX_HOME/sessions/
-		return [];
+	transcriptSession(firstLine) {
+		const meta = SessionMetaLine.safeParse(parseJson(firstLine));
+		if (!meta.success) return undefined;
+		const { id, cwd, timestamp } = meta.data.payload;
+		return { sessionId: id, folder: cwd, startedAt: new Date(timestamp) };
+	},
+	transcriptAnswers(lines) {
+		const answers: string[] = [];
+		for (const line of lines) {
+			const message = MessageLine.safeParse(parseJson(line));
+			if (!message.success || message.data.payload.role !== "assistant") {
+				continue;
+			}
+			const texts = message.data.payload.content.flatMap((block) => {
+				const text = OutputText.safeParse(block);
+				return text.success ? [text.data.text] : [];
+			});
+			if (texts.length > 0) answers.push(texts.join("\n"));
+		}
+		return answers;
 	},
 	prices: openAiPrices(),
 	resumeHint(sessionId) {

@@ -248,7 +248,7 @@ export function fakeTranscriptLine(text: string): string {
 	return JSON.stringify(line);
 }
 
-/** What one call of the fake interactive `claude` left behind. */
+/** What one call of a fake interactive Harness left behind. */
 export type FakeInteractiveCall = {
 	/** Its argv without the program name. */
 	argv: string[];
@@ -265,6 +265,13 @@ export type FakeInteractiveHarness = {
 	calls(): Promise<FakeInteractiveCall[]>;
 	/** Waits until there was a call and every call so far has ended. */
 	allEnded(): Promise<void>;
+};
+
+/** What a test sets on a fake interactive Harness. */
+export type FakeInteractiveOptions = {
+	resume?: "accepted" | "refused";
+	afterStart?: string;
+	answers?: string[];
 };
 
 /**
@@ -285,23 +292,84 @@ export type FakeInteractiveHarness = {
  * `claude` does when it never saved the session: an error on stderr and
  * exit 1.
  */
-export async function makeFakeInteractiveClaude(
-	options: {
-		resume?: "accepted" | "refused";
-		afterStart?: string;
-		answers?: string[];
-	} = {},
+export function makeFakeInteractiveClaude(
+	options: FakeInteractiveOptions = {},
 ): Promise<FakeInteractiveHarness> {
-	const dir = await mkdtemp(join(tmpdir(), "vago-fake-interactive-claude-"));
+	return makeFakeInteractive("claude", "CLAUDE_CONFIG_DIR", options, {
+		start: `const resumed = args.includes("--resume");
+const id = args[args.indexOf(resumed ? "--resume" : "--session-id") + 1];
+const refusal = "No conversation found with session ID " + id;
+const transcripts = home + "/projects/" + process.cwd().replace(/[^A-Za-z0-9]/g, "-");
+mkdirSync(transcripts, { recursive: true });
+const transcript = transcripts + "/" + id + ".jsonl";
+const lineOf = (text) => {
+	const line = ${JSON.stringify(transcriptLineShape)};
+	line.message.content[0].text = text;
+	return JSON.stringify(line);
+};`,
+	});
+}
+
+/**
+ * A fake interactive `codex`, otherwise as `makeFakeInteractiveClaude`. It
+ * picks a fresh session's id itself and prints `fake codex fresh <id>`, or
+ * `fake codex resumed <id>` for `resume <id>`. Its transcript is where Codex
+ * keeps it: under `$CODEX_HOME/sessions/`, in a folder by date, named
+ * `rollout-<time>-<id>.jsonl`. It writes no transcript until the session's
+ * first answer, which it opens with the session's id, working directory and
+ * start, and `env` sets `CODEX_HOME` to a folder of the fake's own. A
+ * refused resume fails as `codex` does when it finds no session.
+ */
+export function makeFakeInteractiveCodex(
+	options: FakeInteractiveOptions = {},
+): Promise<FakeInteractiveHarness> {
+	return makeFakeInteractive("codex", "CODEX_HOME", options, {
+		start: `const resumed = args[0] === "resume";
+const id = resumed ? args[1] : crypto.randomUUID();
+const refusal = "Error: no rollout found for thread id " + id;
+const startedAt = new Date().toISOString();
+const sessions = home + "/sessions";
+const found = resumed ? [...new Bun.Glob("**/rollout-*-" + id + ".jsonl").scanSync({ cwd: sessions, absolute: true })] : [];
+const folder = sessions + "/" + startedAt.slice(0, 10).replaceAll("-", "/");
+mkdirSync(folder, { recursive: true });
+const transcript = found[0] ?? folder + "/rollout-" + startedAt.slice(0, 19).replaceAll(":", "-") + "-" + id + ".jsonl";
+const lineOf = (text) => {
+	const message = { type: "response_item", payload: { type: "message", role: "assistant", content: [{ type: "output_text", text }], phase: "final_answer" } };
+	const lines = [JSON.stringify(message)];
+	if (!existsSync(transcript)) {
+		lines.unshift(JSON.stringify({ timestamp: startedAt, type: "session_meta", payload: { id, timestamp: startedAt, cwd: process.cwd(), originator: "codex-tui" } }));
+	}
+	return lines.join("\\n");
+};`,
+	});
+}
+
+/**
+ * The fake interactive `program`, whose transcript and environment variable
+ * `homeVariable` are its Harness's. `harness.start` is the script's code
+ * that, from `args`, `home` and the working directory, sets `resumed`, `id`,
+ * `refusal` (the error a refused resume prints), `transcript` (its path) and
+ * `lineOf`, which turns the agent's text into what is appended to the
+ * transcript.
+ */
+async function makeFakeInteractive(
+	program: string,
+	homeVariable: string,
+	options: FakeInteractiveOptions,
+	harness: { start: string },
+): Promise<FakeInteractiveHarness> {
+	const dir = await mkdtemp(
+		join(tmpdir(), `vago-fake-interactive-${program}-`),
+	);
 	const callsDir = join(dir, "calls");
 	await mkdir(callsDir);
-	const configDir = join(dir, "config");
-	await mkdir(configDir);
+	const home = join(dir, "home");
+	await mkdir(home);
 	// A Bun program, since sh can't read a raw terminal key by key. Its argv
 	// is JSON because the planning prompt it is handed spans lines. Each call
 	// gets the next numbered folder, as `makeFake`'s do.
 	const script = `#!${process.execPath}
-import { appendFileSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 const calls = ${JSON.stringify(callsDir)};
 const call = calls + "/" + readdirSync(calls).length;
 mkdirSync(call);
@@ -314,27 +382,22 @@ const end = () => {
 };
 process.on("SIGHUP", end);
 process.on("SIGTERM", end);
-const resumed = args.indexOf("--resume");
-if (resumed !== -1 && ${JSON.stringify(options.resume === "refused")}) {
-	process.stderr.write("No conversation found with session ID " + args[resumed + 1] + "\\r\\n");
+const home = process.env.${homeVariable};
+${harness.start}
+if (resumed && ${JSON.stringify(options.resume === "refused")}) {
+	process.stderr.write(refusal + "\\r\\n");
 	process.exit(1);
 }
-const id = resumed === -1 ? args[args.indexOf("--session-id") + 1] : args[resumed + 1];
-const transcripts = process.env.CLAUDE_CONFIG_DIR + "/projects/" + process.cwd().replace(/[^A-Za-z0-9]/g, "-");
-mkdirSync(transcripts, { recursive: true });
-const transcript = transcripts + "/" + id + ".jsonl";
 const answers = ${JSON.stringify(options.answers ?? [])};
 let answered = 0;
 const answer = () => {
 	const text = answers[answered];
 	if (text === undefined) return;
 	answered++;
-	const line = ${JSON.stringify(transcriptLineShape)};
-	line.message.content[0].text = text;
-	appendFileSync(transcript, JSON.stringify(line) + "\\n");
+	appendFileSync(transcript, lineOf(text) + "\\n");
 	process.stdout.write("answered " + answered + "\\r\\n");
 };
-process.stdout.write("fake claude " + (resumed === -1 ? "fresh" : "resumed") + " " + id + "\\r\\n");
+process.stdout.write("fake ${program} " + (resumed ? "resumed" : "fresh") + " " + id + "\\r\\n");
 Bun.spawnSync(["sh", "-c", ${JSON.stringify(options.afterStart ?? "true")}], {
 	stdio: ["ignore", "inherit", "inherit"],
 	env: { ...process.env, TRANSCRIPT: transcript },
@@ -366,11 +429,11 @@ process.stdin.on("data", (chunk) => {
 	}
 });
 `;
-	const program = join(dir, "claude");
-	await Bun.write(program, script);
-	await chmod(program, 0o755);
+	const path = join(dir, program);
+	await Bun.write(path, script);
+	await chmod(path, 0o755);
 	const fake: FakeInteractiveHarness = {
-		env: { PATH: `${dir}:${process.env.PATH}`, CLAUDE_CONFIG_DIR: configDir },
+		env: { PATH: `${dir}:${process.env.PATH}`, [homeVariable]: home },
 		async calls() {
 			const names = await readdir(callsDir);
 			names.sort((a, b) => Number(a) - Number(b));

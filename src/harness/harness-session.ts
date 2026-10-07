@@ -5,7 +5,10 @@
 
 import type {
 	Harness,
+	HarnessInteractiveCommand,
 	HarnessSessionReport,
+	HarnessTranscriptFiles,
+	HarnessTranscriptSession,
 	RunActivity,
 	RunActivityItem,
 	RunBackgroundTask,
@@ -41,9 +44,8 @@ export type HarnessCli = {
 	interactiveReadOnlyCommand(session: {
 		model: string;
 		instructions: string;
-		sessionId: string;
-		resume: boolean;
-	}): string[];
+		resume?: string;
+	}): HarnessInteractiveCommand;
 	/**
 	 * The events one stream line carries, in the order it carries them; none
 	 * for a line that isn't a whole event the CLI knows. `command` is the
@@ -53,12 +55,14 @@ export type HarnessCli = {
 	events(line: string, command: readonly string[]): HarnessEvent[];
 	/** Dollars per million tokens of each model the CLI runs. */
 	prices: ModelPrice[];
-	/** As `Harness.interactiveTranscriptPath`. */
-	interactiveTranscriptPath(
-		session: { sessionId: string; folder: string },
+	/** As `Harness.interactiveTranscript`. */
+	interactiveTranscript(
+		session: { sessionId?: string; folder: string },
 		home: string,
 		env: Readonly<Record<string, string | undefined>>,
-	): string | undefined;
+	): HarnessTranscriptFiles | undefined;
+	/** As `Harness.transcriptSession`. */
+	transcriptSession(firstLine: string): HarnessTranscriptSession | undefined;
 	/** As `Harness.transcriptAnswers`. */
 	transcriptAnswers(lines: readonly string[]): string[];
 	/** As `Harness.resumeHint`. */
@@ -226,7 +230,8 @@ export function harnessFromCli(cli: HarnessCli): Harness {
 				root,
 				cli.prices,
 			),
-		interactiveTranscriptPath: cli.interactiveTranscriptPath,
+		interactiveTranscript: cli.interactiveTranscript,
+		transcriptSession: cli.transcriptSession,
 		transcriptAnswers: cli.transcriptAnswers,
 		resumeHint: cli.resumeHint,
 	};

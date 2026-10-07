@@ -4,7 +4,7 @@ In a planning session (ADR 0015) the agent writes the same `<vago-plan>` block a
 
 This supersedes ADR 0012 for planning sessions. ADR 0012 still holds for `vago plan say` until Ticket 04 removes it.
 
-Only `harness/claude-code.ts` knows the transcript's path and line shapes; `step-runner.ts` reads the file, and `tickets/` picks the block.
+Codex's transcript is its rollout files, which ADR 0017 describes. Only the Harness module knows its transcript's path and line shapes; `step-runner.ts` reads the files, and `tickets/` picks the block.
 
 ## Considered options
 
@@ -22,4 +22,3 @@ Reading the transcript keeps both guards as they are, and keeps the block format
 - A save that fails is retried a second later, without a word to the human.
 - Each resume reads the whole transcript again and saves the same block again, which changes nothing.
 - It assumes `claude --resume <id>` appends to the same `<id>.jsonl`, as its `--fork-session` opt-out suggests. If it doesn't, blocks written after a resume aren't picked up.
-- Codex keeps its transcript under `$CODEX_HOME/sessions/`, named by date and time as well as the session id. Locating it is Ticket 03's.

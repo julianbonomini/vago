@@ -6,9 +6,9 @@ This amends ADR 0005. The TUI now owns one process: a planning item's session, w
 
 `vago plan session` holds the item's `running.lock` for the whole session, as a response does (ADR 0014). Rename, accept and discard are refused or stop it as they do a response, and `vago plan discard` stops the `vago plan session` process, not the TUI that drew it. The planning view ends the session and waits for it to exit before it runs `vago plan accept`, and starts it again, resuming it, when the acceptance is refused.
 
-An interactive `claude` doesn't report its session id, so Vago makes one, saves it in `chat.toml` before the session starts, and passes `--session-id <id>`; reopening the item passes `--resume <id>`. A Harness that can't start a session under an id Vago picks, such as Codex, is Ticket 03's to solve. Until then a Codex item's pane shows that its session isn't built yet.
+An interactive `claude` doesn't report its session id, so Vago makes one, saves it in `chat.toml` before the session starts, and passes `--session-id <id>`; reopening the item passes `--resume <id>`. Codex can't start a session under an id Vago picks, so a Codex item's id is saved once its transcript names it (ADR 0017).
 
-Claude Code saves a conversation only once the human sends a message. An item opened and left before that has a saved id with nothing behind it, and resuming it fails. So a resume that ends `exit N` on its own is followed, once, by a fresh start under the same id. That happens every time the human opens an item and leaves before typing.
+Claude Code saves a conversation only once the human sends a message. An item opened and left before that has a saved id with nothing behind it, and resuming it fails. So a resume that ends `exit N` on its own is followed, once, by a fresh start, whose new id replaces the saved one. That happens every time the human opens an item and leaves before typing.
 
 The session runs read-only under the same guard as a planning turn (ADR 0011): the OS sandbox from `sandbox.ts` denies every write under the Project root, and Claude Code's `dontAsk` mode with only reading tools and no MCP server is the second guard. The agent's Proposal reaches Vago through its Harness's own transcript, outside the Project, so neither guard is loosened (ADR 0016).
 
@@ -24,7 +24,7 @@ No terminal-emulator package was added. `@opentui/core` 0.5.14, already pinned b
 - Each open planning item runs one more process, a `vago plan session`, and a pseudo-terminal.
 - `vago plan session <item>` also works from a plain terminal, without the TUI.
 - Leaving the view or quitting the TUI stops the session: the pane's cleanup sends SIGTERM to the session's process group and closes its pseudo-terminal. A SIGKILLed TUI closes the pseudo-terminal too, which sends the session SIGHUP. `vago plan session` stops its Harness on SIGHUP, SIGTERM or SIGINT.
-- A resume that had a conversation and then crashed also gets one fresh start under the same id, which `claude` refuses, so the pane shows the crash, then the refusal. Telling the two cases apart would mean reading Claude Code's own session files.
+- A resume that had a conversation and then crashed also gets one fresh start, so the pane shows the crash, then a new conversation, and the old one is no longer the item's. Telling the two cases apart would mean reading Claude Code's own session files.
 - Sessions record no turns, so the Goals list reads "no chat yet" for an item planned this way until Ticket 04 changes planning status and cost.
 - `vago plan say` and `vago plan retry` stay until Ticket 04, refused while a session holds the item.
 - Claude Code's first-run folder trust prompt shows in the pane, and Claude Code saves the answer outside the Project.

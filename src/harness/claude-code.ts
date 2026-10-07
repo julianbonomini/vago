@@ -192,10 +192,13 @@ export const claudeCode: HarnessCli = {
 	readOnlyResumeCommand(sessionId, model) {
 		return [program, "-p", "--resume", sessionId, ...readOnlyFlags(model)];
 	},
-	interactiveReadOnlyCommand({ model, instructions, sessionId, resume }) {
-		return [
+	// An interactive `claude` reports no session id, so a fresh session runs
+	// under one Vago names.
+	interactiveReadOnlyCommand({ model, instructions, resume }) {
+		const sessionId = resume ?? crypto.randomUUID();
+		const argv = [
 			program,
-			resume ? "--resume" : "--session-id",
+			resume === undefined ? "--session-id" : "--resume",
 			sessionId,
 			"--append-system-prompt",
 			instructions,
@@ -203,6 +206,7 @@ export const claudeCode: HarnessCli = {
 			"--model",
 			model,
 		];
+		return { argv, sessionId };
 	},
 	events(line, command) {
 		const event = parseJson(line);
@@ -261,13 +265,20 @@ export const claudeCode: HarnessCli = {
 	// Claude Code's own layout, which it doesn't document or promise to keep
 	// (ADR 0016): a folder per working directory, named by replacing each
 	// character that isn't a letter or a digit with `-`.
-	interactiveTranscriptPath({ sessionId, folder }, home, env) {
-		return join(
-			env.CLAUDE_CONFIG_DIR ?? join(home, ".claude"),
-			"projects",
-			folder.replace(/[^A-Za-z0-9]/g, "-"),
-			`${sessionId}.jsonl`,
-		);
+	interactiveTranscript({ sessionId, folder }, home, env) {
+		if (sessionId === undefined) return undefined;
+		return {
+			folder: join(
+				env.CLAUDE_CONFIG_DIR ?? join(home, ".claude"),
+				"projects",
+				folder.replace(/[^A-Za-z0-9]/g, "-"),
+			),
+			pattern: `${sessionId}.jsonl`,
+		};
+	},
+	// Every session's id is named before it starts.
+	transcriptSession() {
+		return undefined;
 	},
 	transcriptAnswers(lines) {
 		const answers: string[] = [];

@@ -8,11 +8,12 @@
 import { closeSync, openSync, writeSync } from "node:fs";
 import { mkdir, realpath } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname } from "node:path";
+import { basename, dirname } from "node:path";
 import {
 	findHarness,
 	type Harness,
 	type HarnessSessionReport,
+	type HarnessTranscriptFiles,
 } from "./harness/registry.ts";
 import { printStepEnded, printStepStarted } from "./progress.ts";
 import { withoutWritesUnder } from "./sandbox.ts";
@@ -271,9 +272,8 @@ export type InteractiveReadOnlySession = {
 	model: string;
 	/** What is added to the agent's system prompt. */
 	instructions: string;
-	sessionId: string;
-	/** Whether session `sessionId` is resumed rather than started. */
-	resume: boolean;
+	/** The session to resume; absent to start a fresh one. */
+	resume?: string;
 	/** The working directory, which nothing the session starts can write under. */
 	folder: string;
 };
@@ -282,60 +282,53 @@ export type InteractiveReadOnlySession = {
  * Runs `session` on this process's terminal and waits for it to end. Its
  * stdin, stdout and stderr are this process's, and it stays in the
  * terminal's foreground. Nothing it starts can write under its folder.
- * While it runs, and once more after it ends however it ended, `onAnswers`
- * gets every message the agent has written in the session so far, a resumed
- * session's earlier ones included, whenever there are more than `onAnswers`
- * last took without throwing. Calls never overlap. An error from `onAnswers`
- * never ends the session; the same messages come again a second later. A
- * Harness whose transcript Vago can't find gives no call.
+ * `onSessionId` gets the session's id once: before the session starts when
+ * the Harness names it up front, as it does a resumed session's, or else
+ * once its transcript tells, which may be only after the human's first
+ * message. While it runs, and once more after it ends however it ended,
+ * `onAnswers` gets every message the agent has written in the session so
+ * far, a resumed session's earlier ones included, whenever there are more
+ * than `onAnswers` last took without throwing. Calls never overlap. An error
+ * from either callback after the session has started never ends it; the
+ * same call comes again a second later. A Harness whose transcript Vago
+ * can't find gives no call after the start.
  * SIGHUP, SIGTERM or SIGINT stops it within 5 seconds and ends it
  * `interrupted`; otherwise it ends `ok` or `exit N`. Throws, naming what to
- * install, when the Harness's program isn't on `PATH`, and as
- * `withoutWritesUnder` does.
+ * install, when the Harness's program isn't on `PATH`, as
+ * `withoutWritesUnder` does, and as `onSessionId` does before the start.
  */
 export async function runInteractiveReadOnlySession(
 	session: InteractiveReadOnlySession,
+	onSessionId: (sessionId: string) => Promise<void>,
 	onAnswers: (answers: string[]) => Promise<void>,
 ): Promise<RunOutcome> {
 	const harness = findHarness(session.harness);
+	const command = harness.interactiveReadOnlyCommand(session);
 	const spawned = await spawnableReadOnly(
 		harness,
 		session.folder,
-		harness.interactiveReadOnlyCommand(session),
+		command.argv,
 	);
-	// The Harness names its transcript's folder after the working directory
-	// as the kernel sees it, with symlinks resolved.
-	const transcript = harness.interactiveTranscriptPath(
-		{ sessionId: session.sessionId, folder: await realpath(session.folder) },
-		homedir(),
-		process.env,
+	if (command.sessionId !== undefined) await onSessionId(command.sessionId);
+	const readTranscript = transcriptReader(
+		harness,
+		{
+			sessionId: command.sessionId,
+			// The Harness names its transcript, or records its folder, as the
+			// kernel sees the working directory, with symlinks resolved.
+			folder: await realpath(session.folder),
+			startedAt: new Date(),
+		},
+		onSessionId,
+		onAnswers,
 	);
-	let taken = 0;
 	let reading: Promise<void> | undefined;
-	const readAnswers = async () => {
-		if (transcript === undefined) return;
-		// The session writes no transcript until the human's first message.
-		const text = await Bun.file(transcript)
-			.text()
-			.catch(() => "");
-		const answers = harness.transcriptAnswers(text.split("\n"));
-		if (answers.length <= taken) return;
-		// Left as it was when `onAnswers` fails, so the next read retries.
-		await onAnswers(answers)
-			.then(() => {
-				taken = answers.length;
-			})
-			.catch(() => {});
-	};
-	const timer =
-		transcript === undefined
-			? undefined
-			: setInterval(() => {
-					if (reading !== undefined) return;
-					reading = readAnswers().finally(() => {
-						reading = undefined;
-					});
-				}, 1000);
+	const timer = setInterval(() => {
+		if (reading !== undefined) return;
+		reading = readTranscript().finally(() => {
+			reading = undefined;
+		});
+	}, 1000);
 	// SIGHUP too: it is how this process hears that its terminal closed.
 	const interrupt = interruptOnSignal(["SIGINT", "SIGTERM", "SIGHUP"]);
 	let code: number;
@@ -353,9 +346,90 @@ export async function runInteractiveReadOnlySession(
 		// proposal the human then accepts, is still handed over.
 		clearInterval(timer);
 		await reading;
-		await readAnswers();
+		await readTranscript();
 	}
 	return interrupt.signal.aborted ? { kind: "interrupted" } : outcomeOf(code);
+}
+
+// One read of the transcript of the interactive session started at
+// `startedAt` in `folder`: until its id is known and taken by `onSessionId`,
+// the search for it among every transcript started there since, and then the
+// agent's messages handed to `onAnswers` when there are more than it last
+// took. A callback that throws is called again on the next read.
+function transcriptReader(
+	harness: Harness,
+	session: { sessionId?: string; folder: string; startedAt: Date },
+	onSessionId: (sessionId: string) => Promise<void>,
+	onAnswers: (answers: string[]) => Promise<void>,
+): () => Promise<void> {
+	const { folder, startedAt } = session;
+	let sessionId = session.sessionId;
+	let sessionIdTaken = sessionId !== undefined;
+	let taken = 0;
+	return async () => {
+		if (sessionId === undefined) {
+			const anyTranscript = harness.interactiveTranscript(
+				{ folder },
+				homedir(),
+				process.env,
+			);
+			for (const file of await transcriptFiles(anyTranscript)) {
+				// A file last written before the start can't be this session's.
+				if (Bun.file(file).lastModified < startedAt.getTime()) continue;
+				const text = await readTranscriptFile(file);
+				const owner = harness.transcriptSession(text.split("\n", 1)[0] ?? "");
+				if (owner?.folder === folder && owner.startedAt >= startedAt) {
+					sessionId = owner.sessionId;
+					break;
+				}
+			}
+		}
+		if (sessionId === undefined) return;
+		if (!sessionIdTaken) {
+			sessionIdTaken = await onSessionId(sessionId).then(
+				() => true,
+				() => false,
+			);
+			if (!sessionIdTaken) return;
+		}
+		const transcript = harness.interactiveTranscript(
+			{ sessionId, folder },
+			homedir(),
+			process.env,
+		);
+		const lines: string[] = [];
+		for (const file of await transcriptFiles(transcript)) {
+			lines.push(...(await readTranscriptFile(file)).split("\n"));
+		}
+		const answers = harness.transcriptAnswers(lines);
+		if (answers.length <= taken) return;
+		// Left as it was when `onAnswers` fails, so the next read retries.
+		await onAnswers(answers)
+			.then(() => {
+				taken = answers.length;
+			})
+			.catch(() => {});
+	};
+}
+
+// The paths of `transcript`'s files, in name order; none while the Harness
+// hasn't written one yet, which it may not until the human's first message.
+async function transcriptFiles(
+	transcript: HarnessTranscriptFiles | undefined,
+): Promise<string[]> {
+	if (transcript === undefined) return [];
+	const glob = new Bun.Glob(transcript.pattern);
+	const files = await Array.fromAsync(
+		glob.scan({ cwd: transcript.folder, absolute: true, onlyFiles: true }),
+	).catch((): string[] => []);
+	return files.sort((a, b) => (basename(a) < basename(b) ? -1 : 1));
+}
+
+// Empty when the file is gone, as when the human deletes a session.
+function readTranscriptFile(file: string): Promise<string> {
+	return Bun.file(file)
+		.text()
+		.catch(() => "");
 }
 
 // `command`, a read-only session of `harness`, wrapped so nothing it starts

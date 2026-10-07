@@ -154,28 +154,35 @@ export type Harness = {
 	/** As `readOnlyCommand`, resuming session `sessionId` with the message on stdin. */
 	readOnlyResumeCommand(sessionId: string, model: string): string[];
 	/**
-	 * The argv of the Harness's own interactive UI, for a terminal, on
-	 * `model`. Its tools can read files and load Skills but never change a
-	 * file. It starts session `sessionId` fresh, or resumes it when `resume`
-	 * is true, with `instructions` added to the agent's system prompt.
+	 * The Harness's own interactive UI, for a terminal, on `model`. Its tools
+	 * can read files and load Skills but never change a file. It resumes
+	 * session `resume`, or starts a fresh one when `resume` is absent, with
+	 * `instructions` added to the agent's system prompt.
 	 */
 	interactiveReadOnlyCommand(session: {
 		model: string;
 		instructions: string;
-		sessionId: string;
-		resume: boolean;
-	}): string[];
+		resume?: string;
+	}): HarnessInteractiveCommand;
 	/**
-	 * The absolute path of the transcript the Harness's interactive session
-	 * `sessionId`, started in `folder` (a real path, symlinks resolved), writes
-	 * while it runs, given the user's home folder `home` and environment `env`.
+	 * Where the transcript of the Harness's interactive session `sessionId`,
+	 * started in `folder` (a real path, symlinks resolved), is while it runs,
+	 * given the user's home folder `home` and environment `env`. With no
+	 * `sessionId`, it is where any session's transcript could be, so that a
+	 * fresh session's can be found among them by `transcriptSession`.
 	 * Undefined when Vago can't know where it is.
 	 */
-	interactiveTranscriptPath(
-		session: { sessionId: string; folder: string },
+	interactiveTranscript(
+		session: { sessionId?: string; folder: string },
 		home: string,
 		env: Readonly<Record<string, string | undefined>>,
-	): string | undefined;
+	): HarnessTranscriptFiles | undefined;
+	/**
+	 * The session a transcript whose first line is `firstLine` belongs to.
+	 * Undefined when the line doesn't say, as it never does for a Harness
+	 * that names every session's id before it starts.
+	 */
+	transcriptSession(firstLine: string): HarnessTranscriptSession | undefined;
 	/**
 	 * What one stream line of the session started with `command`,
 	 * `resumeCommand` or a read-only command, the argv it gave, carries.
@@ -192,12 +199,37 @@ export type Harness = {
 	runActivity(lines: readonly string[], root: string): RunActivity;
 	/**
 	 * The text of each message the agent wrote in a transcript whose lines are
-	 * `lines`, oldest first. The human's messages, tool calls and results,
-	 * subagents' messages and a line that isn't a whole event are left out.
+	 * `lines`, its files' lines in name order, oldest first. The human's
+	 * messages, tool calls and results, subagents' messages and a line that
+	 * isn't a whole event are left out.
 	 */
 	transcriptAnswers(lines: readonly string[]): string[];
 	/** The shell command the human runs to resume session `sessionId`. */
 	resumeHint(sessionId: string): string;
+};
+
+/**
+ * The Harness's own interactive UI's argv, and the session's id when it is
+ * known before the session starts: a resumed one's, or a fresh one's that
+ * the argv names. Absent for a Harness that picks a fresh session's id
+ * itself, which only its transcript then tells.
+ */
+export type HarnessInteractiveCommand = { argv: string[]; sessionId?: string };
+
+/**
+ * A session's transcript: every file under `folder` that the glob `pattern`
+ * matches, read in name order as one.
+ */
+export type HarnessTranscriptFiles = { folder: string; pattern: string };
+
+/**
+ * The interactive session a transcript belongs to: its id, the real path of
+ * the folder it started in, and when it started.
+ */
+export type HarnessTranscriptSession = {
+	sessionId: string;
+	folder: string;
+	startedAt: Date;
 };
 
 const harnesses: Record<string, Harness> = {

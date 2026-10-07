@@ -7,6 +7,7 @@ import {
 	fakeTranscriptLine,
 	makeFakeClaude,
 	makeFakeInteractiveClaude,
+	makeFakeInteractiveCodex,
 	planningFixtureAnswering,
 } from "./fake-harness.ts";
 import {
@@ -37,13 +38,16 @@ const readOnlyFlags = [
 ];
 
 // A Project with a planning prompt, Workflow `small` and planning item
-// `search` on Claude Code.
-async function planningProject(env: Record<string, string>): Promise<string> {
+// `search` on `harness`.
+async function planningProject(
+	env: Record<string, string>,
+	harness = "claude-code",
+): Promise<string> {
 	const root = await makeProject({
 		".vago/prompts/planning.md": planningPrompt,
 		".vago/workflows/small.toml": oneStep("true"),
 	});
-	await runVago(root, ["plan", "new", "search"], env);
+	await runVago(root, ["plan", "new", "search", "--harness", harness], env);
 	return root;
 }
 
@@ -143,7 +147,7 @@ test("a second session resumes the saved id", async () => {
 	await second.exited;
 });
 
-test("a resume Claude Code refuses is followed by one fresh start under the same id", async () => {
+test("a resume Claude Code refuses is followed by one fresh start, whose id is saved", async () => {
 	const fake = await makeFakeInteractiveClaude({ resume: "refused" });
 	const root = await planningProject(fake.env);
 	const first = openSession(root, fake.env);
@@ -154,13 +158,16 @@ test("a resume Claude Code refuses is followed by one fresh start under the same
 
 	const second = openSession(root, fake.env);
 
-	await lineStarting(second.screen, `fake claude fresh ${id}`);
+	const fresh = await lineStarting(second.screen, "fake claude fresh ");
+	const freshId = fresh.slice("fake claude fresh ".length);
+	expect(freshId).not.toBe(id);
 	const calls = await fake.calls();
 	expect(calls.map((call) => call.argv.slice(0, 2))).toEqual([
 		["--session-id", id],
 		["--resume", id],
-		["--session-id", id],
+		["--session-id", freshId],
 	]);
+	expect(await savedSessionId(root)).toBe(freshId);
 	second.close();
 	await second.exited;
 	expect(await fake.calls()).toHaveLength(3);
@@ -390,4 +397,86 @@ test("a proposal that couldn't be saved is saved once it can be, with no new mes
 
 	expect(await session.exited).toBe(3);
 	await expectAcceptedSessionProposal(root);
+});
+
+// The flags of Codex's interactive session: no shared server, which would
+// run the agent's commands outside the sandbox, Codex's own sandbox off,
+// since it can't start inside Vago's, and the planning prompt.
+const codexFlags = [
+	"--no-daemon",
+	"--sandbox",
+	"danger-full-access",
+	"--ask-for-approval",
+	"never",
+	"-c",
+	`developer_instructions=${JSON.stringify(planningPrompt.trimEnd())}`,
+	"--model",
+	"gpt-6-sol",
+];
+
+// Writes, once the session has started, a transcript of another Codex
+// session in the same folder, started before it.
+const otherCodexSession = `d="$CODEX_HOME/sessions/2020/01/01"; mkdir -p "$d"; printf '{"type":"session_meta","payload":{"id":"other","timestamp":"2020-01-01T00:00:00.000Z","cwd":"%s"}}\\n' "$(pwd -P)" > "$d/rollout-2020-01-01T00-00-00-other.jsonl"`;
+
+test("a Codex item saves the id Codex picks once it answers, and its proposal is accepted", async () => {
+	const fake = await makeFakeInteractiveCodex({
+		answers: [sessionAnswer],
+		afterStart: otherCodexSession,
+	});
+	const root = await planningProject(fake.env, "codex");
+	const session = openSession(root, fake.env);
+	const line = await lineStarting(session.screen, "fake codex fresh ");
+
+	session.press("\r");
+	await lineStarting(session.screen, "answered 1");
+	session.press("exit");
+
+	expect(await session.exited).toBe(3);
+	expect(await savedSessionId(root)).toBe(
+		line.slice("fake codex fresh ".length),
+	);
+	const [call] = await fake.calls();
+	expect(call?.argv).toEqual(codexFlags);
+	await expectAcceptedSessionProposal(root);
+});
+
+test("a second Codex session resumes the saved id", async () => {
+	const fake = await makeFakeInteractiveCodex({ answers: ["A question?"] });
+	const root = await planningProject(fake.env, "codex");
+	const first = openSession(root, fake.env);
+	const line = await lineStarting(first.screen, "fake codex fresh ");
+	first.press("\r");
+	await lineStarting(first.screen, "answered 1");
+	first.close();
+	await first.exited;
+	const id = line.slice("fake codex fresh ".length);
+
+	const second = openSession(root, fake.env);
+
+	await lineStarting(second.screen, `fake codex resumed ${id}`);
+	const calls = await fake.calls();
+	expect(calls[1]?.argv).toEqual(["resume", id, ...codexFlags]);
+	second.close();
+	await second.exited;
+	expect(await savedSessionId(root)).toBe(id);
+});
+
+test("a Codex session, its own sandbox off, still can't change a Project file", async () => {
+	const fake = await makeFakeInteractiveCodex({
+		afterStart:
+			"cat notes.txt; printf x > notes.txt; printf x > new.txt; echo tried",
+	});
+	const root = await planningProject(fake.env, "codex");
+	await Bun.write(join(root, "notes.txt"), "untracked notes\n");
+
+	const session = openSession(root, fake.env);
+	await lineStarting(session.screen, "tried");
+	session.close();
+	await session.exited;
+
+	expect(await Bun.file(join(root, "notes.txt")).text()).toBe(
+		"untracked notes\n",
+	);
+	expect(existsSync(join(root, "new.txt"))).toBe(false);
+	expect(session.screen.printed()).toContain("untracked notes");
 });

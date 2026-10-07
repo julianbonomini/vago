@@ -102,15 +102,15 @@ function planningModel(harness: string): string {
  * Runs planning item `item`'s agent, in the Project at `root`, in the
  * Harness's own interactive session on this process's terminal until it
  * ends, and returns how it ended. The item is held for the whole session.
- * The session resumes the item's saved session id, or starts one under a
- * new id that is saved before it starts. The planning prompt is added on
+ * The session resumes the item's saved session id, or starts a fresh one
+ * whose id is saved as soon as it is known. The planning prompt is added on
  * every start. Once, a resume that ends `exit N` is replaced by a fresh
- * session under the same id. Every proposal block the agent writes in the
- * session is saved as the item's Proposal while it runs. Throws, recording
- * nothing, when `item` isn't a planning item, was accepted, or is held by
- * another vago. Throws when the planning prompt is missing, when no sandbox
- * is available, when the Harness's program isn't on `PATH`, or when the
- * item's Harness can't run a session.
+ * session. Every proposal block the agent writes in the session is saved as
+ * the item's Proposal while it runs. Throws, recording nothing, when `item`
+ * isn't a planning item, was accepted, or is held by another vago. Throws
+ * when the planning prompt is missing, when no sandbox is available, when
+ * the Harness's program isn't on `PATH`, or when the item's Harness can't
+ * run a session.
  */
 export async function runPlanningSession(
 	root: string,
@@ -122,29 +122,23 @@ export async function runPlanningSession(
 		// Only a hand-edited `chat.toml` names a Harness this throws for.
 		const model = planningModel(harness);
 		const instructions = (await readPlanningPrompt(root)).trimEnd();
-		const saved = chat.sessionId;
-		const sessionId = saved ?? crypto.randomUUID();
-		// Saved before the Harness starts, since an interactive session
-		// reports no id of its own.
-		if (saved === undefined) {
-			await recordPlanningSessionId(root, item, sessionId);
-		}
-		const session = { harness, model, instructions, sessionId, folder: root };
+		const session = { harness, model, instructions, folder: root };
+		const onSessionId = (sessionId: string) =>
+			recordPlanningSessionId(root, item, sessionId);
 		const onAnswers = (answers: string[]) =>
 			recordPlanningAnswers(root, item, answers);
+		const saved = chat.sessionId;
 		const ran = await runInteractiveReadOnlySession(
-			{ ...session, resume: saved !== undefined },
+			{ ...session, resume: saved },
+			onSessionId,
 			onAnswers,
 		);
 		if (saved === undefined || ran.kind !== "exit") return ran;
-		// A Harness saves a conversation only once the human has sent a
+		// Claude Code saves a conversation only once the human has sent a
 		// message, so an item opened and left before that has an id with
 		// nothing behind it, and resuming it fails. That is the common case,
-		// so the id is started fresh instead, once.
-		return runInteractiveReadOnlySession(
-			{ ...session, resume: false },
-			onAnswers,
-		);
+		// so a fresh session replaces it, once.
+		return runInteractiveReadOnlySession(session, onSessionId, onAnswers);
 	});
 }
 
