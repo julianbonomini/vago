@@ -1,29 +1,25 @@
 // A planning item's agent: the Harnesses it can run on, making an item on
-// one, one planning turn (the message the human sends the agent and the
-// response to it, written while this process holds the item), and Retry
-// response, which answers an interrupted turn again. Hides each Harness's
-// planning model, the default Harness, recording the turn, the planning
-// instructions ahead of a fresh session's message, fresh vs. resumed, and
-// how a failure is recorded.
+// one, and its planning session, the Harness's own interactive session, run
+// while this process holds the item. Hides each Harness's planning model,
+// the default Harness, the session's id, the planning instructions, and
+// fresh vs. resumed.
 
 import {
-	type HarnessSessionReport,
+	type HarnessTranscript,
 	installedHarnesses,
 } from "./harness/registry.ts";
 import {
+	type InteractiveReadOnlySession,
 	type RunOutcome,
-	runReadOnlySession,
-	spellOutcome,
+	runInteractiveReadOnlySession,
 } from "./step-runner.ts";
 import {
 	createPlanningItem,
-	type PlanningTurnEntry,
+	type PlanningChat,
 	readPlanningChat,
-	recordPlanningSession,
-	recordPlanningTurnEnd,
-	recordPlanningTurnRetry,
-	recordPlanningTurnStart,
-	withPlanningItemClaimed,
+	recordPlanningSessionId,
+	recordPlanningTranscript,
+	withPlanningSession,
 } from "./tickets/tickets.ts";
 import { readPlanningPrompt } from "./workflow.ts";
 
@@ -38,15 +34,10 @@ const planningModels: Record<string, string> = {
 // is on `PATH`, or no planning Harness's is.
 const defaultHarness = "claude-code";
 
-// What a resumed session is handed in place of the message it was answering.
-// Not the Step's continue message: a planning agent has no working tree.
-const continueMessage =
-	"You were interrupted. Continue your answer from where you stopped.\n";
-
 /**
  * The name of every Harness a planning agent can run on whose program is on
  * `PATH`, the default first. When none is, the default alone, so that its
- * first turn says what to install.
+ * session says what to install.
  */
 export function planningHarnesses(): string[] {
 	const installed = installedHarnesses().filter((name) =>
@@ -94,126 +85,85 @@ function planningModel(harness: string): string {
 	return model;
 }
 
-/** How a planning turn's response ended. */
-export type PlanningResponse =
-	| { outcome: "ok"; answer: string }
-	| { outcome: "failed"; reason: string };
-
 /**
- * Sends `message` as the next turn of planning item `item`'s chat, in the
- * Project at `root`, and waits for the agent's response. A chat with no
- * session yet starts one in the Project root with the planning instructions
- * ahead of the message; otherwise the saved session is resumed with the
- * message alone. The agent can read the Project but not write under it.
- * Throws, recording nothing, for an empty message, when `item` is no
- * planning item, or while another vago is answering or changing the item.
- * Throws after recording the turn as `error` with the reason when the
- * instructions are missing or no sandbox is available.
+ * Runs planning item `item`'s agent, in the Project at `root`, in the
+ * Harness's own interactive session on this process's terminal until it
+ * ends, and returns how it ended. The item is held for the whole session.
+ * The session resumes the item's saved session id, or starts a fresh one
+ * whose id is saved as soon as it is known and whose agent starts at once,
+ * on a first message naming the item. The planning prompt is added on
+ * every start. Once, a resume that ends `exit N` is replaced by a fresh
+ * session. While it runs, every proposal block the agent writes is saved as
+ * the item's Proposal, and the run's start, end and cost are recorded. For
+ * a Goal accepted from a planning item, its saved session resumes and
+ * nothing is held or recorded, so the Goal stays as it was. Throws,
+ * recording nothing, when `item` is neither, is held by another vago, or
+ * is an accepted Goal with no saved session; when the planning prompt is
+ * missing; or when the item's Harness can't run a session. Throws after
+ * recording a run that ends at once when no sandbox is available or the
+ * Harness's program isn't on `PATH`.
  */
-export async function sendPlanningMessage(
+export async function runPlanningSession(
 	root: string,
 	item: string,
-	message: string,
-): Promise<PlanningResponse> {
-	// An agent handed nothing would answer a question nobody asked.
-	if (message.trim() === "") {
-		throw new Error(`The message for ${item} is empty`);
-	}
-	return withPlanningItemClaimed(root, item, async () => {
-		const chat = await readPlanningChat(root, item);
-		const harness = chat.harness ?? harnessByDefault();
-		const entry = await recordPlanningTurnStart(root, item, message, harness);
-		return answerTurn(root, entry, harness, {
-			resume: chat.sessionId,
-			input: message,
-		});
-	});
-}
-
-/**
- * Answers the interrupted last response of planning item `item`, in the
- * Project at `root`, once more, in the same turn, and waits for it. A
- * response whose session an earlier attempt reported resumes that session,
- * told to continue; otherwise its message is sent again as the first
- * attempt sent it. Throws, recording nothing, while another vago is
- * answering or changing the item, when the last response wasn't
- * interrupted, and as `sendPlanningMessage` does.
- */
-export async function retryPlanningResponse(
-	root: string,
-	item: string,
-): Promise<PlanningResponse> {
-	return withPlanningItemClaimed(root, item, async () => {
-		const chat = await readPlanningChat(root, item);
-		const harness = chat.harness ?? harnessByDefault();
-		const retry = await recordPlanningTurnRetry(root, item);
-		return answerTurn(
-			root,
-			retry.entry,
-			harness,
-			retry.sessionId === undefined
-				? { resume: chat.sessionId, input: retry.message }
-				: { resume: retry.sessionId, input: continueMessage },
+): Promise<RunOutcome> {
+	const chat = await readPlanningChat(root, item);
+	if (chat.accepted) {
+		if (chat.sessionId === undefined) {
+			throw new Error(`${item} has no planning session to open`);
+		}
+		// `vago run` holds the Goal, so nothing is held, and the chat is
+		// read-only, so nothing the session tells is saved.
+		const ignore = async () => {};
+		return runInteractiveReadOnlySession(
+			{ ...(await planningSession(root, chat)), resume: chat.sessionId },
+			ignore,
+			ignore,
 		);
+	}
+	return withPlanningSession(root, item, async () => {
+		// Read again under the hold: the session it last held may have saved
+		// another id meanwhile.
+		const held = await readPlanningChat(root, item);
+		const session = await planningSession(root, held);
+		const onSessionId = (sessionId: string) =>
+			recordPlanningSessionId(root, item, sessionId);
+		const onTranscript = (transcript: HarnessTranscript) =>
+			recordPlanningTranscript(root, item, transcript);
+		const saved = held.sessionId;
+		const fresh = { ...session, kickoff: kickoff(item) };
+		const ran = await runInteractiveReadOnlySession(
+			saved === undefined ? fresh : { ...session, resume: saved },
+			onSessionId,
+			onTranscript,
+		);
+		if (saved === undefined || ran.kind !== "exit") return ran;
+		// Claude Code saves a conversation only once the human has sent a
+		// message, so an item opened and left before that has an id with
+		// nothing behind it, and resuming it fails. That is the common case,
+		// so a fresh session replaces it, once.
+		return runInteractiveReadOnlySession(fresh, onSessionId, onTranscript);
 	});
 }
 
-// Answers the turn `entry` records on `harness`, in the Project at `root`,
-// as `runTurn` does with `start`, and records how it ended.
-async function answerTurn(
-	root: string,
-	entry: PlanningTurnEntry,
-	harness: string,
-	start: { resume?: string; input: string },
-): Promise<PlanningResponse> {
-	// Recorded as the turn's end, so the human sees why there's no response.
-	const ran = await runTurn(root, entry, harness, start).catch(
-		async (error: unknown) => {
-			const reason = error instanceof Error ? error.message : String(error);
-			await recordPlanningTurnEnd(entry, "error", { reason });
-			throw error;
-		},
-	);
-	const outcome = spellOutcome(ran.outcome);
-	await recordPlanningTurnEnd(entry, outcome, {
-		answer:
-			ran.outcome.kind === "ok" ? (ran.report.resultText ?? "") : undefined,
-		costUsd: ran.report.costUsd,
-	});
-	return ran.outcome.kind === "ok"
-		? { outcome: "ok", answer: ran.report.resultText ?? "" }
-		: {
-				outcome: "failed",
-				reason: `the response ended ${outcome}; its log: ${entry.log}`,
-			};
+// The first message of item `item`'s fresh session, so that the agent
+// starts planning without waiting for the human.
+function kickoff(item: string): string {
+	return `Plan the Goal "${item}" with me.`;
 }
 
-// Runs the session of the turn `entry` records on `harness`, in the Project
-// at `root`: resumes session `start.resume` with `start.input`, or, with no
-// session to resume, starts one with the planning instructions ahead of it.
-async function runTurn(
+// The fresh session of the planning item whose chat is `chat`, in the
+// Project at `root`. Throws when the planning prompt is missing, and when a
+// hand-edited `chat.toml` names a Harness that can't plan.
+async function planningSession(
 	root: string,
-	entry: PlanningTurnEntry,
-	harness: string,
-	start: { resume?: string; input: string },
-): Promise<{ outcome: RunOutcome; report: HarnessSessionReport }> {
-	// Only a hand-edited `chat.toml` names a Harness this throws for.
-	const model = planningModel(harness);
-	// A chat whose first turn failed before its session started has no id
-	// yet, so its next turn starts one as the first would have.
-	const input =
-		start.resume === undefined
-			? `${(await readPlanningPrompt(root)).trimEnd()}\n\n${start.input}`
-			: start.input;
-	return runReadOnlySession(
-		{
-			harness,
-			model,
-			resume: start.resume,
-			input,
-			folder: root,
-			log: entry.log,
-		},
-		(sessionId) => recordPlanningSession(entry, sessionId),
-	);
+	chat: PlanningChat,
+): Promise<InteractiveReadOnlySession> {
+	const harness = chat.harness ?? harnessByDefault();
+	return {
+		harness,
+		model: planningModel(harness),
+		instructions: (await readPlanningPrompt(root)).trimEnd(),
+		folder: root,
+	};
 }

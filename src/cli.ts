@@ -13,11 +13,7 @@ import {
 	runGoal,
 } from "./goal-runner.ts";
 import { initProject, updateProject } from "./init.ts";
-import {
-	planNewGoal,
-	retryPlanningResponse,
-	sendPlanningMessage,
-} from "./planning-runner.ts";
+import { planNewGoal, runPlanningSession } from "./planning-runner.ts";
 import { printGoalReport } from "./progress.ts";
 import { readRunOutput } from "./step-runner.ts";
 import {
@@ -148,13 +144,6 @@ const planningNewName: Operand = {
 const planningWorkflow: Operand = {
 	name: "<workflow>",
 	meaning: "The name of a Workflow in .vago/workflows/, without .toml.",
-};
-
-const messageFileFlag: RequiredFlag = {
-	name: "--body-file",
-	value: "<path>",
-	times: "once",
-	meaning: "Takes the message from this file, or from stdin when <path> is -.",
 };
 
 const workflowFlag: RequiredFlag = {
@@ -300,7 +289,7 @@ how long they took and what they cost, ready to paste into a PR description.`,
 		summary: "Start planning a Goal",
 		description: `Makes a planning item, a Goal still being planned, and prints its folder. It
 shows in the TUI's Goals list as planning. Its agent runs on the Harness
-chosen here for every message, whatever Harness the accepted Goal's Workflow
+chosen here for every session, whatever Harness the accepted Goal's Workflow
 uses. It makes no Goal and no Ticket, so vago run doesn't find it. It refuses
 a name a Goal or planning item has.`,
 		operands: [newPlanningName],
@@ -321,8 +310,8 @@ a name a Goal or planning item has.`,
 		name: "plan rename",
 		summary: "Rename a planning item",
 		description: `Gives a planning item a new name, keeping everything it holds. It refuses a
-Goal, a name a Goal or planning item has, and an item while a response to it
-is being written.`,
+Goal, a name a Goal or planning item has, and an item while its planning
+session is open.`,
 		operands: [planningName, planningNewName],
 		flags: [],
 		example: "vago plan rename search ranked-search",
@@ -336,59 +325,22 @@ is being written.`,
 		},
 	},
 	{
-		name: "plan say",
-		summary: "Send a planning item's agent a message and print its answer",
-		description: `Sends the message to the agent of the planning item's chat and prints its
-answer. The first message starts the agent on .vago/prompts/planning.md in
-this repo; later ones continue the same conversation. The agent can read the
-repo but not change a file in it. The answer may end with the agent's
-proposal, a <vago-plan> block, which Vago saves in the item's planning/
-folder; no Goal or Ticket file is written before the proposal is accepted.
-Exits 1 with the reason when the response fails. It refuses a Goal, an empty
-message, and an item while another response to it is being written. After an
-interrupted response, the message starts a new turn; vago plan retry answers
-the interrupted one instead.`,
-		operands: [planningName],
-		flags: [messageFileFlag],
-		example: "vago plan say search --body-file -",
-		run: async (root, given) => {
-			const message = await readBodyFile(given.requiredFlag(messageFileFlag));
-			const response = await sendPlanningMessage(
-				root,
-				given.operand(planningName),
-				message ?? "",
-			);
-			if (response.outcome === "failed") {
-				console.error(`vago: ${response.reason}`);
-				return 1;
-			}
-			console.log(response.answer);
-			return 0;
-		},
-	},
-	{
-		name: "plan retry",
-		summary: "Answer a planning item's interrupted response again",
-		description: `Answers the planning item's last response again when it was interrupted, such
-as by its vago being stopped or the machine restarting, and prints the answer.
-The response stays in the same turn: the message isn't sent as a new one.
-Exits 1 with the reason when the response fails. It refuses an item whose last
-response wasn't interrupted, or while another response to the item is being
-written.`,
+		name: "plan session",
+		summary: "Run a planning item's agent in its Harness's own session",
+		description: `Runs the planning item's agent in its Harness's own session on this terminal,
+resuming the item's session when it has one, until the session ends. The agent
+can read the Project but not write under it. The TUI runs it beside the
+Preview. For a Goal accepted from a planning item, it resumes the session to
+read, and nothing the agent writes changes the Goal.`,
 		operands: [planningName],
 		flags: [],
-		example: "vago plan retry search",
+		example: "vago plan session search",
 		run: async (root, given) => {
-			const response = await retryPlanningResponse(
+			const outcome = await runPlanningSession(
 				root,
 				given.operand(planningName),
 			);
-			if (response.outcome === "failed") {
-				console.error(`vago: ${response.reason}`);
-				return 1;
-			}
-			console.log(response.answer);
-			return 0;
+			return outcome.kind === "exit" ? outcome.code : 0;
 		},
 	},
 	{
@@ -416,9 +368,9 @@ revision of the proposal. It refuses a Workflow that isn't in
 		summary: "Accept a planning item's proposal as a ready Goal",
 		description: `Turns the planning item into a ready Goal with its proposed Tickets, all at
 once, and prints the path of its goal.md. It refuses, creating nothing, when
-the proposal isn't ready to accept, vago run would refuse its Workflow, a
-response is still being written or the last one was interrupted, or the item
-was already accepted. It starts nothing: vago run does.`,
+the proposal isn't ready to accept, vago run would refuse its Workflow, its
+planning session is open, or the item was already accepted. It starts
+nothing: vago run does.`,
 		operands: [planningName],
 		flags: [],
 		example: "vago plan accept search",
@@ -430,9 +382,8 @@ was already accepted. It starts nothing: vago run does.`,
 	{
 		name: "plan discard",
 		summary: "Remove a planning item and everything it holds",
-		description: `Removes a planning item and everything saved with it. A response to the item
-still being written is stopped first. It refuses a Goal, which it never
-removes.`,
+		description: `Removes a planning item and everything saved with it. Its open planning
+session is stopped first. It refuses a Goal, which it never removes.`,
 		operands: [planningName],
 		flags: [],
 		example: "vago plan discard search",

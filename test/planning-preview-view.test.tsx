@@ -1,35 +1,20 @@
 import { expect, test } from "bun:test";
 import type { TestRendererSetup } from "@opentui/core/testing";
-import { planningFixtureAnswering } from "./fake-harness.ts";
+import { makeFakeInteractiveClaude } from "./fake-harness.ts";
 import { makeProject } from "./project.ts";
 import { bgAt, frameWith, frameWithout, renderView } from "./view-render.tsx";
 
 const wide = { width: 120, height: 40 };
 
-// A chat whose turns sent `messages`, each ended `ok`, with no logs.
-function chatToml(messages: string[]): string {
-	const lines = ['harness = "claude-code"'];
-	for (const [index, message] of messages.entries()) {
-		lines.push(
-			"",
-			"[[turns]]",
-			`message = ${JSON.stringify(message)}`,
-			"started = 2026-10-06T10:00:00.000Z",
-			"ended = 2026-10-06T10:01:00.000Z",
-			'outcome = "ok"',
-			`log = "logs/turn-0${index + 1}.jsonl"`,
-		);
-	}
-	return `${lines.join("\n")}\n`;
-}
+// The chat of an item planned on Claude Code.
+const chatToml = 'harness = "claude-code"\n';
 
-// A `proposal.toml` from turn `turn`, recommending Workflow `workflow`,
-// whose second Ticket is blocked by `blocker`.
+// A `proposal.toml` recommending Workflow `workflow`, whose second Ticket
+// is blocked by `blocker`.
 function proposalToml(
-	options: { turn?: number; workflow?: string; blocker?: number } = {},
+	options: { workflow?: string; blocker?: number } = {},
 ): string {
-	return `turn = ${options.turn ?? 1}
-workflow = "${options.workflow ?? "small"}"
+	return `workflow = "${options.workflow ?? "small"}"
 workflow_reason = "One module and its tests."
 open_decisions = [ "Should ties break by name?" ]
 goal = """
@@ -74,25 +59,42 @@ function planningProject(files: Record<string, string>): Promise<string> {
 	});
 }
 
+// The Project at `root` in a wide view, whose planning sessions run a fake
+// `claude`.
+async function previewView(root: string): Promise<TestRendererSetup> {
+	const fake = await makeFakeInteractiveClaude();
+	return renderView(root, wide, fake.env);
+}
+
+// As `previewView`, on a screen too short for a long Preview.
+async function shortPreviewView(root: string): Promise<TestRendererSetup> {
+	const fake = await makeFakeInteractiveClaude();
+	return renderView(root, { width: 120, height: 20 }, fake.env);
+}
+
 // Opens the only planning item of the Project shown in `view`.
 async function openOnlyItem(view: TestRendererSetup): Promise<void> {
 	await frameWith(view, " 1/1 ");
 	view.mockInput.pressEnter();
 }
 
-test("the Preview beside the chat shows the Goal, its Tickets in order, blockers and the Workflow", async () => {
+// Moves the focus from the session to the Preview.
+function focusPreview(view: TestRendererSetup): void {
+	view.mockInput.pressKey("]", { ctrl: true });
+}
+
+test("the Preview beside the session shows the Goal, its Tickets in order, blockers and the Workflow", async () => {
 	const root = await planningProject({
-		"chat.toml": chatToml(["Plan search"]),
+		"chat.toml": chatToml,
 		"proposal.toml": proposalToml(),
 	});
-	const view = await renderView(root, wide);
+	const view = await previewView(root);
 
 	await openOnlyItem(view);
 
 	const frame = await frameWith(view, "ready to accept");
 	const titles = frame.split("\n").find((line) => line.includes("Preview"));
 	expect(titles).toContain("search");
-	expect(frame).toContain("Plan search");
 	expect(frame).toContain("Search ranks by relevance");
 	expect(frame).toContain("Results come back best first.");
 	expect(frame).toContain("small, recommended: One module and its tests.");
@@ -113,10 +115,10 @@ test("a Proposal with a later blocker or an unknown Workflow is not ready and sa
 		[proposalToml({ workflow: "huge" }), 'Workflow "huge" isn\'t one of'],
 	] as const) {
 		const root = await planningProject({
-			"chat.toml": chatToml(["Plan search"]),
+			"chat.toml": chatToml,
 			"proposal.toml": proposal,
 		});
-		const view = await renderView(root, wide);
+		const view = await previewView(root);
 
 		await openOnlyItem(view);
 
@@ -128,14 +130,14 @@ test("a Proposal with a later blocker or an unknown Workflow is not ready and sa
 
 test("w in the Preview picks another Workflow, which stays after a fresh render", async () => {
 	const root = await planningProject({
-		"chat.toml": chatToml(["Plan search"]),
+		"chat.toml": chatToml,
 		"proposal.toml": proposalToml(),
 	});
-	const view = await renderView(root, wide);
+	const view = await previewView(root);
 	await openOnlyItem(view);
 	await frameWith(view, "small, recommended");
 
-	view.mockInput.pressTab();
+	focusPreview(view);
 	await frameWith(view, "w Workflow");
 	await view.mockInput.typeText("w");
 	await frameWith(view, "try-hard");
@@ -145,157 +147,81 @@ test("w in the Preview picks another Workflow, which stays after a fresh render"
 	const chosen = "try-hard, chosen; small recommended";
 	await frameWith(view, chosen);
 	view.renderer.destroy();
-	const fresh = await renderView(root, wide);
+	const fresh = await previewView(root);
 	await openOnlyItem(fresh);
 	await frameWith(fresh, chosen);
 });
 
 test("a revision recommending another Workflow keeps the human's choice", async () => {
 	const root = await planningProject({
-		"chat.toml": chatToml(["Plan search", "Revise it"]),
+		"chat.toml": chatToml,
 		"workflow.toml": 'workflow = "try-hard"\n',
-		"proposal.toml": proposalToml({ turn: 2, workflow: "small" }),
+		"proposal.toml": proposalToml({ workflow: "small" }),
 	});
-	const view = await renderView(root, wide);
+	const view = await previewView(root);
 
 	await openOnlyItem(view);
 
 	await frameWith(view, "try-hard, chosen; small recommended");
 });
 
-test("a revision saved while the view is open replaces the Preview and keeps the chat", async () => {
+test("a revision saved while the view is open replaces the Preview", async () => {
 	const root = await planningProject({
-		"chat.toml": chatToml(["Plan search"]),
+		"chat.toml": chatToml,
 		"proposal.toml": proposalToml(),
 	});
-	const view = await renderView(root, wide);
+	const view = await previewView(root);
 	await openOnlyItem(view);
 	await frameWith(view, "02 Rank results by score");
 
 	const planning = `${root}/.vago-goals/search/planning`;
-	await Bun.write(
-		`${planning}/chat.toml`,
-		chatToml(["Plan search", "Merge them"]),
-	);
+	await Bun.write(`${planning}/chat.toml`, chatToml);
 	await Bun.write(
 		`${planning}/proposal.toml`,
-		proposalToml({ turn: 2 }).replace(
+		proposalToml().replace(
 			/\[\[tickets\]\]\nslug = "rank-by-score"[\s\S]*$/,
 			"",
 		),
 	);
 
-	await frameWith(view, "Merge them");
 	const revised = await frameWithout(view, "02 Rank results by score");
 	expect(revised).toContain("01 Score each result");
-	expect(revised).toContain("Plan search");
-	expect(revised).toContain("Merge them");
 });
 
 test("a reopened item shows its saved Proposal, and one with none says so", async () => {
 	const saved = await planningProject({
-		"chat.toml": chatToml(["Plan search"]),
+		"chat.toml": chatToml,
 		"proposal.toml": proposalToml(),
 	});
-	const first = await renderView(saved, wide);
+	const first = await previewView(saved);
 	await openOnlyItem(first);
 	await frameWith(first, "02 Rank results by score");
 	first.renderer.destroy();
 
-	const reopened = await renderView(saved, wide);
+	const reopened = await previewView(saved);
 	await openOnlyItem(reopened);
 
 	await frameWith(reopened, "02 Rank results by score");
-	const empty = await renderView(
-		await planningProject({ "chat.toml": chatToml(["Plan search"]) }),
-		wide,
+	const empty = await previewView(
+		await planningProject({ "chat.toml": chatToml }),
 	);
 	await openOnlyItem(empty);
 	await frameWith(empty, "No proposal yet.");
-	empty.mockInput.pressTab();
+	focusPreview(empty);
 	expect(await frameWith(empty, "q Quit")).not.toContain("w Workflow");
 });
 
-// An answer that ends in a proposal block whose one Ticket is `slug`.
-function answerProposing(slug: string): string {
-	return `Here is the plan.
-
-<vago-plan>
-workflow = "small"
-goal = '''
-# Search ranks by relevance
-'''
-
-[[tickets]]
-slug = "${slug}"
-body = '''
-# Rank by score
-'''
-</vago-plan>`;
-}
-
-test("the field types w and q, and each turn's block shows as one line", async () => {
-	const files = {
-		"chat.toml": chatToml(["Plan search", "Revise it"]),
-		"proposal.toml": proposalToml({ turn: 2 }),
-		"logs/turn-01.jsonl": await Bun.file(
-			await planningFixtureAnswering(answerProposing("first-slug")),
-		).text(),
-		"logs/turn-02.jsonl": await Bun.file(
-			await planningFixtureAnswering(answerProposing("second-slug")),
-		).text(),
-	};
-	const view = await renderView(await planningProject(files), wide);
-	await openOnlyItem(view);
-
-	const frame = await frameWith(view, "Proposal, shown in the Preview");
-	expect(frame).toContain("Earlier proposal, since replaced");
-	expect(frame).toContain("Here is the plan.");
-	expect(frame).not.toContain("vago-plan");
-	expect(frame).not.toContain("first-slug");
-	expect(frame).not.toContain("second-slug");
-	await view.mockInput.typeText("wq");
-	const typed = await frameWith(view, "> wq");
-	expect(typed).not.toContain("Choose the Workflow");
-	expect(typed).toContain("Preview");
-});
-
-test("a planning turn that loaded a skill shows it in the chat", async () => {
-	const skillLog = await Bun.file(
-		`${import.meta.dir}/fixtures/claude-code-skill.jsonl`,
-	).text();
+test("a bad proposal.toml says why", async () => {
 	const root = await planningProject({
-		"chat.toml": chatToml(["Plan search"]),
-		"logs/turn-01.jsonl": skillLog,
+		"chat.toml": chatToml,
+		"proposal.toml": "workflow = ",
 	});
-	const view = await renderView(root, wide);
+	const view = await previewView(root);
 
 	await openOnlyItem(view);
+	focusPreview(view);
 
-	await frameWith(view, "Skill say-hi loaded");
-});
-
-test("a turn whose block wasn't saved says so, and a bad proposal.toml hides no turn", async () => {
-	const chat = chatToml(["Plan search"]).replace(
-		'outcome = "ok"',
-		'outcome = "ok"\nproposal_error = "it isn\'t valid TOML"',
-	);
-	const root = await planningProject({
-		"chat.toml": chat,
-		"proposal.toml": "turn = ",
-		"logs/turn-01.jsonl": await Bun.file(
-			await planningFixtureAnswering(answerProposing("rank")),
-		).text(),
-	});
-	const view = await renderView(root, wide);
-
-	await openOnlyItem(view);
-
-	const frame = await frameWith(view, "Proposal not saved, as said below");
-	expect(frame).toContain("Plan search");
-	expect(frame).toContain("Here is the plan.");
-	expect(frame).toContain("proposal.toml isn't valid TOML");
-	expect(frame).not.toContain("Earlier proposal, since replaced");
+	await frameWith(view, "proposal.toml isn't valid TOML");
 });
 
 // A Proposal whose Goal runs `paragraphs` paragraphs, `para 1` first, so
@@ -315,16 +241,16 @@ function longProposalToml(paragraphs: number): string {
 // focused, with the picker open on its recommended Workflow.
 async function pickerOverLongPreview(): Promise<TestRendererSetup> {
 	const root = await planningProject({
-		"chat.toml": chatToml(["Plan search"]),
+		"chat.toml": chatToml,
 		"proposal.toml": longProposalToml(30),
 	});
-	const view = await renderView(root, { width: 120, height: 20 });
+	const view = await shortPreviewView(root);
 	await openOnlyItem(view);
 	const frame = await frameWith(view, "para 1");
 	const lines = frame.split("\n");
 	const y = lines.findIndex((line) => line.includes("para 1"));
 	await view.mockMouse.click(lines[y]?.indexOf("para 1") ?? 0, y);
-	view.mockInput.pressTab();
+	focusPreview(view);
 	await frameWith(view, "w Workflow");
 	await view.mockInput.typeText("w");
 	await frameWith(view, "try-hard");
@@ -371,13 +297,13 @@ test("with the picker open, PgDn and the wheel never hide it", async () => {
 
 test("with the picker closed, ↓ and PgDn scroll the Preview", async () => {
 	const root = await planningProject({
-		"chat.toml": chatToml(["Plan search"]),
+		"chat.toml": chatToml,
 		"proposal.toml": longProposalToml(30),
 	});
-	const view = await renderView(root, { width: 120, height: 20 });
+	const view = await shortPreviewView(root);
 	await openOnlyItem(view);
 	await frameWith(view, "para 1");
-	view.mockInput.pressTab();
+	focusPreview(view);
 	await frameWith(view, "w Workflow");
 
 	view.mockInput.pressArrow("down");

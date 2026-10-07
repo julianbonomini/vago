@@ -11,8 +11,7 @@
 
 ## Consequences
 
-- `running.lock` marks a planning item being accepted as well as a Goal being run, and also a planning item's response, rename or discard (ADR 0014). A Goal's refusal says "already being run or accepted", and a `vago run` of a Goal still being committed is refused for that moment. A planning item's refusal says a response is still being written, or another vago is changing the item.
-- Accept is refused after an interrupted last response (ADR 0014).
+- `running.lock` marks a planning item being accepted as well as a Goal being run, and also a planning item's session, rename or discard (ADR 0014, 0015). A Goal's refusal says "already being run or accepted", and a `vago run` of a Goal still being committed is refused for that moment. A planning item's refusal says its planning session is open, or another vago is changing the item.
 - `vago plan accept` is the only way to accept. The TUI runs it in a process of its own and waits for it.
-- An accepted Goal keeps its `planning/` folder. Its chat and Proposal stay readable, and `vago plan say`, `retry`, `workflow`, `rename` and `discard` refuse it.
+- An accepted Goal keeps its `planning/` folder. Its chat and Proposal stay readable, its planning session reopens to read (ADR 0018), and `vago plan workflow`, `rename` and `discard` refuse it.
 - Accepting starts nothing; only `vago run` or the TUI's Start does.

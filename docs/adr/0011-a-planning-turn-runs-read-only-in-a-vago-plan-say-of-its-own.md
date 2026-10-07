@@ -1,5 +1,7 @@
 # A planning turn runs read-only in a `vago plan say` of its own
 
+Superseded by ADR 0015 and ADR 0018: the agent runs as the Harness's own interactive session in the planning view, and `vago plan say` and planning turns are gone. The guard decided here still holds for that session: the OS sandbox denies every write under the Project root, and planning is refused when neither sandbox program is on `PATH`.
+
 Each message the human sends a planning item's agent is a `vago plan say <item>` process of its own. The TUI starts it detached, with the message on stdin, as it starts `vago run` (ADR 0005), and reads the response from the turn's log under the item's `planning/` folder. `step-runner.ts` spawns the agent, as it spawns every Step's, on the Harness's read-only command, inside an OS sandbox that denies every write under the Project root: `sandbox-exec` on macOS, `bwrap` on Linux. The Harness's read-only tools are a second guard. With neither sandbox program on `PATH`, planning is refused, never run unsandboxed.
 
 A planning turn is not a Run. It has no Step, Ticket or Goal, no retry and no idle timeout, so it is recorded in the item's `planning/chat.toml`, not in any `[[runs]]`.

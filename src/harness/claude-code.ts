@@ -1,11 +1,15 @@
 // The Claude Code Harness: the `claude -p` command and how its stream-json
-// events read as a Harness session's events. Hides Claude Code's flags,
-// event shapes, tool names and its models' prices.
+// events read as a Harness session's events, and the interactive `claude`
+// with its transcript. Hides Claude Code's flags, event shapes, tool names,
+// its models' prices, and where its interactive transcript is and its line
+// shapes.
 
+import { join } from "node:path";
 import { z } from "zod";
 import type {
 	HarnessCli,
 	HarnessEvent,
+	HarnessModelUsage,
 	HarnessTokenUsage,
 	HarnessToolCall,
 	HarnessToolOutcome,
@@ -159,6 +163,20 @@ const ToolUseBlock = z.object({
 	input: ToolInput.catch({}),
 });
 
+// A line of the interactive transcript holding one content block of the
+// agent's message, with the message's id and usage, as a stream's assistant
+// event has them. A subagent's lines are marked as a sidechain.
+const TranscriptAssistantLine = z.object({
+	type: z.literal("assistant"),
+	isSidechain: z.boolean().optional(),
+	message: z.object({
+		id: z.string().optional(),
+		model: z.string().optional(),
+		usage: MessageUsage.optional().catch(undefined),
+		content: z.array(z.unknown()),
+	}),
+});
+
 const program = "claude";
 
 /**
@@ -175,11 +193,23 @@ export const claudeCode: HarnessCli = {
 	resumeCommand(sessionId, model, args) {
 		return [program, "-p", "--resume", sessionId, ...sessionFlags(model, args)];
 	},
-	readOnlyCommand(model) {
-		return [program, "-p", ...readOnlyFlags(model)];
-	},
-	readOnlyResumeCommand(sessionId, model) {
-		return [program, "-p", "--resume", sessionId, ...readOnlyFlags(model)];
+	// An interactive `claude` reports no session id, so a fresh session runs
+	// under one Vago names.
+	interactiveReadOnlyCommand({ model, instructions, resume, kickoff }) {
+		const sessionId = resume ?? crypto.randomUUID();
+		const argv = [
+			program,
+			resume === undefined ? "--session-id" : "--resume",
+			sessionId,
+			"--append-system-prompt",
+			instructions,
+			...readOnlyPermissions,
+			"--model",
+			model,
+			// Last, so that no flag that takes a list reads it as a value.
+			...(resume === undefined && kickoff !== undefined ? [kickoff] : []),
+		];
+		return { argv, sessionId };
 	},
 	events(line, command) {
 		const event = parseJson(line);
@@ -235,6 +265,50 @@ export const claudeCode: HarnessCli = {
 			},
 		];
 	},
+	// Claude Code's own layout, which it doesn't document or promise to keep
+	// (ADR 0016): a folder per working directory, named by replacing each
+	// character that isn't a letter or a digit with `-`.
+	interactiveTranscript({ sessionId, folder }, home, env) {
+		if (sessionId === undefined) return undefined;
+		return {
+			folder: join(
+				env.CLAUDE_CONFIG_DIR ?? join(home, ".claude"),
+				"projects",
+				folder.replace(/[^A-Za-z0-9]/g, "-"),
+			),
+			pattern: `${sessionId}.jsonl`,
+		};
+	},
+	// Every session's id is named before it starts.
+	transcriptSession() {
+		return undefined;
+	},
+	transcriptAnswers(lines) {
+		const answers: string[] = [];
+		for (const line of lines) {
+			const parsed = TranscriptAssistantLine.safeParse(parseJson(line));
+			if (!parsed.success || parsed.data.isSidechain === true) continue;
+			const texts = parsed.data.message.content.flatMap((block) => {
+				const text = TextBlock.safeParse(block);
+				return text.success ? [text.data.text] : [];
+			});
+			if (texts.length > 0) answers.push(texts.join("\n"));
+		}
+		return answers;
+	},
+	// Each content block of a message is a line of its own, every one with
+	// the message's usage, so a message counts once. A subagent's count too.
+	transcriptUsage(lines) {
+		const messages = new Map<string, HarnessModelUsage>();
+		for (const line of lines) {
+			const parsed = TranscriptAssistantLine.safeParse(parseJson(line));
+			if (!parsed.success) continue;
+			const { id, model, usage } = parsed.data.message;
+			if (id === undefined || usage === undefined) continue;
+			messages.set(id, { model: model ?? "", tokens: messageTokens(usage) });
+		}
+		return [...messages.values()];
+	},
 	prices: anthropicPrices(),
 	resumeHint(sessionId) {
 		return `claude --resume ${sessionId}`;
@@ -255,24 +329,17 @@ function sessionFlags(model: string, args: readonly string[]): string[] {
 	];
 }
 
-// What a read-only session runs with: only tools that read files or load a
+// What keeps a session read-only: only tools that read files or load a
 // Skill, and `dontAsk`, which refuses any call those tools don't cover
 // rather than wait for a human. No MCP server either, since one can change
 // things the tools list doesn't name.
-function readOnlyFlags(model: string): string[] {
-	return [
-		"--output-format",
-		"stream-json",
-		"--verbose",
-		"--permission-mode",
-		"dontAsk",
-		"--strict-mcp-config",
-		"--tools",
-		"Read,Grep,Glob,Skill",
-		"--model",
-		model,
-	];
-}
+const readOnlyPermissions = [
+	"--permission-mode",
+	"dontAsk",
+	"--strict-mcp-config",
+	"--tools",
+	"Read,Grep,Glob,Skill",
+];
 
 // A subagent's messages count only for their tokens.
 function assistantEvents(

@@ -8,27 +8,21 @@ import { z } from "zod";
 import { readTomlFile, writeFileAtomically } from "./header.ts";
 
 // Loose objects, so fields Vago doesn't know survive a rewrite.
-const TurnTable = z.looseObject({
-	message: z.string(),
+// `session_id` is the Harness session the run was, once known, and
+// `cost_usd` what that Harness session had cost when last read, earlier runs
+// of it included.
+const SessionTable = z.looseObject({
 	started: z.date(),
 	ended: z.date().optional(),
-	outcome: z.string().optional(),
-	reason: z.string().optional(),
-	cost_usd: z.number().optional(),
-	proposal_error: z.string().optional(),
-	log: z.string(),
 	session_id: z.string().optional(),
-	interrupted_logs: z.array(z.string()).optional(),
+	cost_usd: z.number().optional(),
 });
 
 const ChatFile = z.looseObject({
 	harness: z.string().optional(),
 	session_id: z.string().optional(),
-	turns: z.array(TurnTable).optional(),
+	sessions: z.array(SessionTable).optional(),
 });
-
-/** A `[[turns]]` table of `chat.toml`, spelled as in the file. */
-export type PlanningTurnTable = z.infer<typeof TurnTable>;
 
 /** `chat.toml`, with the fields as spelled in the file. */
 export type PlanningChatFile = z.infer<typeof ChatFile>;

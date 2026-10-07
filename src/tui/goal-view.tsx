@@ -76,7 +76,8 @@ import { startGoal } from "./vago-commands.ts";
  * the one after, scrolled into view; `d` shows the selected edit's diff in
  * place of the Run, the latest edit's when none is selected, until `d` or
  * Esc. For a Goal accepted from a planning item, `p` opens its planning
- * chat, read-only, in place of the panes, with its own keys until its Esc.
+ * view, its session resumed to read and its Proposal unchangeable, in place
+ * of the panes, with its own keys until its Esc.
  */
 export function GoalView(props: {
 	root: string;
@@ -299,7 +300,7 @@ export function GoalView(props: {
 			</Show>
 			{/* A pane off the whole screen is hidden, not dropped, so it keeps
 			    its scroll and its Run's log. Each box under or beside another
-			    pane overlaps it by its shared line. The planning chat hides
+			    pane overlaps it by its shared line. The planning view hides
 			    them all the same way. */}
 			<box
 				flexDirection="row"
@@ -447,7 +448,7 @@ const helpKeys = (
 		? [
 				{
 					keys: "p",
-					meaning: "the planning chat this Goal was accepted from, read-only",
+					meaning: "the planning session this Goal was accepted from",
 				},
 			]
 		: []),

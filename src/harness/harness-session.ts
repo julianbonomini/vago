@@ -1,11 +1,15 @@
 // What every Harness shares: a session's events, in words common to every
 // Harness's CLI, and how they add up to the session's report and its Run
-// activity. Hides folding calls by verb, which tools work on files, prose
-// cleaning, relative paths, diffs, background tasks and pricing.
+// activity, and what an interactive session's transcript tells. Hides
+// folding calls by verb, which tools work on files, prose cleaning, relative
+// paths, diffs, background tasks and pricing.
 
 import type {
 	Harness,
+	HarnessInteractiveCommand,
 	HarnessSessionReport,
+	HarnessTranscriptFiles,
+	HarnessTranscriptSession,
 	RunActivity,
 	RunActivityItem,
 	RunBackgroundTask,
@@ -33,10 +37,13 @@ export type HarnessCli = {
 		model: string,
 		args: readonly string[],
 	): string[];
-	/** As `Harness.readOnlyCommand`. */
-	readOnlyCommand(model: string): string[];
-	/** As `Harness.readOnlyResumeCommand`. */
-	readOnlyResumeCommand(sessionId: string, model: string): string[];
+	/** As `Harness.interactiveReadOnlyCommand`. */
+	interactiveReadOnlyCommand(session: {
+		model: string;
+		instructions: string;
+		resume?: string;
+		kickoff?: string;
+	}): HarnessInteractiveCommand;
 	/**
 	 * The events one stream line carries, in the order it carries them; none
 	 * for a line that isn't a whole event the CLI knows. `command` is the
@@ -46,6 +53,21 @@ export type HarnessCli = {
 	events(line: string, command: readonly string[]): HarnessEvent[];
 	/** Dollars per million tokens of each model the CLI runs. */
 	prices: ModelPrice[];
+	/** As `Harness.interactiveTranscript`. */
+	interactiveTranscript(
+		session: { sessionId?: string; folder: string },
+		home: string,
+		env: Readonly<Record<string, string | undefined>>,
+	): HarnessTranscriptFiles | undefined;
+	/** As `Harness.transcriptSession`. */
+	transcriptSession(firstLine: string): HarnessTranscriptSession | undefined;
+	/** As `HarnessTranscript.answers`, from the lines `readTranscript` takes. */
+	transcriptAnswers(lines: readonly string[]): string[];
+	/**
+	 * What the session whose transcript has `lines` used, by model message,
+	 * or its total for a CLI that records only that.
+	 */
+	transcriptUsage(lines: readonly string[]): HarnessModelUsage[];
 	/** As `Harness.resumeHint`. */
 	resumeHint(sessionId: string): string;
 };
@@ -200,8 +222,7 @@ export function harnessFromCli(cli: HarnessCli): Harness {
 		program: cli.program,
 		command: cli.command,
 		resumeCommand: cli.resumeCommand,
-		readOnlyCommand: cli.readOnlyCommand,
-		readOnlyResumeCommand: cli.readOnlyResumeCommand,
+		interactiveReadOnlyCommand: cli.interactiveReadOnlyCommand,
 		readLine: (line, command) =>
 			sessionReport(cli.events(line, command), cli.prices),
 		runActivity: (lines, root) =>
@@ -210,6 +231,15 @@ export function harnessFromCli(cli: HarnessCli): Harness {
 				root,
 				cli.prices,
 			),
+		interactiveTranscript: cli.interactiveTranscript,
+		transcriptSession: cli.transcriptSession,
+		readTranscript: (lines) => {
+			const { costUsd } = spentSoFar(cli.transcriptUsage(lines), cli.prices);
+			return {
+				answers: cli.transcriptAnswers(lines),
+				...(costUsd === undefined ? {} : { costUsd }),
+			};
+		},
 		resumeHint: cli.resumeHint,
 	};
 }

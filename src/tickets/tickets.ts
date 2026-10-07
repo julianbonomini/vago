@@ -5,16 +5,19 @@
 // Ticket and of the Goal's Goal Steps and where each Run's log goes, how a
 // Ticket number is spelled, the lock that marks a Goal as taken by a
 // `vago run`, and the planning items that share `.vago-goals/` with the
-// Goals, with each item's planning chat, its turns' logs and the rule that
-// one response is written at a time, held by the item's lock, and each
-// item's Proposal: the block in an answer it is read from, the human's
-// Workflow choice and whether it is ready to accept, and accepting an item's
-// Proposal as a ready Goal, after which its chat is read-only. Only this
-// file is imported from outside `tickets/`.
+// Goals, with each item's planning chat and the rule that one session runs
+// at a time, held by the item's lock, and each item's Proposal: the block it
+// is read from in a session's messages, the human's Workflow choice and
+// whether it is ready to accept, and accepting an item's Proposal as a ready
+// Goal, after which its chat is read-only. Only this file is imported from
+// outside `tickets/`.
 
 import { link, mkdir, readdir, rename, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
-import type { HarnessSessionReport } from "../harness/registry.ts";
+import type {
+	HarnessSessionReport,
+	HarnessTranscript,
+} from "../harness/registry.ts";
 import type { GoalStepGroup, Step } from "../workflow.ts";
 import {
 	claimLock,
@@ -33,7 +36,7 @@ import {
 	type TicketRunTable,
 } from "./header.ts";
 import {
-	type PlanningTurnTable,
+	type PlanningChatFile,
 	readPlanningChatFile,
 	rewritePlanningChatFile,
 } from "./planning-chat.ts";
@@ -413,7 +416,7 @@ export async function createPlanningItem(
  * with everything it holds. Throws an Error naming the problem, and changes
  * nothing, when there is no such item, `name` is a Goal, a Goal or planning
  * item already has `newName`, `newName` isn't a valid name, or another vago
- * holds the item, such as one writing a response. Refuses a Goal accepted
+ * holds the item, such as one running its session. Refuses a Goal accepted
  * from a planning item: its planning chat is read-only.
  */
 export async function renamePlanningItem(
@@ -426,7 +429,7 @@ export async function renamePlanningItem(
 	if (await exists(newFolder)) {
 		throw new Error(alreadyExists(newName, newFolder));
 	}
-	// Held, so no `vago plan say` writes under the old name meanwhile.
+	// Held, so no session writes under the old name meanwhile.
 	await withPlanningItemClaimed(root, name, async () => {
 		if (await exists(newFolder)) {
 			throw new Error(alreadyExists(newName, newFolder));
@@ -438,11 +441,12 @@ export async function renamePlanningItem(
 }
 
 /**
- * Stops a response to planning item `name` of the Project at `root` that is
- * in progress, then removes the item and everything it holds. Throws an
- * Error naming the problem, and removes nothing, when there is no such item,
- * `name` is a Goal, or another vago takes the item first. Refuses a Goal
- * accepted from a planning item: its planning chat is read-only.
+ * Stops the open session of planning item `name` of the Project at `root`,
+ * then removes the item and everything it holds. Throws an Error naming the
+ * problem, and removes nothing, when there is no such item, `name` is a
+ * Goal, or another vago takes the item first.
+ * Refuses a Goal accepted from a planning item: its planning chat is
+ * read-only.
  */
 export async function discardPlanningItem(
 	root: string,
@@ -456,62 +460,35 @@ export async function discardPlanningItem(
 }
 
 /**
- * One message the human sent a planning item's agent and the agent's
- * response to it. `log` is the absolute path of the response's stream.
- * `outcome` is absent while a live vago is writing the response; otherwise
- * it is spelled like a Run's (`ok`, `exit 1`, `permission-mode default`,
- * `interrupted`), or `error` for a turn that stopped before or around its
- * session, with `reason` saying why. A response whose vago died before it
- * ended reads `interrupted`. `proposalError` says why the proposal block in
- * the turn's answer couldn't be read. `interruptedLogs` are the absolute
- * paths of the logs of earlier attempts at the response, each interrupted
- * and retried, oldest first.
- */
-export type PlanningTurn = {
-	number: number;
-	message: string;
-	/** When the latest attempt at the response started. */
-	startedAt: Date;
-	endedAt?: Date;
-	outcome?: string;
-	reason?: string;
-	/**
-	 * What the Harness reported the response cost; absent while it is being
-	 * written, after an interruption, or when the Harness reported none.
-	 */
-	costUsd?: number;
-	proposalError?: string;
-	log: string;
-	interruptedLogs: string[];
-};
-
-/**
  * The conversation of planning item `item`. `harness` is absent for an item
- * made before its Harness was recorded at its making, until its first turn;
- * `sessionId` until a turn's session reports it.
+ * made before its Harness was recorded at its making; `sessionId` until its
+ * session's id is known.
  */
 export type PlanningChat = {
 	item: string;
 	harness?: string;
 	sessionId?: string;
-	turns: PlanningTurn[];
 	/** Whether the item was accepted as a Goal, which makes its chat read-only. */
 	accepted: boolean;
-};
-
-/** Where `planning-runner.ts` records a turn it started. */
-export type PlanningTurnEntry = {
-	root: string;
-	item: string;
-	number: number;
-	log: string;
+	/** Whether a live vago is running the item's session. */
+	sessionOpen: boolean;
+	/** When a session of the item last started or ended; absent before one. */
+	lastActive?: Date;
+	/**
+	 * How long the item's sessions were open, the open one up to when the
+	 * chat was read. A session whose vago died counts nothing, since nobody
+	 * wrote when it ended.
+	 */
+	planningMs: number;
+	/** What the item's Harness sessions cost, 0 before one reports a cost. */
+	costUsd: number;
 };
 
 /**
  * The conversation of planning item `item` of the Project at `root`, or of
- * the Goal accepted from it; no turns when none was sent. Throws an Error
- * naming the folder when `item` is neither a planning item nor a Goal
- * accepted from one, and naming the file when its chat is bad.
+ * the Goal accepted from it. Throws an Error naming the folder when `item`
+ * is neither a planning item nor a Goal accepted from one, and naming the
+ * file when its chat is bad.
  */
 export async function readPlanningChat(
 	root: string,
@@ -521,51 +498,81 @@ export async function readPlanningChat(
 		root,
 		item,
 	);
-	const folder = planningFolder(itemFolder);
-	const chat = await readPlanningChatFile(folder);
-	const turns = chat.turns ?? [];
-	// Read rather than written, as a lost Run is: nobody is left to write it.
-	const last = turns.at(-1);
-	const dead =
+	const chat = await readPlanningChatFile(planningFolder(itemFolder));
+	const runs = chat.sessions ?? [];
+	const last = runs.at(-1);
+	// An open run whose vago died is over, though nobody wrote its end.
+	const sessionOpen =
 		last !== undefined &&
 		last.ended === undefined &&
-		!(await isLockHeld(goalLockPath(root, item)));
+		!accepted &&
+		(await isLockHeld(goalLockPath(root, item)));
+	const readAt = new Date();
+	let planningMs = 0;
+	for (const run of runs) {
+		const ended =
+			run.ended ?? (run === last && sessionOpen ? readAt : undefined);
+		if (ended !== undefined) {
+			planningMs += ended.getTime() - run.started.getTime();
+		}
+	}
+	// Each run records what its Harness session had cost by then, earlier
+	// runs it resumed included, so the latest run of each session counts.
+	const sessionCosts = new Map<string, number>();
+	for (const run of runs) {
+		if (run.session_id !== undefined && run.cost_usd !== undefined) {
+			sessionCosts.set(run.session_id, run.cost_usd);
+		}
+	}
 	return {
 		item,
 		harness: chat.harness,
 		sessionId: chat.session_id,
-		turns: turns.map((turn, index) => {
-			const stopped = dead && index === turns.length - 1;
-			return {
-				number: index + 1,
-				message: turn.message,
-				startedAt: turn.started,
-				endedAt: turn.ended,
-				outcome: stopped ? "interrupted" : turn.outcome,
-				reason: stopped ? stoppedEarly : turn.reason,
-				costUsd: turn.cost_usd,
-				proposalError: turn.proposal_error,
-				log: join(folder, turn.log),
-				interruptedLogs: (turn.interrupted_logs ?? []).map((log) =>
-					join(folder, log),
-				),
-			};
-		}),
 		accepted,
+		sessionOpen,
+		lastActive: last?.ended ?? last?.started,
+		planningMs,
+		costUsd: [...sessionCosts.values()].reduce((sum, cost) => sum + cost, 0),
 	};
 }
 
-// Why a response whose vago died shows as interrupted.
-const stoppedEarly = "the response stopped before it ended";
-
 /**
- * Runs `run` while this process holds planning item `item` of the Project
- * at `root`, and returns what `run` returns. Releases the item however `run`
- * ends, and takes over a hold whose vago died. Throws, without calling
- * `run`, when another live vago holds the item, such as one writing a
- * response, and when `item` is no planning item or was accepted as a Goal.
+ * Runs `run`, a run of planning item `item`'s planning session, in the
+ * Project at `root`, while this process holds the item, and returns what
+ * `run` returns. The run is recorded as starting before `run` is called and
+ * ending once it ends, however it ends; `recordPlanningSessionId` and
+ * `recordPlanningTranscript` record what comes of it, and throw when called
+ * outside `run`. Releases the item afterwards, and takes over a hold whose
+ * vago died. Throws, without calling `run`, when another live vago holds
+ * the item, such as one running its session, and when `item` is no
+ * planning item or was accepted as a Goal.
  */
-export async function withPlanningItemClaimed<T>(
+export async function withPlanningSession<T>(
+	root: string,
+	item: string,
+	run: () => Promise<T>,
+): Promise<T> {
+	return withPlanningItemClaimed(root, item, async () => {
+		await rewriteHeldChat(root, item, (chat) => {
+			chat.sessions = [...(chat.sessions ?? []), { started: new Date() }];
+		});
+		try {
+			return await run();
+		} finally {
+			await rewriteHeldChat(root, item, (chat) => {
+				const last = chat.sessions?.at(-1);
+				if (last !== undefined) last.ended = new Date();
+			});
+		}
+	});
+}
+
+// Runs `run` while this process holds planning item `item` of the Project
+// at `root`, and returns what `run` returns. Releases the item however
+// `run` ends, and takes over a hold whose vago died. Throws, without
+// calling `run`, when another live vago holds the item, and when `item` is
+// no planning item or was accepted as a Goal.
+async function withPlanningItemClaimed<T>(
 	root: string,
 	item: string,
 	run: () => Promise<T>,
@@ -576,7 +583,7 @@ export async function withPlanningItemClaimed<T>(
 	await claimLock(
 		lock,
 		(pid) =>
-			`${item}: a response is still being written, or another vago is changing the item (pid ${pid})`,
+			`${item}: its planning session is open, or another vago is changing the item (pid ${pid})`,
 	);
 	try {
 		// Checked again under the lock: another vago may have accepted it
@@ -589,179 +596,85 @@ export async function withPlanningItemClaimed<T>(
 }
 
 /**
- * Appends an open turn holding `message` to `item`'s chat, recording
- * `harness` as the chat's when it has none, and gives back where the turn
- * is recorded and its log goes. An interrupted last turn is closed as
- * `interrupted` first. Must run inside `withPlanningItemClaimed`, and
- * throws otherwise. Throws as `readPlanningChat` does, and refuses a Goal
- * accepted from a planning item: its planning chat is read-only. Survives a
- * crash (temp file and rename).
+ * Saves `sessionId` as planning item `item`'s own session id, which
+ * `readPlanningChat` gives back as `sessionId` on the next read, and as the
+ * session of the run in progress. Must run inside `withPlanningSession`,
+ * and throws otherwise. Survives a crash.
  */
-export async function recordPlanningTurnStart(
+export async function recordPlanningSessionId(
 	root: string,
 	item: string,
-	message: string,
-	harness: string,
-): Promise<PlanningTurnEntry> {
-	await mustHold(root, item);
-	const folder = planningFolder(await planningItemToChange(root, item));
-	const { number, log } = await rewritePlanningChatFile(folder, (chat) => {
-		const turns = chat.turns ?? [];
-		const last = turns.at(-1);
-		// Open under this process's hold, so its vago died.
-		if (last !== undefined && last.ended === undefined) {
-			last.ended = new Date();
-			last.outcome = "interrupted";
-			last.reason = stoppedEarly;
-		}
-		const number = turns.length + 1;
-		const log = `logs/turn-${ticketNumberText(number)}.jsonl`;
-		turns.push({ message, started: new Date(), log });
-		chat.harness ??= harness;
-		chat.turns = turns;
-		return { number, log };
-	});
-	return { root, item, number, log: join(folder, log) };
-}
-
-/**
- * Saves the session id as the chat's and the turn's as soon as the Harness
- * reports it.
- */
-export async function recordPlanningSession(
-	entry: PlanningTurnEntry,
 	sessionId: string,
 ): Promise<void> {
-	await rewritePlanningChatFile(entryFolder(entry), (chat) => {
+	await rewriteHeldChat(root, item, (chat) => {
 		chat.session_id = sessionId;
-		const turn = chat.turns?.[entry.number - 1];
-		if (turn !== undefined) turn.session_id = sessionId;
+		const run = chat.sessions?.at(-1);
+		if (run !== undefined) run.session_id = sessionId;
 	});
 }
 
-/**
- * An interrupted turn reopened for Retry response: where it is recorded and
- * its new log goes, and its `message`. `sessionId` is the session an earlier
- * attempt reported, absent when the message never reached the agent.
- */
-export type PlanningRetry = {
-	entry: PlanningTurnEntry;
-	message: string;
-	sessionId?: string;
-};
-
-/**
- * Reopens `item`'s last turn when its response was interrupted, keeping the
- * interrupted attempt's log among its earlier ones and giving it a new log,
- * and gives back what to retry. Must run inside `withPlanningItemClaimed`,
- * and throws otherwise. Throws "has no interrupted response to retry" when
- * the last response wasn't interrupted, and as `readPlanningChat` does.
- * Refuses a Goal accepted from a planning item: its planning chat is
- * read-only. Survives a crash.
- */
-export async function recordPlanningTurnRetry(
+// Rewrites the `chat.toml` of planning item `item`, which this process
+// must hold, with `change`.
+async function rewriteHeldChat(
 	root: string,
 	item: string,
-): Promise<PlanningRetry> {
+	change: (chat: PlanningChatFile) => void,
+): Promise<void> {
 	await mustHold(root, item);
 	const folder = planningFolder(await planningItemToChange(root, item));
-	return rewritePlanningChatFile(folder, (chat) => {
-		const turns = chat.turns ?? [];
-		const turn = turns.at(-1);
-		if (turn === undefined || !isInterrupted(turn)) {
-			throw new Error(`${item} has no interrupted response to retry`);
-		}
-		const earlier = turn.interrupted_logs ?? [];
-		turn.interrupted_logs = [...earlier, turn.log];
-		turn.log = `logs/turn-${ticketNumberText(turns.length)}-retry-${earlier.length + 1}.jsonl`;
-		// Restarted, so the agent's time leaves out the interrupted attempt,
-		// whose end nobody recorded.
-		turn.started = new Date();
-		delete turn.ended;
-		delete turn.outcome;
-		delete turn.reason;
-		return {
-			entry: { root, item, number: turns.length, log: join(folder, turn.log) },
-			message: turn.message,
-			sessionId: turn.session_id,
-		};
-	});
+	await rewritePlanningChatFile(folder, change);
 }
 
 /**
- * Closes the turn with `outcome`, `reason` for an `error`, and what its
- * session cost when the Harness reported it. `answer` is an `ok` turn's
- * final answer: its last proposal block becomes the item's Proposal, saved
- * before the turn shows as ended. An answer without a block leaves the
- * Proposal as it was. A block that isn't valid TOML or doesn't
- * fit the format leaves it as it was too, and records why on the turn.
- * Never throws for the agent's text. Survives a crash.
+ * Records what the transcript of planning item `item`'s session tells: its
+ * cost, on the run in progress, and the last proposal block among its
+ * answers as the item's Proposal: the last closed block of the latest
+ * answer that holds one. With no closed block, or when that block isn't
+ * valid TOML or doesn't fit the format, the Proposal stays as it was. Must
+ * run inside `withPlanningSession`, and throws otherwise. Throws when a file
+ * can't be written, but never for the agent's text. Survives a crash.
  */
-export async function recordPlanningTurnEnd(
-	entry: PlanningTurnEntry,
-	outcome: string,
-	ended: { reason?: string; answer?: string; costUsd?: number } = {},
+export async function recordPlanningTranscript(
+	root: string,
+	item: string,
+	transcript: HarnessTranscript,
 ): Promise<void> {
-	const folder = entryFolder(entry);
-	const proposalError =
-		ended.answer === undefined
-			? undefined
-			: await saveProposal(folder, ended.answer, entry.number);
-	await rewritePlanningChatFile(folder, (chat) => {
-		const turn = chat.turns?.[entry.number - 1];
-		if (turn === undefined) {
-			throw new Error(
-				`The planning chat in ${folder} has no turn ${entry.number}`,
-			);
-		}
-		turn.ended = new Date();
-		turn.outcome = outcome;
-		if (ended.reason !== undefined) turn.reason = ended.reason;
-		if (ended.costUsd !== undefined) turn.cost_usd = ended.costUsd;
-		if (proposalError !== undefined) turn.proposal_error = proposalError;
+	const { costUsd } = transcript;
+	await rewriteHeldChat(root, item, (chat) => {
+		const run = chat.sessions?.at(-1);
+		if (run !== undefined && costUsd !== undefined) run.cost_usd = costUsd;
 	});
-}
-
-// Saves the last closed proposal block of `answer`, from turn `turn`, as
-// the Proposal in `folder`, and gives back why it couldn't, if it couldn't.
-// Even a failed write comes back as a reason, so the turn still ends.
-async function saveProposal(
-	folder: string,
-	answer: string,
-	turn: number,
-): Promise<string | undefined> {
-	const lines = answer.split(/\r?\n/);
+	const folder = planningFolder(goalFolder(root, item));
+	const latest = transcript.answers.findLast((answer) =>
+		planningProposalSpans(answer.split(/\r?\n/)).some(({ closed }) => closed),
+	);
+	if (latest === undefined) return;
+	const lines = latest.split(/\r?\n/);
 	const span = planningProposalSpans(lines).findLast(({ closed }) => closed);
-	if (span === undefined) return undefined;
+	if (span === undefined) return;
 	const parsed = parseProposalBlock(
 		lines.slice(span.start + 1, span.end - 1).join("\n"),
 	);
-	if (parsed.outcome === "bad") return parsed.reason;
-	try {
-		await writePlanningProposalFile(folder, parsed.block, turn);
-		return undefined;
-	} catch (error) {
-		return error instanceof Error ? error.message : String(error);
+	// Nobody reads why a block couldn't be read. A failed write throws, so
+	// the caller tries the same messages again.
+	if (parsed.outcome === "ok") {
+		await writePlanningProposalFile(folder, parsed.block);
 	}
 }
 
-/**
- * Lines `start` up to `end` of an answer hold one proposal block: `start` is
- * its opening tag's line and `end` is one past its closing tag's, or the
- * answer's length when `closed` is false.
- */
-export type PlanningProposalSpan = {
+// Lines `start` up to `end` of an answer hold one proposal block: `start` is
+// its opening tag's line and `end` is one past its closing tag's, or the
+// answer's length when `closed` is false.
+type PlanningProposalSpan = {
 	start: number;
 	end: number;
 	closed: boolean;
 };
 
-/**
- * The proposal blocks in `lines`, an answer's lines, from each block's
- * opening tag line through its closing one, in order. A block with no
- * closing line yet runs to the end with `closed` false.
- */
-export function planningProposalSpans(
+// The proposal blocks in `lines`, an answer's lines, from each block's
+// opening tag line through its closing one, in order. A block with no
+// closing line yet runs to the end with `closed` false.
+function planningProposalSpans(
 	lines: readonly string[],
 ): PlanningProposalSpan[] {
 	const spans: PlanningProposalSpan[] = [];
@@ -804,13 +717,11 @@ export type ProposedTicket = {
 
 /**
  * The Goal, ordered Tickets and Workflow a planning item's agent proposed
- * last, with the human's Workflow choice. `turn` is the chat turn that
- * proposed it. `workflow` is the one acceptance uses: the human's choice,
- * else the agent's recommendation. `problems` says why it can't be accepted
- * yet; it is ready to accept when empty.
+ * last, with the human's Workflow choice. `workflow` is the one acceptance
+ * uses: the human's choice, else the agent's recommendation. `problems`
+ * says why it can't be accepted yet; it is ready to accept when empty.
  */
 export type PlanningProposal = {
-	turn: number;
 	goal: ProposedGoal;
 	tickets: ProposedTicket[];
 	openDecisions: string[];
@@ -848,7 +759,6 @@ export async function readPlanningProposal(
 	}));
 	const workflow = chosenWorkflow ?? file.workflow;
 	return {
-		turn: file.turn,
 		goal: {
 			title: headingTitle(file.goal, item),
 			description: afterHeading(file.goal),
@@ -945,10 +855,9 @@ export async function recordPlanningWorkflow(
  * blockers. The Goal and its Tickets appear together; its planning chat
  * stays with it, read-only. Returns the path of `goal.md`. Throws an Error
  * naming the problem, and creates no Goal, when `item` is already a Goal or
- * no planning item, another vago holds it, such as one writing a response,
- * its last response was interrupted, it has no Proposal, or the Proposal has
- * problems judged against `workflows`, the names of the Project's
- * Workflows.
+ * no planning item, another vago holds it, such as one running its session,
+ * it has no Proposal, or the Proposal has problems judged against
+ * `workflows`, the names of the Project's Workflows.
  */
 export async function acceptPlanningItem(
 	root: string,
@@ -957,16 +866,6 @@ export async function acceptPlanningItem(
 ): Promise<string> {
 	return withPlanningItemClaimed(root, item, async () => {
 		const folder = goalFolder(root, item);
-		const chat = await readPlanningChatFile(planningFolder(folder));
-		const last = chat.turns?.at(-1);
-		// The human's last message has no answer, and an accepted Goal must
-		// never keep an open turn, which would read as live while vago run
-		// holds the Goal.
-		if (last !== undefined && isInterrupted(last)) {
-			throw new Error(
-				`${item}: its last response was interrupted; retry it or send a message first`,
-			);
-		}
 		const proposal = await readPlanningProposal(root, item, workflows);
 		if (proposal === undefined) {
 			throw new Error(`${item} has no proposal to accept yet`);
@@ -1010,25 +909,14 @@ export async function acceptPlanningItem(
 	});
 }
 
-// Whether `turn`'s response was interrupted, judged under the item's hold:
-// open there, its vago died.
-function isInterrupted(turn: PlanningTurnTable): boolean {
-	return turn.ended === undefined || turn.outcome === "interrupted";
-}
-
-// Throws unless this process holds planning item `item`: what a turn
+// Throws unless this process holds planning item `item`: what a session
 // records is right only while no other vago can write the item.
 async function mustHold(root: string, item: string): Promise<void> {
 	if (!(await isLockMine(goalLockPath(root, item)))) {
 		throw new Error(
-			`${item} must be held with withPlanningItemClaimed to record a turn`,
+			`${item} must be held with withPlanningSession to record its chat`,
 		);
 	}
-}
-
-// The `planning/` folder of the item `entry` was recorded in.
-function entryFolder(entry: PlanningTurnEntry): string {
-	return planningFolder(goalFolder(entry.root, entry.item));
 }
 
 // Every folder in `.vago-goals`, in name order, with what it holds.

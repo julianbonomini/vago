@@ -216,23 +216,21 @@ A Goal shows as lost when one of its Tickets says `running` but no live `vago ru
 
 ## Plan a Goal in the TUI
 
-Press `n` in the Goals list for a New Goal. Type a preliminary name and press Enter; when both `claude` and `codex` are on your `PATH`, Tab picks the Harness the planning agent runs on, Claude Code unless you pick Codex. Vago makes a planning item, a folder in `.vago-goals/` with no `goal.md`, and opens its chat.
+Press `n` in the Goals list for a New Goal. Type a preliminary name and press Enter; when both `claude` and `codex` are on your `PATH`, Tab picks the Harness the planning agent runs on, Claude Code unless you pick Codex. Vago makes a planning item, a folder in `.vago-goals/` with no `goal.md`, and opens it in the planning view.
 
-Type a message and press Enter. The agent reads the Project, starting from the instructions in `.vago/prompts/planning.md`, which you can edit like any prompt, and answers with a first Proposal and questions about the decisions still open. It runs in a sandbox (`sandbox-exec` on macOS, `bwrap` on Linux) that refuses every write under the Project. To revise it, answer in the chat; each answer that changes the plan replaces the Proposal.
+The planning view runs the Harness's own interactive session, `claude` or `codex`, in a pane beside the Preview. It is the Harness's own UI, so you type, edit and use its commands as in a terminal. The agent reads the Project, starting from the instructions in `.vago/prompts/planning.md`, which you can edit like any prompt. It asks about the decisions still open first, and writes a Proposal once they are settled; each revision replaces it. The session runs in a sandbox (`sandbox-exec` on macOS, `bwrap` on Linux) that refuses every write under the Project.
 
-The Preview beside the chat shows the latest Proposal: the Goal, its Tickets in order with their blockers, and the Workflow the agent recommends and why. Tab moves the focus between the chat's field and the Preview; below 100 columns the focused one fills the screen. With the Preview focused:
+The Preview shows the latest Proposal: the Goal, its Tickets in order with their blockers, and the Workflow the agent recommends and why. While the session has the focus it gets every key, `q` and Ctrl-C included; Ctrl-] moves the focus to the Preview, and Ctrl-] or Tab moves it back. Below 100 columns the focused one fills the screen. With the Preview focused:
 
 - `w` picks another Workflow from `.vago/workflows/`.
-- `a` asks to accept the Proposal, and `y` confirms. Accepting needs at least one Ticket and a Workflow. It writes the Goal and its Tickets, all `ready`, and starts nothing: select the Goal and press `s` when you want it to run.
+- `a` asks to accept the Proposal, and `y` confirms. Accepting needs at least one Ticket and a Workflow. It ends the session, writes the Goal and its Tickets, all `ready`, and starts nothing: select the Goal and press `s` when you want it to run.
 - `?` shows the planning keys.
 
-Esc goes back to the Goals list. A planning item shows there as `planning`, with what it is waiting for: `no chat yet`, `agent working`, `waiting for your reply`, `proposal ready`, `response failed` or `response interrupted`. Its run time and cost columns stay blank. Press Enter to reopen it, `r` to rename it, and `d` then `y` to discard it with its chat, which also stops a response being written.
+Esc goes back to the Goals list, and ends the session; so does quitting the TUI. Quitting the session itself, with `/exit` in Claude Code, also goes back to the Goals list; a session that fails stays open, saying how it ended. Vago keeps the session's id, so reopening the item resumes the same conversation. A planning item shows in the Goals list as `planning`, with how its planning stands: `no session yet`, `session open`, `waiting for your reply` or `proposal ready`. Its run time and cost columns stay blank. Press Enter to reopen it, `r` to rename it, and `d` then `y` to discard it with its chat, which also stops its open session.
 
-Each message runs in a `vago plan say` of its own, so a response keeps going after you quit the TUI, and the chat and Proposal are there when you open it again. When the `vago` writing a response dies, say because the machine restarted, the chat marks the response interrupted, and Ctrl-R answers it again under the same message.
+The session pane's title row shows how long the item's sessions were open and what they cost. They stay out of the Goal's Runs, the TUI's spend and `vago goal report`. After acceptance, `p` in the Goal view opens the planning session again to read; nothing said there changes the Goal.
 
-The chat's title row shows the agent's time and cost over every response. They stay out of the Goal's Runs, the TUI's spend and `vago goal report`. After acceptance, `p` in the Goal view opens the chat, read-only.
-
-The `vago plan` commands do the same from a shell: `new`, `rename`, `say`, `retry`, `workflow`, `accept` and `discard`. `vago plan <command> --help` gives each one's arguments.
+The `vago plan` commands do the same from a shell: `new`, `rename`, `session`, `workflow`, `accept` and `discard`. `vago plan <command> --help` gives each one's arguments.
 
 ## Recover a stuck Ticket
 

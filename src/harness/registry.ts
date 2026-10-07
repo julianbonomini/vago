@@ -146,16 +146,40 @@ export type Harness = {
 		args: readonly string[],
 	): string[];
 	/**
-	 * The argv that starts a fresh session on `model` whose tools can read
-	 * files and load Skills but never change a file, reading its prompt on
-	 * stdin and streaming as `command()`'s does.
+	 * The Harness's own interactive UI, for a terminal, on `model`. Its tools
+	 * can read files and load Skills but never change a file. It resumes
+	 * session `resume`, or starts a fresh one when `resume` is absent, with
+	 * `instructions` added to the agent's system prompt. A fresh session
+	 * starts with `kickoff`, when given, as the human's first message.
 	 */
-	readOnlyCommand(model: string): string[];
-	/** As `readOnlyCommand`, resuming session `sessionId` with the message on stdin. */
-	readOnlyResumeCommand(sessionId: string, model: string): string[];
+	interactiveReadOnlyCommand(session: {
+		model: string;
+		instructions: string;
+		resume?: string;
+		kickoff?: string;
+	}): HarnessInteractiveCommand;
 	/**
-	 * What one stream line of the session started with `command`,
-	 * `resumeCommand` or a read-only command, the argv it gave, carries.
+	 * Where the transcript of the Harness's interactive session `sessionId`,
+	 * started in `folder` (a real path, symlinks resolved), is while it runs,
+	 * given the user's home folder `home` and environment `env`. With no
+	 * `sessionId`, it is where any session's transcript could be, so that a
+	 * fresh session's can be found among them by `transcriptSession`.
+	 * Undefined when Vago can't know where it is.
+	 */
+	interactiveTranscript(
+		session: { sessionId?: string; folder: string },
+		home: string,
+		env: Readonly<Record<string, string | undefined>>,
+	): HarnessTranscriptFiles | undefined;
+	/**
+	 * The session a transcript whose first line is `firstLine` belongs to.
+	 * Undefined when the line doesn't say, as it never does for a Harness
+	 * that names every session's id before it starts.
+	 */
+	transcriptSession(firstLine: string): HarnessTranscriptSession | undefined;
+	/**
+	 * What one stream line of the session started with `command` or
+	 * `resumeCommand`, the argv it gave, carries.
 	 * Fields the line doesn't carry are left out, so the kernel spreads each
 	 * result over the last; a line that isn't an event it knows gives `{}`.
 	 */
@@ -167,8 +191,47 @@ export type Harness = {
 	 * gives nothing.
 	 */
 	runActivity(lines: readonly string[], root: string): RunActivity;
+	/**
+	 * What a transcript whose lines are `lines`, its files' lines in name
+	 * order, tells of its session so far. A line that isn't a whole event is
+	 * left out.
+	 */
+	readTranscript(lines: readonly string[]): HarnessTranscript;
 	/** The shell command the human runs to resume session `sessionId`. */
 	resumeHint(sessionId: string): string;
+};
+
+/**
+ * The Harness's own interactive UI's argv, and the session's id when it is
+ * known before the session starts: a resumed one's, or a fresh one's that
+ * the argv names. Absent for a Harness that picks a fresh session's id
+ * itself, which only its transcript then tells.
+ */
+export type HarnessInteractiveCommand = { argv: string[]; sessionId?: string };
+
+/**
+ * What an interactive session's transcript tells. `answers` is the text of
+ * each message the agent wrote, oldest first, leaving out the human's
+ * messages, tool calls and results, and subagents' messages. `costUsd` is
+ * what the whole session has cost, a resumed one's earlier runs and its
+ * subagents included; absent when the Harness can't price a model it used.
+ */
+export type HarnessTranscript = { answers: string[]; costUsd?: number };
+
+/**
+ * A session's transcript: every file under `folder` that the glob `pattern`
+ * matches, read in name order as one.
+ */
+export type HarnessTranscriptFiles = { folder: string; pattern: string };
+
+/**
+ * The interactive session a transcript belongs to: its id, the real path of
+ * the folder it started in, and when it started.
+ */
+export type HarnessTranscriptSession = {
+	sessionId: string;
+	folder: string;
+	startedAt: Date;
 };
 
 const harnesses: Record<string, Harness> = {

@@ -4,6 +4,7 @@ import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { RGBA, TextAttributes } from "@opentui/core";
 import type { TestRendererSetup } from "@opentui/core/testing";
+import { makeFakeInteractiveClaude } from "./fake-harness.ts";
 import {
 	goalText,
 	heldLock,
@@ -33,6 +34,24 @@ function rowOf(frame: string, name: string): string {
 	return row;
 }
 
+// What the planning view's footer says while its session has the focus.
+const sessionFooter = "Ctrl-] Preview";
+
+// Leaves the open planning view of `view` for the Goals list, through the
+// Preview, since Esc in the session is the session's.
+async function leavePlanningView(view: TestRendererSetup): Promise<string> {
+	view.mockInput.pressKey("]", { ctrl: true });
+	await frameWith(view, "Ctrl-] Session");
+	view.mockInput.pressEscape();
+	return frameWithout(view, "Ctrl-] Session");
+}
+
+// The `PATH` of a fake `claude`, for a view that opens a planning item, so
+// its session never starts the real one.
+async function fakeSessionEnv(): Promise<Record<string, string>> {
+	return (await makeFakeInteractiveClaude()).env;
+}
+
 // Presses ↓ until the row of `name` is the selected one, whose name then
 // starts the preview's title row.
 async function selectRow(view: TestRendererSetup, name: string) {
@@ -56,25 +75,20 @@ test("a planning item is a planning row in the Goals list, beside the Goals", as
 	expect(rowOf(frame, "ready")).toMatch(/ready +ready /);
 });
 
-// The `chat.toml` of a planning item whose one turn ended with `outcome`, or
-// is still open without one.
-function oneTurnChat(outcome?: string): string {
-	const ended =
-		outcome === undefined
-			? ""
-			: `ended = 2026-10-06T10:01:00.000Z\noutcome = "${outcome}"\n`;
+// The `chat.toml` of a planning item whose one session started and, when
+// `ended`, ended.
+function oneSessionChat(ended: boolean): string {
 	return `harness = "claude-code"
+session_id = "4f0c1e1a-7b2d-4c55-9a51-2f7d8e6b3c90"
 
-[[turns]]
-message = "Plan search"
+[[sessions]]
 started = 2026-10-06T10:00:00.000Z
-log = "logs/turn-01.jsonl"
-${ended}`;
+session_id = "4f0c1e1a-7b2d-4c55-9a51-2f7d8e6b3c90"
+${ended ? "ended = 2026-10-06T10:05:00.000Z\ncost_usd = 0.8\n" : ""}`;
 }
 
 // A `proposal.toml` of one Ticket recommending Workflow `small`.
-const readyProposal = `turn = 1
-workflow = "small"
+const readyProposal = `workflow = "small"
 goal = """
 # Search
 """
@@ -86,7 +100,7 @@ body = """
 """
 `;
 
-test("each planning row says what its chat is doing or waiting for", async () => {
+test("each planning row says whether its session is open, waits for the human, or has a proposal ready", async () => {
 	const chat = (name: string, files: Record<string, string>) =>
 		Object.fromEntries(
 			Object.entries(files).map(([path, text]) => [
@@ -97,33 +111,33 @@ test("each planning row says what its chat is doing or waiting for", async () =>
 	const root = await makeProject({
 		".vago/workflows/small.toml": oneStep("true"),
 		...planningItem("fresh"),
-		...chat("working", { "chat.toml": oneTurnChat() }),
-		...chat("cut-off", { "chat.toml": oneTurnChat() }),
-		...chat("asked", { "chat.toml": oneTurnChat("ok") }),
-		...chat("failed", { "chat.toml": oneTurnChat("exit 1") }),
+		...chat("open", { "chat.toml": oneSessionChat(false) }),
+		...chat("killed", { "chat.toml": oneSessionChat(false) }),
+		...chat("asked", { "chat.toml": oneSessionChat(true) }),
 		...chat("proposed", {
-			"chat.toml": oneTurnChat("ok"),
+			"chat.toml": oneSessionChat(true),
 			"proposal.toml": readyProposal,
 		}),
 	});
-	await heldLock(root, "working");
+	await heldLock(root, "open");
 	const view = await renderView(root, { width: 120, height: 40 });
 
 	const frame = await frameWith(view, "proposal ready");
 
-	expect(rowOf(frame, "fresh")).toContain("no chat yet");
-	expect(rowOf(frame, "working")).toContain("agent working");
-	expect(rowOf(frame, "cut-off")).toContain("response interrupted");
+	expect(rowOf(frame, "fresh")).toContain("no session yet");
+	expect(rowOf(frame, "open")).toContain("session open");
+	expect(rowOf(frame, "killed")).toContain("waiting for your reply");
 	expect(rowOf(frame, "asked")).toContain("waiting for your reply");
-	expect(rowOf(frame, "failed")).toContain("response failed");
 	expect(rowOf(frame, "proposed")).toContain("proposal ready");
-	// The build Runs' columns: a planning item has none.
+	// The build Runs' columns: a planning item has none, and its planning
+	// cost shows in the planning view.
+	expect(rowOf(frame, "asked")).not.toContain("$0.80");
 	expect(rowOf(frame, "asked")).not.toContain("$0.00");
 });
 
 test("n asks for a name and opens a new planning item, which Esc leaves in the list", async () => {
 	const root = await makeProject(readyGoal);
-	const view = await renderView(root);
+	const view = await renderView(root, undefined, await fakeSessionEnv());
 	await frameWith(view, " 1/1 ");
 
 	view.mockInput.pressKey("n");
@@ -131,11 +145,10 @@ test("n asks for a name and opens a new planning item, which Esc leaves in the l
 	await view.mockInput.typeText("search");
 	view.mockInput.pressEnter();
 
-	const opened = await frameWith(view, "No messages yet.");
+	const opened = await frameWith(view, sessionFooter);
 	expect(opened).toContain(" search ");
 	expect(await readdir(join(root, ".vago-goals"))).toContain("search");
-	view.mockInput.pressEscape();
-	const list = await frameWithout(view, "No messages yet.");
+	const list = await leavePlanningView(view);
 	expect(rowOf(list, "search")).toContain("planning");
 	expect(list).toContain(" 1/2 ");
 	expect(existsSync(join(root, ".vago-goals/search/goal.md"))).toBe(false);
@@ -179,7 +192,10 @@ function chatOf(root: string, name: string): Promise<string> {
 
 test("New Goal picks Claude Code or Codex with Tab, Claude Code by default", async () => {
 	const root = await makeProject(readyGoal);
-	const view = await renderView(root, undefined, {}, ["claude-code", "codex"]);
+	const view = await renderView(root, undefined, await fakeSessionEnv(), [
+		"claude-code",
+		"codex",
+	]);
 	await frameWith(view, " 1/1 ");
 
 	view.mockInput.pressKey("n");
@@ -188,9 +204,8 @@ test("New Goal picks Claude Code or Codex with Tab, Claude Code by default", asy
 	expect(asked).toContain("Tab Harness");
 	await view.mockInput.typeText("search");
 	view.mockInput.pressEnter();
-	await frameWith(view, "No messages yet.");
-	view.mockInput.pressEscape();
-	await frameWithout(view, "No messages yet.");
+	await frameWith(view, sessionFooter);
+	await leavePlanningView(view);
 	view.mockInput.pressKey("n");
 	await frameWith(view, "New Goal name:");
 	view.mockInput.pressTab();
@@ -198,14 +213,16 @@ test("New Goal picks Claude Code or Codex with Tab, Claude Code by default", asy
 	await view.mockInput.typeText("ideas");
 	view.mockInput.pressEnter();
 
-	await frameWith(view, "No messages yet.");
+	await frameWith(view, sessionFooter);
 	expect(await chatOf(root, "search")).toContain('harness = "claude-code"');
 	expect(await chatOf(root, "ideas")).toContain('harness = "codex"');
 });
 
 test("New Goal offers no choice when one Harness can plan", async () => {
 	const root = await makeProject(readyGoal);
-	const view = await renderView(root, undefined, {}, ["codex"]);
+	const view = await renderView(root, undefined, await fakeSessionEnv(), [
+		"codex",
+	]);
 	await frameWith(view, " 1/1 ");
 
 	view.mockInput.pressKey("n");
@@ -213,7 +230,7 @@ test("New Goal offers no choice when one Harness can plan", async () => {
 	await view.mockInput.typeText("search");
 	view.mockInput.pressEnter();
 
-	await frameWith(view, "No messages yet.");
+	await frameWith(view, sessionFooter);
 	expect(asked).not.toContain("Codex");
 	expect(asked).not.toContain("Tab");
 	expect(await chatOf(root, "search")).toContain('harness = "codex"');
@@ -237,12 +254,13 @@ test("a planning item opens again after the TUI closes and opens", async () => {
 	await frameWith(first, " 1/2 ");
 	first.renderer.destroy();
 
-	const view = await renderView(root);
+	const view = await renderView(root, undefined, await fakeSessionEnv());
 	await frameWith(view, " 1/2 ");
 	await selectRow(view, "search");
 	view.mockInput.pressEnter();
 
-	expect(await frameWith(view, "No messages yet.")).toContain(" search ");
+	await frameWith(view, sessionFooter);
+	await frameWith(view, " search ");
 });
 
 test("r renames the selected planning item, and the other one stays as it was", async () => {
@@ -379,16 +397,10 @@ test("a Goal is offered Start and neither Rename nor Discard", async () => {
 	expect(view.captureCharFrame()).not.toContain("Discard");
 });
 
-test("discarding an item whose response is being written stops it, and the row stays gone", async () => {
+test("discarding an item whose session is open stops it, and the row stays gone", async () => {
 	const root = await makeProject({
 		...readyGoal,
-		".vago-goals/search/planning/chat.toml": `harness = "claude-code"
-
-[[turns]]
-message = "What should search rank by?"
-started = 2026-10-06T10:00:00.000Z
-log = "logs/turn-01.jsonl"
-`,
+		".vago-goals/search/planning/chat.toml": oneSessionChat(false),
 	});
 	await heldLock(root, "search");
 	const view = await renderView(root);

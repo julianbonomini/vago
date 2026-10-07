@@ -1,17 +1,22 @@
-// Runs one Step for a Ticket or for the Goal as one Run, and a read-only
-// Harness session such as a planning turn's: the only module that spawns a
-// Step's or an agent's process. Hides how the Run is recorded and
-// announced, how a command is spawned, how a Harness's stream is read and
-// how output reaches the log.
+// Runs one Step for a Ticket or for the Goal as one Run, and a Harness's own
+// interactive session, read-only, such as a planning session: the only
+// module that spawns a Step's or an agent's process. Hides how the Run is
+// recorded and announced, how a command is spawned, how a Harness's stream
+// is read, how an interactive session's messages and cost are read from its
+// transcript, and how output reaches the log.
 
 import { closeSync, openSync, writeSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
-import { dirname } from "node:path";
+import { mkdir, realpath } from "node:fs/promises";
+import { homedir } from "node:os";
+import { basename, dirname } from "node:path";
 import {
 	findHarness,
 	type Harness,
 	type HarnessSessionReport,
+	type HarnessTranscript,
+	type HarnessTranscriptFiles,
 } from "./harness/registry.ts";
+import { stopProcesses } from "./process-stop.ts";
 import { printStepEnded, printStepStarted } from "./progress.ts";
 import { withoutWritesUnder } from "./sandbox.ts";
 import {
@@ -104,7 +109,7 @@ export async function runStep(
 	// One descriptor for both streams keeps stdout and stderr in the order the
 	// Step wrote them, which two separate pipes can't promise.
 	const fd = openSync(entry.log, "w");
-	const interrupt = interruptOnSignal();
+	const interrupt = interruptOnSignal(["SIGINT", "SIGTERM"]);
 	let outcome: RunOutcome;
 	let output: string;
 	let session: HarnessSessionReport | undefined;
@@ -149,7 +154,7 @@ export async function runStep(
 				stderr: fd,
 				detached: true,
 			});
-			const code = await exitCodeOf(child, interrupt.signal);
+			const code = await exitCodeOf(child, interrupt.signal, "group");
 			outcome = outcomeOf(code);
 			// Read back from the log, so a review prompt sees stdout and stderr
 			// interleaved the way the Step wrote them.
@@ -198,34 +203,183 @@ export async function readRunOutput(
 	return resultText ?? "";
 }
 
-/** A read-only Harness session to run. */
-export type ReadOnlySession = {
+/** A Harness's own interactive session to run, read-only. */
+export type InteractiveReadOnlySession = {
 	harness: string;
 	model: string;
-	/** The session to resume; a fresh one when absent. */
+	/** What is added to the agent's system prompt. */
+	instructions: string;
+	/** The session to resume; absent to start a fresh one. */
 	resume?: string;
-	/** What the session reads on stdin. */
-	input: string;
+	/** A fresh session's first message, as if the human sent it. */
+	kickoff?: string;
 	/** The working directory, which nothing the session starts can write under. */
 	folder: string;
-	/** Absolute path of the log that gets the stream and stderr. */
-	log: string;
 };
 
 /**
- * Runs `session` and waits for it to end. `onSessionId` gets the session's
- * id as soon as the Harness reports it. A tool call the Harness refuses
- * doesn't fail it. SIGINT or SIGTERM stops every process it started and
- * ends it `interrupted`. No idle timeout, and no fallback when a resume
- * fails to start: that ends it `exit N`. Throws, naming what to install,
- * when the Harness's program isn't on `PATH`, and as `withoutWritesUnder`
- * does.
+ * Runs `session` on this process's terminal and waits for it to end. Its
+ * stdin, stdout and stderr are this process's, and it stays in the
+ * terminal's foreground. Nothing it starts can write under its folder.
+ * `onSessionId` gets the session's id once: before the session starts when
+ * the Harness names it up front, as it does a resumed session's, or else
+ * once its transcript tells, which may be only after the human's first
+ * message. While it runs, and once more after it ends however it ended,
+ * `onTranscript` gets what the session's transcript tells so far, a resumed
+ * session's earlier runs included, whenever it differs from what
+ * `onTranscript` last took without throwing. Calls never overlap. An error
+ * from either callback after the session has started never ends it; the
+ * same call comes again a second later. A Harness whose transcript Vago
+ * can't find gives no call after the start.
+ * SIGHUP, SIGTERM or SIGINT stops it, with SIGKILL after a grace period,
+ * and ends it `interrupted`; otherwise it ends `ok` or `exit N`. Throws,
+ * naming what to install, when the Harness's program isn't on `PATH`, as
+ * `withoutWritesUnder` does, and as `onSessionId` does before the start.
  */
-export async function runReadOnlySession(
-	session: ReadOnlySession,
+export async function runInteractiveReadOnlySession(
+	session: InteractiveReadOnlySession,
 	onSessionId: (sessionId: string) => Promise<void>,
-): Promise<{ outcome: RunOutcome; report: HarnessSessionReport }> {
+	onTranscript: (transcript: HarnessTranscript) => Promise<void>,
+): Promise<RunOutcome> {
 	const harness = findHarness(session.harness);
+	const command = harness.interactiveReadOnlyCommand(session);
+	const spawned = await spawnableReadOnly(
+		harness,
+		session.folder,
+		command.argv,
+	);
+	if (command.sessionId !== undefined) await onSessionId(command.sessionId);
+	const readTranscript = transcriptReader(
+		harness,
+		{
+			sessionId: command.sessionId,
+			// The Harness names its transcript, or records its folder, as the
+			// kernel sees the working directory, with symlinks resolved.
+			folder: await realpath(session.folder),
+			startedAt: new Date(),
+		},
+		onSessionId,
+		onTranscript,
+	);
+	let reading: Promise<void> | undefined;
+	const timer = setInterval(() => {
+		if (reading !== undefined) return;
+		reading = readTranscript().finally(() => {
+			reading = undefined;
+		});
+	}, 1000);
+	// SIGHUP too: it is how this process hears that its terminal closed.
+	const interrupt = interruptOnSignal(["SIGINT", "SIGTERM", "SIGHUP"]);
+	let code: number;
+	try {
+		// Not detached, so the session stays in the terminal's foreground
+		// group and can read it.
+		const child = Bun.spawn(spawned, {
+			cwd: session.folder,
+			stdio: ["inherit", "inherit", "inherit"],
+		});
+		code = await exitCodeOf(child, interrupt.signal, "process");
+	} finally {
+		interrupt.release();
+		// However it ended, so a message written just before, such as the
+		// proposal the human then accepts, is still handed over.
+		clearInterval(timer);
+		await reading;
+		await readTranscript();
+	}
+	return interrupt.signal.aborted ? { kind: "interrupted" } : outcomeOf(code);
+}
+
+// One read of the transcript of the interactive session started at
+// `startedAt` in `folder`: until its id is known and taken by `onSessionId`,
+// the search for it among every transcript started there since, and then the
+// transcript handed to `onTranscript` when it differs from what it last
+// took. A callback that throws is called again on the next read.
+function transcriptReader(
+	harness: Harness,
+	session: { sessionId?: string; folder: string; startedAt: Date },
+	onSessionId: (sessionId: string) => Promise<void>,
+	onTranscript: (transcript: HarnessTranscript) => Promise<void>,
+): () => Promise<void> {
+	const { folder, startedAt } = session;
+	let sessionId = session.sessionId;
+	let sessionIdTaken = sessionId !== undefined;
+	let taken = "";
+	return async () => {
+		if (sessionId === undefined) {
+			const anyTranscript = harness.interactiveTranscript(
+				{ folder },
+				homedir(),
+				process.env,
+			);
+			for (const file of await transcriptFiles(anyTranscript)) {
+				// A file last written before the start can't be this session's.
+				if (Bun.file(file).lastModified < startedAt.getTime()) continue;
+				const text = await readTranscriptFile(file);
+				const owner = harness.transcriptSession(text.split("\n", 1)[0] ?? "");
+				if (owner?.folder === folder && owner.startedAt >= startedAt) {
+					sessionId = owner.sessionId;
+					break;
+				}
+			}
+		}
+		if (sessionId === undefined) return;
+		if (!sessionIdTaken) {
+			sessionIdTaken = await onSessionId(sessionId).then(
+				() => true,
+				() => false,
+			);
+			if (!sessionIdTaken) return;
+		}
+		const files = harness.interactiveTranscript(
+			{ sessionId, folder },
+			homedir(),
+			process.env,
+		);
+		const lines: string[] = [];
+		for (const file of await transcriptFiles(files)) {
+			lines.push(...(await readTranscriptFile(file)).split("\n"));
+		}
+		const transcript = harness.readTranscript(lines);
+		const text = JSON.stringify(transcript);
+		if (text === taken) return;
+		// Left as it was when `onTranscript` fails, so the next read retries.
+		await onTranscript(transcript)
+			.then(() => {
+				taken = text;
+			})
+			.catch(() => {});
+	};
+}
+
+// The paths of `transcript`'s files, in name order; none while the Harness
+// hasn't written one yet, which it may not until the human's first message.
+async function transcriptFiles(
+	transcript: HarnessTranscriptFiles | undefined,
+): Promise<string[]> {
+	if (transcript === undefined) return [];
+	const glob = new Bun.Glob(transcript.pattern);
+	const files = await Array.fromAsync(
+		glob.scan({ cwd: transcript.folder, absolute: true, onlyFiles: true }),
+	).catch((): string[] => []);
+	return files.sort((a, b) => (basename(a) < basename(b) ? -1 : 1));
+}
+
+// Empty when the file is gone, as when the human deletes a session.
+function readTranscriptFile(file: string): Promise<string> {
+	return Bun.file(file)
+		.text()
+		.catch(() => "");
+}
+
+// `command`, a read-only session of `harness`, wrapped so nothing it starts
+// can write under `folder`. Throws, naming what to install, when the
+// Harness's program isn't on `PATH`, and as `withoutWritesUnder` does.
+async function spawnableReadOnly(
+	harness: Harness,
+	folder: string,
+	command: string[],
+): Promise<string[]> {
 	// Checked here: inside the sandbox a missing program reads only as the
 	// sandbox's exit code.
 	if (Bun.which(harness.program) === null) {
@@ -233,43 +387,9 @@ export async function runReadOnlySession(
 			`${harness.program} isn't on PATH, so no ${harness.title} session can start; install ${harness.title} or put ${harness.program} on PATH`,
 		);
 	}
-	const command =
-		session.resume === undefined
-			? harness.readOnlyCommand(session.model)
-			: harness.readOnlyResumeCommand(session.resume, session.model);
 	// The Harness's own read-only tools are one guard; the sandbox is the one
 	// that holds even when the Harness lets a write through.
-	const spawned = await withoutWritesUnder(session.folder, command);
-	await mkdir(dirname(session.log), { recursive: true });
-	const fd = openSync(session.log, "w");
-	const interrupt = interruptOnSignal();
-	let ran: HarnessSessionRun;
-	try {
-		ran = await runSession({
-			harness,
-			command,
-			spawned,
-			stdin: session.input,
-			cwd: session.folder,
-			fd,
-			interrupt: interrupt.signal,
-			idleTimeoutMs: undefined,
-			onSessionId,
-		});
-	} finally {
-		interrupt.release();
-		closeSync(fd);
-	}
-	const { session: report, code } = ran;
-	let outcome: RunOutcome;
-	if (interrupt.signal.aborted) {
-		outcome = { kind: "interrupted" };
-	} else if (report.permissionModeFallback !== undefined) {
-		outcome = { kind: "permission-mode", mode: report.permissionModeFallback };
-	} else {
-		outcome = outcomeOf(code);
-	}
-	return { outcome, report };
+	return withoutWritesUnder(folder, command);
 }
 
 // What a resumed session is handed in place of the Step's prompt.
@@ -412,6 +532,7 @@ async function runSession(
 	const exit = exitCodeOf(
 		child,
 		AbortSignal.any([session.interrupt, idle.signal]),
+		"group",
 	);
 	const idleTimer =
 		idleTimeoutMs === undefined
@@ -443,19 +564,22 @@ async function runSession(
 	return { session: report, code, idleTimedOut: idle.signal.aborted };
 }
 
-// A signal that aborts on SIGINT or SIGTERM until `release` is called. A
-// session or command runs in its own process group, out of reach of the
-// terminal's Ctrl-C, so `vago` takes the signal and stops the group itself.
-function interruptOnSignal(): { signal: AbortSignal; release: () => void } {
+// A signal that aborts on any of `signals` until `release` is called, so
+// `vago` takes the signal and stops what it started itself: a detached
+// session or command, in a process group of its own out of reach of the
+// terminal's Ctrl-C, or an interactive session, which a closed terminal
+// would leave running.
+function interruptOnSignal(signals: NodeJS.Signals[]): {
+	signal: AbortSignal;
+	release: () => void;
+} {
 	const interrupt = new AbortController();
 	const abort = () => interrupt.abort();
-	process.on("SIGINT", abort);
-	process.on("SIGTERM", abort);
+	for (const name of signals) process.on(name, abort);
 	return {
 		signal: interrupt.signal,
 		release: () => {
-			process.off("SIGINT", abort);
-			process.off("SIGTERM", abort);
+			for (const name of signals) process.off(name, abort);
 		},
 	};
 }
@@ -478,18 +602,24 @@ function shellOutput(code: number, log: string): string {
 	return `exit code ${code}\n${log}`;
 }
 
-// Stops the child's group when `stop` aborts, at once if it already has, as
-// when the signal came while the Step was still being set up. Resolves to the
-// exit code once the child has exited and, if it was stopped, once its group
-// is gone too, since the leader can exit while the rest of its group still
-// ignores SIGTERM.
+// Stops the child when `stop` aborts, at once if it already has, as when the
+// signal came while the Step was still being set up: the group it leads when
+// it was spawned detached, or the child alone, which leads no group. Resolves
+// to the exit code once the child has exited and, if it was stopped, once
+// what was signalled is gone too, since a leader can exit while the rest of
+// its group still ignores SIGTERM.
 async function exitCodeOf(
 	child: Bun.Subprocess,
 	stop: AbortSignal,
+	scope: "group" | "process",
 ): Promise<number> {
 	let stopping: Promise<void> | undefined;
 	const startStopping = () => {
-		stopping = stopGroup(child.pid);
+		// The whole group of a detached child, since a process the Step
+		// started would otherwise live on and could hold the Harness's stdout
+		// open, so its stream would never end. The grace period before SIGKILL
+		// lets a Harness stop the tool commands it ran in groups of their own.
+		stopping = stopProcesses(child.pid, scope);
 	};
 	if (stop.aborted) startStopping();
 	else stop.addEventListener("abort", startStopping, { once: true });
@@ -497,43 +627,6 @@ async function exitCodeOf(
 	stop.removeEventListener("abort", startStopping);
 	await stopping;
 	return code;
-}
-
-// Long enough for a Harness to stop the tool commands it started.
-const stopGraceMs = 5_000;
-
-// The whole group, since a process the Step started would otherwise live on
-// and could hold the Harness's stdout open, so its stream would never end.
-// SIGTERM first, because a Harness can run its tool commands in process groups
-// of their own, which no signal to this group reaches, and only the Harness
-// can stop them. SIGKILL after the grace period, because a Step that ignores
-// SIGTERM must still end. Resolves once the group is gone or has been sent
-// SIGKILL.
-async function stopGroup(leader: number): Promise<void> {
-	const deadline = Date.now() + stopGraceMs;
-	signalGroup(leader, "SIGTERM");
-	while (signalGroup(leader, 0)) {
-		if (Date.now() >= deadline) {
-			signalGroup(leader, "SIGKILL");
-			return;
-		}
-		await Bun.sleep(50);
-	}
-}
-
-// False when the group is gone, as it is already when the signal comes just
-// after the Step ended. Signal 0 only asks whether the group is alive. macOS
-// answers EPERM, not ESRCH, while every process left in the group is a zombie
-// waiting to be reaped, and no signal can reach such a group either.
-function signalGroup(leader: number, signal: NodeJS.Signals | 0): boolean {
-	try {
-		process.kill(-leader, signal);
-		return true;
-	} catch (error) {
-		const code = (error as NodeJS.ErrnoException).code;
-		if (code !== "ESRCH" && code !== "EPERM") throw error;
-		return false;
-	}
 }
 
 function outcomeOf(code: number): RunOutcome {

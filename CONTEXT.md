@@ -49,28 +49,24 @@ A Goal still being planned: a folder in `.vago-goals/` with a `planning/` folder
 _Avoid_: draft, idea
 
 **Planning activity**:
-What a planning item's chat is doing or waiting for, as the Goals list says it: no chat yet, the agent working, waiting for the human's reply, a Proposal ready to accept, a response that failed, or one interrupted.
+How a planning item's planning stands, as the Goals list says it: no session yet, its planning session open, a Proposal ready to accept, or waiting for the human's reply.
 _Avoid_: status (a Ticket's), state
 
 **Planning chat**:
-A planning item's conversation with its planning agent, saved under its `planning/` folder and continued across TUI sessions. It is read-only once the item is accepted, and still readable from the Goal.
-_Avoid_: session, thread
+A planning item's conversation with its planning agent, held in its planning session, whose id is saved under its `planning/` folder. It is read-only once the item is accepted: the session still opens from the Goal, and nothing said there changes the Goal.
+_Avoid_: thread; session for the chat itself (a _planning session_ is the Harness's own session it runs in)
+
+**Planning session**:
+The Harness's own interactive session a planning item's agent runs in, inside the planning view. It is not a Run: it belongs to no Step, Ticket or Goal. It is open while the view is, and reopening the item resumes it by its saved session id. The time it is open and what it costs add up to the item's _planning cost_, which stays apart from the build Runs: no Goal's run time or cost, the Project's spend or a Goal report counts it.
+_Avoid_: chat session, terminal, Run
 
 **Proposal**:
-The Goal, ordered Tickets with their blockers, and recommended Workflow that a planning item's agent proposed last, with the human's Workflow choice. A revision replaces it. It is _ready to accept_ when nothing in it would stop acceptance; decisions still open don't.
+The Goal, ordered Tickets with their blockers, and recommended Workflow that a planning item's agent proposed last in its planning session, with the human's Workflow choice. A revision replaces it. It is _ready to accept_ when nothing in it would stop acceptance; decisions still open don't.
 _Avoid_: plan, draft, preview (the pane that shows it)
 
 **Accept**:
 Turns a planning item whose Proposal is ready to accept into a ready Goal with ready Tickets, all at once. It starts nothing, and the planning chat stays with the Goal, read-only.
 _Avoid_: approve, commit, publish
-
-**Planning turn**:
-One message the human sends a planning item's agent and the agent's response to it. It is not a Run: it belongs to no Step, Ticket or Goal. Its response is _interrupted_ when the `vago` writing it stops before it ends; the turn keeps the conversation. Its time and cost add up to the planning chat's _planning cost_, which stays apart from the build Runs: no Goal's run time or cost, the Project's spend or a Goal report counts it.
-_Avoid_: Run, exchange
-
-**Retry response**:
-The human asking a planning item's agent to answer an interrupted Planning turn again, in the same turn. It is not a Retry, which `vago run` starts by itself for an agent Step.
-_Avoid_: resend, rerun
 
 **Run**:
 One Harness session performing one agent Step on one Ticket, or for the Goal in a Goal Step, such as implement, review or discuss; a Ticket usually takes several.
