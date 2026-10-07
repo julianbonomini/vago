@@ -3,7 +3,7 @@
 // a new one can plan on, and the keys that answer it. Hides how the field
 // and the choice are drawn and read.
 
-import type { InputRenderable } from "@opentui/core";
+import { type InputRenderable, TextAttributes } from "@opentui/core";
 import type { JSX } from "@opentui/solid";
 import { Show } from "solid-js";
 import { findHarness } from "../harness/registry.ts";
@@ -58,9 +58,16 @@ export function QuestionLine(props: {
 			.join(" ");
 	};
 	let field: InputRenderable | undefined;
+	// The accent and bold show Vago waits for an answer, and bold alone does
+	// it in a theme without colour.
 	return (
 		<box flexShrink={0} flexDirection="row" paddingLeft={1} paddingRight={1}>
-			<text fg={color.bright} flexShrink={0} wrapMode="none">
+			<text
+				fg={color.accent}
+				attributes={TextAttributes.BOLD}
+				flexShrink={0}
+				wrapMode="none"
+			>
 				{asked()}
 			</text>
 			<Show when={props.question.kind !== "discard"}>

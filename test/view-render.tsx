@@ -3,6 +3,7 @@
 
 import { onTestFinished } from "bun:test";
 import { join } from "node:path";
+import type { RGBA } from "@opentui/core";
 import type { TestRendererSetup } from "@opentui/core/testing";
 import { testRender } from "@opentui/solid";
 import { ProjectView } from "../src/tui/project-view.tsx";
@@ -91,4 +92,17 @@ export async function frameWithout(
 		if (tries === 300) throw new Error(`Every frame shows ${text}:\n${frame}`);
 		await Bun.sleep(10);
 	}
+}
+
+/** The colour behind the first cell of `text` in the frame. */
+export function bgAt(view: TestRendererSetup, text: string): RGBA {
+	const rows = view.captureCharFrame().split("\n");
+	const y = rows.findIndex((row) => row.includes(text));
+	const x = Bun.stringWidth((rows[y] ?? "").slice(0, rows[y]?.indexOf(text)));
+	let at = 0;
+	for (const span of view.captureSpans().lines[y]?.spans ?? []) {
+		at += Bun.stringWidth(span.text);
+		if (at > x) return span.bg;
+	}
+	throw new Error(`No cell shows ${text}`);
 }

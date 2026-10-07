@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
+import { RGBA, TextAttributes } from "@opentui/core";
 import type { TestRendererSetup } from "@opentui/core/testing";
 import { makeFakeInteractiveClaude } from "./fake-harness.ts";
 import {
@@ -11,7 +12,7 @@ import {
 	oneStep,
 	ticketText,
 } from "./project.ts";
-import { frameWith, frameWithout, renderView } from "./view-render.tsx";
+import { frameWith, frameWithout, renderView, setEnv } from "./view-render.tsx";
 
 // The files of planning item `name`, as `vago plan new` makes it.
 const planningItem = (name: string) => ({
@@ -321,6 +322,51 @@ test("d then any other key keeps the planning item", async () => {
 
 	await frameWithout(view, "Discard search");
 	expect(existsSync(join(root, ".vago-goals/search/planning"))).toBe(true);
+});
+
+const accent = RGBA.fromHex("#ff8a3d");
+
+// The span of the frame whose text starts with `question`.
+function questionSpan(view: TestRendererSetup, question: string) {
+	const span = view
+		.captureSpans()
+		.lines.flatMap((line) => line.spans)
+		.find((span) => span.text.startsWith(question));
+	if (span === undefined) throw new Error(`No span asks ${question}`);
+	return span;
+}
+
+// The spans of the New Goal name and the discard questions, each asked in
+// turn in the Goals view of a Project with one planning item.
+async function askedQuestions() {
+	const root = await makeProject(planningItem("search"));
+	const view = await renderView(root);
+	await frameWith(view, " 1/1 ");
+
+	view.mockInput.pressKey("n");
+	await frameWith(view, "New Goal name:");
+	const name = questionSpan(view, "New Goal name:");
+	view.mockInput.pressEscape();
+	await frameWithout(view, "New Goal name:");
+
+	view.mockInput.pressKey("d");
+	await frameWith(view, "Discard search");
+	const discard = questionSpan(view, "Discard search");
+	return [name, discard];
+}
+
+test("the New Goal name and discard questions are drawn bold in the accent", async () => {
+	for (const span of await askedQuestions()) {
+		expect(span.fg.equals(accent)).toBe(true);
+		expect(span.attributes & TextAttributes.BOLD).toBe(TextAttributes.BOLD);
+	}
+});
+
+test("under NO_COLOR the New Goal name and discard questions are still bold", async () => {
+	setEnv({ NO_COLOR: "1" });
+	for (const span of await askedQuestions()) {
+		expect(span.attributes & TextAttributes.BOLD).toBe(TextAttributes.BOLD);
+	}
 });
 
 test("a planning item is offered no Start, and s starts nothing", async () => {

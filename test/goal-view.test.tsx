@@ -12,6 +12,7 @@ import {
 	ticketText,
 } from "./project.ts";
 import {
+	bgAt,
 	frameWith,
 	frameWithout,
 	onlyAscii,
@@ -1278,19 +1279,6 @@ async function until(
 			throw new Error(`No frame passes:\n${view.captureCharFrame()}`);
 		await Bun.sleep(10);
 	}
-}
-
-// The colour behind the first cell of `text` in the frame.
-function bgAt(view: TestRendererSetup, text: string): RGBA {
-	const rows = view.captureCharFrame().split("\n");
-	const y = rows.findIndex((row) => row.includes(text));
-	const x = Bun.stringWidth((rows[y] ?? "").slice(0, rows[y]?.indexOf(text)));
-	let at = 0;
-	for (const span of view.captureSpans().lines[y]?.spans ?? []) {
-		at += Bun.stringWidth(span.text);
-		if (at > x) return span.bg;
-	}
-	throw new Error(`No cell shows ${text}`);
 }
 
 test("only the focused pane fills its selected row, and the Tickets and Runs keep theirs on grey", async () => {
