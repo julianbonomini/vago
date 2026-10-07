@@ -1,8 +1,8 @@
 // Owns `.vago/workflows/<name>.toml` and the prompt and include files each
 // names: which Workflows exist, reading one once, checking it, returning the
-// Workflow a Goal runs with, and building agent prompts. Hides the TOML
-// schema, its defaults, how paths resolve, how include slots merge and the
-// `{{…}}` placeholder syntax.
+// Workflow a Goal runs with, and building agent prompts. Also owns where the
+// planning prompt is. Hides the TOML schema, its defaults, how paths
+// resolve, how include slots merge and the `{{…}}` placeholder syntax.
 
 import { existsSync } from "node:fs";
 import { readdir } from "node:fs/promises";
@@ -372,6 +372,24 @@ function stepOnFail(step: {
 	return step.on_fail ?? "stop";
 }
 
+/**
+ * The name of every Workflow in the Project's `.vago/workflows/`, in name
+ * order; none when the folder is missing.
+ */
+export async function listWorkflows(root: string): Promise<string[]> {
+	const folder = workflowsFolder(root);
+	// node:fs because Bun.file can't tell whether a directory exists.
+	if (!existsSync(folder)) return [];
+	return (await readdir(folder))
+		.filter((fileName) => fileName.endsWith(".toml"))
+		.map((fileName) => fileName.slice(0, -".toml".length))
+		.sort();
+}
+
+function workflowsFolder(root: string): string {
+	return join(root, vagoFolderName, "workflows");
+}
+
 // The path of Workflow `name`'s TOML and its content checked against the
 // schema, with what `loadWorkflow` throws for a missing Workflow, bad TOML or
 // a schema it doesn't take.
@@ -379,14 +397,8 @@ async function readWorkflowFile(
 	root: string,
 	name: string,
 ): Promise<{ path: string; checked: z.infer<typeof WorkflowFile> }> {
-	const folder = join(root, vagoFolderName, "workflows");
-	// node:fs because Bun.file can't tell whether a directory exists.
-	const names = existsSync(folder)
-		? (await readdir(folder))
-				.filter((fileName) => fileName.endsWith(".toml"))
-				.map((fileName) => fileName.slice(0, -".toml".length))
-				.sort()
-		: [];
+	const folder = workflowsFolder(root);
+	const names = await listWorkflows(root);
 	// Looked up before any path is built, so a name like `../x` never reaches
 	// the filesystem.
 	if (!names.includes(name)) {
@@ -427,6 +439,21 @@ async function readIncludes(
 		texts[name] = await file.text();
 	}
 	return texts;
+}
+
+/**
+ * The text of the Project's `.vago/prompts/planning.md`, the instructions a
+ * planning item's agent starts from. Throws an Error naming the path and
+ * `vago update` when it's missing.
+ */
+export async function readPlanningPrompt(root: string): Promise<string> {
+	const file = Bun.file(join(root, vagoFolderName, "prompts", "planning.md"));
+	if (!(await file.exists())) {
+		throw new Error(
+			`The planning prompt ${file.name} doesn't exist; run vago update to add it`,
+		);
+	}
+	return file.text();
 }
 
 /** What an agent prompt's placeholders are filled with. */

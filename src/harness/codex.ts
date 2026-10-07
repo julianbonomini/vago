@@ -74,6 +74,8 @@ const FileChange = z.object({
 	status: z.enum(["in_progress", "completed", "failed"]),
 });
 
+const program = "codex";
+
 /**
  * Codex, run by `codex exec` in its sandbox with its automatic review in
  * the human's place. Its stream reports every command the review refused.
@@ -81,6 +83,8 @@ const FileChange = z.object({
  * and the model its command names.
  */
 export const codex: HarnessCli = {
+	title: "Codex",
+	program,
 	command(model, args) {
 		// "-" reads the prompt from stdin, where the kernel writes it.
 		return [...execCommand(model, args), "-"];
@@ -89,6 +93,13 @@ export const codex: HarnessCli = {
 		// `resume` takes no --approve-for-me of its own, so every flag goes
 		// before it, to `exec`.
 		return [...execCommand(model, args), "resume", sessionId, "-"];
+	},
+	// Codex's own read-only sandbox lets its commands read but not write.
+	readOnlyCommand(model) {
+		return [...readOnlyExecCommand(model), "-"];
+	},
+	readOnlyResumeCommand(sessionId, model) {
+		return [...readOnlyExecCommand(model), "resume", sessionId, "-"];
 	},
 	events(line, command) {
 		const event = parseJson(line);
@@ -142,7 +153,19 @@ export const codex: HarnessCli = {
 
 // What a fresh session and a resumed one both run with.
 function execCommand(model: string, args: readonly string[]): string[] {
-	return ["codex", "exec", "--json", guardedMode, "--model", model, ...args];
+	return [program, "exec", "--json", guardedMode, "--model", model, ...args];
+}
+
+function readOnlyExecCommand(model: string): string[] {
+	return [
+		program,
+		"exec",
+		"--json",
+		"--sandbox",
+		"read-only",
+		"--model",
+		model,
+	];
 }
 
 // A command shows from its start; a file change, which Codex applies at

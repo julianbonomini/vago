@@ -1,8 +1,10 @@
 // The entry to the TUI that a bare `vago` opens on a terminal: how the
 // terminal is held while it is open and given back on every way out. It
-// reads, writes nothing and only starts Goals (ADR 0005), and is drawn with
-// OpenTUI and Solid (ADR 0006). Only `cli.ts` imports this file, and only
-// lazily, so no command loads OpenTUI.
+// reads, and writes only to start Goals, to make, rename and discard
+// planning items, to send a planning item's agent a message or retry its
+// response, to record a Proposal's Workflow and to accept it (ADR 0005), and
+// is drawn with OpenTUI and Solid (ADR 0006). Only `cli.ts` imports this
+// file, and only lazily, so no command loads OpenTUI.
 
 import { format } from "node:util";
 import { createCliRenderer } from "@opentui/core";
@@ -10,23 +12,30 @@ import {
 	type JSX,
 	render,
 	useKeyboard,
+	useRenderer,
 	useTerminalDimensions,
 } from "@opentui/solid";
 import { ErrorBoundary } from "solid-js";
+import { planningHarnesses } from "../planning-runner.ts";
 import { ProjectView } from "./project-view.tsx";
 import { theme } from "./theme.ts";
 
 /**
- * Shows the Project at `root` full-screen until the human quits with `q` or
- * Ctrl-C, or a signal ends it. Always leaves the terminal as it found it:
- * out of the alternate screen, cursor shown, raw mode off. Holds what is
- * written to stderr and `console` meanwhile and prints it afterwards. Throws,
- * after restoring the terminal, any error the view hit. Needs stdin and
- * stdout to be terminals. `vago` is the command that runs this same `vago`,
- * which the TUI starts Goals with.
+ * Shows the Project at `root` full-screen until the human quits with `q`,
+ * outside a field being typed in, or Ctrl-C, or a signal ends it. Always
+ * leaves the terminal as it found it: out of the alternate screen, cursor
+ * shown, raw mode off. Holds what is written to stderr and `console`
+ * meanwhile and prints it afterwards. Throws, after restoring the terminal,
+ * any error the view hit. Needs stdin and stdout to be terminals. `vago` is
+ * the command that runs this same `vago`, which the TUI starts Goals and
+ * planning turns with. New Goal offers the Harnesses whose program is on
+ * `PATH` as the TUI opens.
  */
 export async function openTui(root: string, vago: string[]): Promise<void> {
-	return holdTerminal(() => <ProjectView root={root} vago={vago} />);
+	const harnesses = planningHarnesses();
+	return holdTerminal(() => (
+		<ProjectView root={root} vago={vago} harnesses={harnesses} />
+	));
 }
 
 const consoleMethods = ["log", "info", "warn", "error", "debug"] as const;
@@ -111,12 +120,17 @@ async function holdTerminal(view: () => JSX.Element): Promise<void> {
 }
 
 // A component because `useKeyboard` only works inside the rendered tree.
+// A field with the focus, such as a name's, types `q` rather than quit.
 function QuitKeys(props: {
 	onQuit: () => void;
 	children: JSX.Element;
 }): JSX.Element {
+	const renderer = useRenderer();
 	useKeyboard((key) => {
-		if (key.name === "q" || (key.ctrl && key.name === "c")) props.onQuit();
+		const typing = renderer.currentFocusedEditor !== null;
+		if ((key.name === "q" && !typing) || (key.ctrl && key.name === "c")) {
+			props.onQuit();
+		}
 	});
 	return props.children;
 }

@@ -95,12 +95,14 @@ const privateExcludeLines = [
 	".vago/",
 	".claude/skills/vago-check-red-flags/",
 	".claude/skills/vago-design-module/",
+	".claude/skills/vago-grilling/",
 	".claude/skills/vago-pr/",
 	".claude/skills/vago-to-goal/",
 	".claude/skills/vago-to-tickets/",
 	".claude/skills/vago-write-code/",
 	".agents/skills/vago-check-red-flags/",
 	".agents/skills/vago-design-module/",
+	".agents/skills/vago-grilling/",
 	".agents/skills/vago-pr/",
 	".agents/skills/vago-to-goal/",
 	".agents/skills/vago-to-tickets/",
@@ -132,6 +134,54 @@ test("init copies the starter into .vago/ verbatim and vago run accepts both Wor
 
 		expect(run.stderr).toBe("");
 		expect(run.exitCode).toBe(0);
+	}
+});
+
+test("init writes the planning prompt a planning item's agent starts from", async () => {
+	const root = await makeProject({});
+
+	await runVago(root, ["init"]);
+
+	expect(await Bun.file(join(root, ".vago/prompts/planning.md")).text()).toBe(
+		await Bun.file(join(starter, "prompts/planning.md")).text(),
+	);
+});
+
+test("a new Project gets the planning skills its agent loads, and update adds them", async () => {
+	const root = await makeProject({});
+
+	await runVago(root, ["init"], {}, "n\n");
+
+	const prompt = await Bun.file(join(root, ".vago/prompts/planning.md")).text();
+	for (const skill of ["vago-grilling", "vago-to-goal", "vago-to-tickets"]) {
+		expect(prompt).toContain(skill);
+		for (const folder of skillFolders) {
+			const text = await Bun.file(join(root, folder, skill, "SKILL.md")).text();
+			expect(text).toStartWith(`---\nname: ${skill}\n`);
+			expect(text).not.toContain("disable-model-invocation");
+		}
+	}
+	for (const [skill, command] of [
+		["vago-to-goal", "vago goal new"],
+		["vago-to-tickets", "vago ticket add"],
+	] as const) {
+		for (const folder of skillFolders) {
+			const text = await Bun.file(join(root, folder, skill, "SKILL.md")).text();
+			expect(text).toContain(command);
+			expect(text).toContain("## In a Vago planning chat");
+		}
+	}
+	for (const folder of skillFolders) {
+		await rm(join(root, folder, "vago-grilling"), { recursive: true });
+	}
+
+	const update = await runVago(root, ["update"]);
+
+	expect(update.exitCode).toBe(0);
+	for (const folder of skillFolders) {
+		for (const file of ["SKILL.md", "CREDITS.md"]) {
+			expect(existsSync(join(root, folder, "vago-grilling", file))).toBe(true);
+		}
 	}
 });
 

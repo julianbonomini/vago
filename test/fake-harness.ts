@@ -34,6 +34,13 @@ export const permissionDeniedFixture = fixture(
  */
 export const acceptEditsFixture = fixture("claude-code-accept-edits.jsonl");
 
+/**
+ * An Opus session as a planning turn starts one: read-only tools in
+ * `dontAsk` mode, run under the sandbox in a Project with `notes.txt`. It
+ * reads the file and answers in one sentence.
+ */
+export const planningFixture = fixture("claude-code-planning.jsonl");
+
 // Each Codex fixture was recorded from `codex exec --json --approve-for-me
 // --model <model> -` in a Goal's worktree, with the recording's paths
 // replaced.
@@ -154,3 +161,64 @@ ${afterFixture}
 		},
 	};
 }
+
+/**
+ * Writes a temp fixture equal to `planningFixture` but whose final answer,
+ * the last assistant text and the `result`, is `answer`, and returns its
+ * path.
+ */
+export async function planningFixtureAnswering(
+	answer: string,
+): Promise<string> {
+	const lines = (await Bun.file(planningFixture).text()).trimEnd().split("\n");
+	const events: PlanningFixtureEvent[] = lines.map((line) => JSON.parse(line));
+	const lastText = events.findLast(
+		(event) =>
+			event.type === "assistant" &&
+			event.message?.content?.some((block) => block.type === "text"),
+	);
+	for (const block of lastText?.message?.content ?? []) {
+		if (block.type === "text") block.text = answer;
+	}
+	for (const event of events) {
+		if (event.type === "result") event.result = answer;
+	}
+	const dir = await mkdtemp(join(tmpdir(), "vago-fixture-"));
+	const path = join(dir, "planning-answer.jsonl");
+	await Bun.write(
+		path,
+		`${events.map((event) => JSON.stringify(event)).join("\n")}\n`,
+	);
+	return path;
+}
+
+// The fields of a Claude Code stream line `planningFixtureAnswering` edits.
+type PlanningFixtureEvent = {
+	type: string;
+	result?: string;
+	message?: { content?: { type: string; text?: string }[] };
+};
+
+/**
+ * Writes a temp fixture equal to `codexSessionFixture` but whose agent
+ * message, its final answer, is `answer`, and returns its path.
+ */
+export async function codexFixtureAnswering(answer: string): Promise<string> {
+	const lines = (await Bun.file(codexSessionFixture).text())
+		.trimEnd()
+		.split("\n");
+	const events: CodexFixtureEvent[] = lines.map((line) => JSON.parse(line));
+	for (const event of events) {
+		if (event.item?.type === "agent_message") event.item.text = answer;
+	}
+	const dir = await mkdtemp(join(tmpdir(), "vago-fixture-"));
+	const path = join(dir, "codex-answer.jsonl");
+	await Bun.write(
+		path,
+		`${events.map((event) => JSON.stringify(event)).join("\n")}\n`,
+	);
+	return path;
+}
+
+// The fields of a Codex stream line `codexFixtureAnswering` edits.
+type CodexFixtureEvent = { item?: { type: string; text?: string } };

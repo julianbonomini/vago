@@ -5,11 +5,29 @@
 // argument parsing all come from its one entry in `commands`, and its `run`
 // reads what was given through that same entry's declarations.
 
-import { newGoal, newTicket, resetTicket, runGoal } from "./goal-runner.ts";
+import {
+	acceptProposal,
+	newGoal,
+	newTicket,
+	resetTicket,
+	runGoal,
+} from "./goal-runner.ts";
 import { initProject, updateProject } from "./init.ts";
+import {
+	planNewGoal,
+	retryPlanningResponse,
+	sendPlanningMessage,
+} from "./planning-runner.ts";
 import { printGoalReport } from "./progress.ts";
 import { readRunOutput } from "./step-runner.ts";
-import { readGoal, readGoalBody } from "./tickets/tickets.ts";
+import {
+	discardPlanningItem,
+	readGoal,
+	readGoalBody,
+	recordPlanningWorkflow,
+	renamePlanningItem,
+} from "./tickets/tickets.ts";
+import { listWorkflows } from "./workflow.ts";
 import { projectRoot } from "./worktree.ts";
 
 /** One positional argument, such as `<goal>`. */
@@ -111,6 +129,34 @@ const ticketNumber: Operand = {
 	digits: true,
 };
 
+const newPlanningName: Operand = {
+	name: "<name>",
+	meaning:
+		"The planning item's name, which the Goal keeps unless it is renamed.",
+};
+
+const planningName: Operand = {
+	name: "<name>",
+	meaning: "The planning item's name.",
+};
+
+const planningNewName: Operand = {
+	name: "<new-name>",
+	meaning: "The name it takes.",
+};
+
+const planningWorkflow: Operand = {
+	name: "<workflow>",
+	meaning: "The name of a Workflow in .vago/workflows/, without .toml.",
+};
+
+const messageFileFlag: RequiredFlag = {
+	name: "--body-file",
+	value: "<path>",
+	times: "once",
+	meaning: "Takes the message from this file, or from stdin when <path> is -.",
+};
+
 const workflowFlag: RequiredFlag = {
 	name: "--workflow",
 	value: "<name>",
@@ -134,6 +180,14 @@ const blockedByFlag: RepeatedFlag = {
 	meaning:
 		"The number of a Ticket that must be done before this one runs. Repeat it for each blocker.",
 	digits: true,
+};
+
+const planningHarnessFlag: OptionalFlag = {
+	name: "--harness",
+	value: "<name>",
+	times: "at most once",
+	meaning:
+		"The Harness the planning agent runs on, claude-code or codex. Without it, claude-code when its claude is on PATH, else codex when its codex is.",
 };
 
 const bodyFileFlag: OptionalFlag = {
@@ -238,6 +292,152 @@ how long they took and what they cost, ready to paste into a PR description.`,
 				}
 			}
 			printGoalReport(await readGoalBody(root, goal), state, outputs);
+			return 0;
+		},
+	},
+	{
+		name: "plan new",
+		summary: "Start planning a Goal",
+		description: `Makes a planning item, a Goal still being planned, and prints its folder. It
+shows in the TUI's Goals list as planning. Its agent runs on the Harness
+chosen here for every message, whatever Harness the accepted Goal's Workflow
+uses. It makes no Goal and no Ticket, so vago run doesn't find it. It refuses
+a name a Goal or planning item has.`,
+		operands: [newPlanningName],
+		flags: [planningHarnessFlag],
+		example: "vago plan new search --harness codex",
+		run: async (root, given) => {
+			console.log(
+				await planNewGoal(
+					root,
+					given.operand(newPlanningName),
+					given.optionalFlag(planningHarnessFlag),
+				),
+			);
+			return 0;
+		},
+	},
+	{
+		name: "plan rename",
+		summary: "Rename a planning item",
+		description: `Gives a planning item a new name, keeping everything it holds. It refuses a
+Goal, a name a Goal or planning item has, and an item while a response to it
+is being written.`,
+		operands: [planningName, planningNewName],
+		flags: [],
+		example: "vago plan rename search ranked-search",
+		run: async (root, given) => {
+			await renamePlanningItem(
+				root,
+				given.operand(planningName),
+				given.operand(planningNewName),
+			);
+			return 0;
+		},
+	},
+	{
+		name: "plan say",
+		summary: "Send a planning item's agent a message and print its answer",
+		description: `Sends the message to the agent of the planning item's chat and prints its
+answer. The first message starts the agent on .vago/prompts/planning.md in
+this repo; later ones continue the same conversation. The agent can read the
+repo but not change a file in it. The answer may end with the agent's
+proposal, a <vago-plan> block, which Vago saves in the item's planning/
+folder; no Goal or Ticket file is written before the proposal is accepted.
+Exits 1 with the reason when the response fails. It refuses a Goal, an empty
+message, and an item while another response to it is being written. After an
+interrupted response, the message starts a new turn; vago plan retry answers
+the interrupted one instead.`,
+		operands: [planningName],
+		flags: [messageFileFlag],
+		example: "vago plan say search --body-file -",
+		run: async (root, given) => {
+			const message = await readBodyFile(given.requiredFlag(messageFileFlag));
+			const response = await sendPlanningMessage(
+				root,
+				given.operand(planningName),
+				message ?? "",
+			);
+			if (response.outcome === "failed") {
+				console.error(`vago: ${response.reason}`);
+				return 1;
+			}
+			console.log(response.answer);
+			return 0;
+		},
+	},
+	{
+		name: "plan retry",
+		summary: "Answer a planning item's interrupted response again",
+		description: `Answers the planning item's last response again when it was interrupted, such
+as by its vago being stopped or the machine restarting, and prints the answer.
+The response stays in the same turn: the message isn't sent as a new one.
+Exits 1 with the reason when the response fails. It refuses an item whose last
+response wasn't interrupted, or while another response to the item is being
+written.`,
+		operands: [planningName],
+		flags: [],
+		example: "vago plan retry search",
+		run: async (root, given) => {
+			const response = await retryPlanningResponse(
+				root,
+				given.operand(planningName),
+			);
+			if (response.outcome === "failed") {
+				console.error(`vago: ${response.reason}`);
+				return 1;
+			}
+			console.log(response.answer);
+			return 0;
+		},
+	},
+	{
+		name: "plan workflow",
+		summary: "Choose the Workflow a planning item's Goal goes through",
+		description: `Records the Workflow the planning item's Goal will go through once accepted.
+The choice wins over the agent's recommendation and stays through every
+revision of the proposal. It refuses a Workflow that isn't in
+.vago/workflows/, naming the ones that are.`,
+		operands: [planningName, planningWorkflow],
+		flags: [],
+		example: "vago plan workflow search try-hard",
+		run: async (root, given) => {
+			await recordPlanningWorkflow(
+				root,
+				given.operand(planningName),
+				given.operand(planningWorkflow),
+				await listWorkflows(root),
+			);
+			return 0;
+		},
+	},
+	{
+		name: "plan accept",
+		summary: "Accept a planning item's proposal as a ready Goal",
+		description: `Turns the planning item into a ready Goal with its proposed Tickets, all at
+once, and prints the path of its goal.md. It refuses, creating nothing, when
+the proposal isn't ready to accept, vago run would refuse its Workflow, a
+response is still being written or the last one was interrupted, or the item
+was already accepted. It starts nothing: vago run does.`,
+		operands: [planningName],
+		flags: [],
+		example: "vago plan accept search",
+		run: async (root, given) => {
+			console.log(await acceptProposal(root, given.operand(planningName)));
+			return 0;
+		},
+	},
+	{
+		name: "plan discard",
+		summary: "Remove a planning item and everything it holds",
+		description: `Removes a planning item and everything saved with it. A response to the item
+still being written is stopped first. It refuses a Goal, which it never
+removes.`,
+		operands: [planningName],
+		flags: [],
+		example: "vago plan discard search",
+		run: async (root, given) => {
+			await discardPlanningItem(root, given.operand(planningName));
 			return 0;
 		},
 	},

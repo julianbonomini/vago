@@ -61,7 +61,8 @@ export function KeyFooter(props: {
 					</For>
 				}
 			>
-				{(notice: () => string) => fitText(notice(), props.width)}
+				{/* In JSX, so the text follows a notice changed straight to another. */}
+				{(notice: () => string) => <>{fitText(notice(), props.width)}</>}
 			</Show>
 		</text>
 	);

@@ -44,6 +44,34 @@ _Avoid_: mission, epic, initiative
 An outcome the human wants for a Project, from a one-Ticket feature to a whole app launch; done when all its Tickets are done. Goals do not nest.
 _Avoid_: epic, mission
 
+**Planning item**:
+A Goal still being planned: a folder in `.vago-goals/` with a `planning/` folder and no `goal.md`. It shows in the Goals list as `planning`, with its _planning activity_, and has a name the human may change, and can be discarded. It is no Goal: `vago run` doesn't find it, and it has no Workflow, Tickets or Runs. It holds its planning chat, whose agent runs on the Harness chosen when the item is made, Claude Code or Codex, Claude Code by default when it is installed; the accepted Goal's Workflow picks its own Harnesses. Accepting it writes its `goal.md`, which turns it into a Goal that keeps its `planning/` folder.
+_Avoid_: draft, idea
+
+**Planning activity**:
+What a planning item's chat is doing or waiting for, as the Goals list says it: no chat yet, the agent working, waiting for the human's reply, a Proposal ready to accept, a response that failed, or one interrupted.
+_Avoid_: status (a Ticket's), state
+
+**Planning chat**:
+A planning item's conversation with its planning agent, saved under its `planning/` folder and continued across TUI sessions. It is read-only once the item is accepted, and still readable from the Goal.
+_Avoid_: session, thread
+
+**Proposal**:
+The Goal, ordered Tickets with their blockers, and recommended Workflow that a planning item's agent proposed last, with the human's Workflow choice. A revision replaces it. It is _ready to accept_ when nothing in it would stop acceptance; decisions still open don't.
+_Avoid_: plan, draft, preview (the pane that shows it)
+
+**Accept**:
+Turns a planning item whose Proposal is ready to accept into a ready Goal with ready Tickets, all at once. It starts nothing, and the planning chat stays with the Goal, read-only.
+_Avoid_: approve, commit, publish
+
+**Planning turn**:
+One message the human sends a planning item's agent and the agent's response to it. It is not a Run: it belongs to no Step, Ticket or Goal. Its response is _interrupted_ when the `vago` writing it stops before it ends; the turn keeps the conversation. Its time and cost add up to the planning chat's _planning cost_, which stays apart from the build Runs: no Goal's run time or cost, the Project's spend or a Goal report counts it.
+_Avoid_: Run, exchange
+
+**Retry response**:
+The human asking a planning item's agent to answer an interrupted Planning turn again, in the same turn. It is not a Retry, which `vago run` starts by itself for an agent Step.
+_Avoid_: resend, rerun
+
 **Run**:
 One Harness session performing one agent Step on one Ticket, or for the Goal in a Goal Step, such as implement, review or discuss; a Ticket usually takes several.
 _Avoid_: session, job, attempt

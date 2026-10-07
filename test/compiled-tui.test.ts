@@ -5,6 +5,7 @@ import { beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
+import { makeFakeClaude, planningFixture } from "./fake-harness.ts";
 import {
 	goalText,
 	heldLock,
@@ -37,6 +38,8 @@ type TerminalVago = {
 	screen: TerminalScreen;
 	press(keys: string): void;
 	kill(signal: NodeJS.Signals): void;
+	/** Closes the pseudo-terminal, as closing the human's terminal window does. */
+	closeTerminal(): void;
 	exited: Promise<number>;
 };
 
@@ -62,6 +65,7 @@ function openVago(cwd: string, env: Record<string, string> = {}): TerminalVago {
 		screen,
 		press: (keys) => child.terminal?.write(keys),
 		kill: (signal) => child.kill(signal),
+		closeTerminal: () => child.terminal?.close(),
 		exited: child.exited.finally(() => clearTimeout(timer)),
 	};
 }
@@ -121,6 +125,22 @@ test("q quits and gives the terminal back", async () => {
 	expect(restoresTerminal(tui.screen.printed(), drawn)).toBe(true);
 });
 
+test("q types in a name's field, and quits again once the field closes", async () => {
+	const tui = await openOnGoals();
+
+	tui.press("n");
+	await tui.screen.frameWhere((lines) => rowOf(lines, "New Goal name:") !== -1);
+	tui.press("quick");
+	await tui.screen.frameWhere(
+		(lines) => rowOf(lines, "New Goal name: quick") !== -1,
+	);
+	tui.press("\x1b");
+	await tui.screen.frameWhere((lines) => rowOf(lines, "New Goal name:") === -1);
+	tui.press("q");
+
+	expect(await tui.exited).toBe(0);
+});
+
 test("Ctrl-C quits and gives the terminal back", async () => {
 	const tui = await openOnGoals();
 	const drawn = tui.screen.printed().length;
@@ -129,6 +149,22 @@ test("Ctrl-C quits and gives the terminal back", async () => {
 
 	expect(await tui.exited).toBe(0);
 	expect(restoresTerminal(tui.screen.printed(), drawn)).toBe(true);
+});
+
+test("q types into a planning item's chat field, and Ctrl-C still quits", async () => {
+	const root = await makeProject({ ".vago-goals/search/planning/.keep": "" });
+	const tui = openVago(root);
+	await tui.screen.frameWhere((lines) => goalsAt(lines, "1/1") !== -1);
+	tui.press("\r");
+	await tui.screen.frameWhere(
+		(lines) => rowOf(lines, "No messages yet.") !== -1,
+	);
+
+	tui.press("quiet");
+
+	await tui.screen.frameWhere((lines) => rowOf(lines, "> quiet") !== -1);
+	tui.press("\x03");
+	expect(await tui.exited).toBe(0);
 });
 
 test("SIGTERM ends vago and gives the terminal back", async () => {
@@ -315,4 +351,49 @@ test("a Goal started with s keeps running after q, and its output stays off the 
 	}
 	// The first line `vago run` prints.
 	expect(tui.screen.printed()).not.toContain("Worktree ");
+});
+
+test("a planning message sent before the terminal closes still gets its answer", async () => {
+	const root = await makeProject({
+		".vago/prompts/planning.md": "You help plan a Goal.\n",
+		".vago-goals/a/planning/.keep": "",
+	});
+	const fake = await makeFakeClaude("sleep 2; exit 0", planningFixture);
+	const tui = openVago(root, fake.env);
+	await tui.screen.frameWhere((lines) => goalsAt(lines, "1/1") !== -1);
+	tui.press("\r");
+	await tui.screen.frameWhere(
+		(lines) => rowOf(lines, "No messages yet.") !== -1,
+	);
+	tui.press("What should search rank by?");
+	await tui.screen.frameWhere(
+		(lines) => rowOf(lines, "> What should search rank by?") !== -1,
+	);
+
+	tui.press("\r");
+	await tui.screen.frameWhere(
+		(lines) => rowOf(lines, "still answering") !== -1,
+	);
+	tui.closeTerminal();
+
+	await tui.exited;
+	const chat = join(root, ".vago-goals/a/planning/chat.toml");
+	for (
+		let tries = 0;
+		// Not there until `vago plan say` records the turn.
+		!(
+			await Bun.file(chat)
+				.text()
+				.catch(() => "")
+		).includes('outcome = "ok"');
+		tries++
+	) {
+		if (tries === 100) throw new Error("The response never ended ok");
+		await Bun.sleep(100);
+	}
+	const log = await Bun.file(
+		join(root, ".vago-goals/a/planning/logs/turn-01.jsonl"),
+	).text();
+	expect(log).toContain("sorted by recency");
+	expect(await fake.calls()).toHaveLength(1);
 });

@@ -1,20 +1,26 @@
-// What the Project view knows of each Goal: its standing, the "now" phrase
-// saying what it is doing or waiting for, how many Tickets it has, its
-// run time, tokens and cost, the order of the rows, the header line's
-// totals, what the preview shows of the selected Goal, and the Tickets the
-// Goal view shows of it. Hides the rules behind each.
+// What the Project view knows of each Goal and planning item: its
+// standing, the "now" phrase saying what it is doing or waiting for, how
+// many Tickets it has, its run time, tokens and cost, the order of the
+// rows, the header line's totals, what the preview shows of the selected
+// Goal, and the Tickets the Goal view shows of it. Hides the rules behind
+// each.
 
 import { sep } from "node:path";
 import {
 	type GoalState,
 	isGoalClaimed,
 	listGoals,
+	listPlanningItems,
+	type PlanningChat,
+	type PlanningProposal,
 	readGoal,
+	readPlanningChat,
+	readPlanningProposal,
 	runLogLastWritten,
 	type TicketRun,
 	type TicketStatus,
 } from "../tickets/tickets.ts";
-import { readWorkflowStepNames } from "../workflow.ts";
+import { listWorkflows, readWorkflowStepNames } from "../workflow.ts";
 import {
 	type GoalTicket,
 	type GoalTicketMark,
@@ -25,13 +31,14 @@ import { joinParagraphs } from "./text-fit.ts";
 
 /**
  * A Goal's state as the Goals list shows it. `broken` is a Goal whose files
- * can't be read.
+ * can't be read, and `planning` a planning item, a Goal still being planned.
  */
 export type GoalStanding =
 	| "running"
 	| "lost"
 	| "stuck"
 	| "broken"
+	| "planning"
 	| "ready"
 	| "done";
 
@@ -50,6 +57,7 @@ export function ticketTotal(tickets: GoalTicketCounts): number {
 
 /** One row of the Goals table, with what the preview shows of its Goal. */
 export type GoalRow = {
+	/** The Goal's name, or the planning item's. */
 	goal: string;
 	standing: GoalStanding;
 	/** From goal.md's first heading. */
@@ -66,10 +74,14 @@ export type GoalRow = {
 	costUsd: number;
 	/**
 	 * What the Goal is doing or waiting for, like `04 review`; for a broken
-	 * Goal, why its files can't be read.
+	 * Goal, why its files can't be read; for a planning item, its planning
+	 * activity, like `proposal ready`.
 	 */
 	now: string;
-	/** The Workflow the Goal's header names; `unknown` for a broken Goal. */
+	/**
+	 * The Workflow the Goal's header names; `unknown` for a broken Goal and
+	 * `not chosen` for a planning item.
+	 */
 	workflow: string;
 	/**
 	 * When the Goal was created; undefined for a broken Goal or one made
@@ -93,6 +105,8 @@ export type GoalRow = {
 	 * broken Goal, why its files can't be read.
 	 */
 	description: string[];
+	/** Whether the Goal was accepted from a planning item, whose chat it keeps. */
+	planned: boolean;
 };
 
 /** The Runs of one Workflow Step summed over every Ticket of a Goal. */
@@ -106,10 +120,11 @@ export type GoalStepTotal = {
 };
 
 /**
- * Every Goal of the Project at `root` as a row, sorted running, lost, stuck,
- * broken, ready, done, then latest activity first, then name. A live Run's
- * time runs to `now`. A Goal `readGoal` can't read is a broken row saying
- * why, with paths relative to `root`. Throws what `listGoals` throws.
+ * Every Goal and planning item of the Project at `root` as a row, sorted
+ * running, lost, stuck, broken, planning, ready, done, then latest activity
+ * first, then name. A live Run's time runs to `now`. A Goal `readGoal` can't
+ * read is a broken row saying why, with paths relative to `root`. Throws
+ * what `listGoals` throws.
  */
 export async function readGoalRows(
 	root: string,
@@ -141,6 +156,13 @@ export async function readGoalRows(
 			};
 		}),
 	);
+	const items = await listPlanningItems(root);
+	if (items.length > 0) {
+		const workflows = await listWorkflows(root);
+		for (const item of items) {
+			read.push(await readPlanningRow(root, item, workflows));
+		}
+	}
 	// A Goal with no activity sorts after the rest of its standing, and the
 	// name breaks ties so the order holds from one read to the next.
 	read.sort(
@@ -195,9 +217,11 @@ async function readOpenLogsLastWritten(
 	return written;
 }
 
-// What `error` says, its paths relative to the Project at `root`, so it
-// fits the screen.
-function projectMessage(error: unknown, root: string): string {
+/**
+ * What `error` says, its paths relative to the Project at `root`, so it
+ * fits the screen.
+ */
+export function projectMessage(error: unknown, root: string): string {
 	return (error instanceof Error ? error.message : `${error}`)
 		.replaceAll(`${root}${sep}`, "")
 		.trim();
@@ -231,6 +255,7 @@ const standingOrder: GoalStanding[] = [
 	"lost",
 	"stuck",
 	"broken",
+	"planning",
 	"ready",
 	"done",
 ];
@@ -253,6 +278,74 @@ function brokenRow(goal: string, message: string): GoalRow {
 		tickets: [],
 		stepTotals: [],
 		description: joinParagraphs(message),
+		planned: false,
+	};
+}
+
+// The row of planning item `item` of the Project at `root`, whose
+// Workflows are named `workflows`: its "now" says what its chat is doing or
+// waiting for, or why it can't be read, and `last` when its last response
+// started or ended. Its agent's time and cost stay out of the row, which
+// counts build Runs only.
+async function readPlanningRow(
+	root: string,
+	item: string,
+	workflows: string[],
+): Promise<{ row: GoalRow; last: Date | undefined }> {
+	try {
+		const chat = await readPlanningChat(root, item);
+		const proposal = await readPlanningProposal(root, item, workflows);
+		const turn = chat.turns.at(-1);
+		return {
+			row: planningRow(item, planningNow(chat, proposal)),
+			last: turn?.endedAt ?? turn?.startedAt,
+		};
+	} catch (error) {
+		const message = projectMessage(error, root).replace(/\s+/g, " ");
+		return { row: planningRow(item, message), last: undefined };
+	}
+}
+
+// What the chat of a planning item with `proposal` is doing or waiting for:
+// its agent writing a response, or the human, to send the first message,
+// retry a response that stopped, answer after one that failed, reply, or
+// accept a Proposal that is ready.
+function planningNow(
+	chat: PlanningChat,
+	proposal: PlanningProposal | undefined,
+): string {
+	const last = chat.turns.at(-1);
+	if (last === undefined) return "no chat yet";
+	const { outcome } = last;
+	if (outcome === undefined) return "agent working";
+	if (outcome === "interrupted") return "response interrupted";
+	if (outcome !== "ok") return "response failed";
+	return proposal?.problems.length === 0
+		? "proposal ready"
+		: "waiting for your reply";
+}
+
+// The row of planning item `item`, which has no Workflow, Tickets or Runs
+// yet, its "now" saying `now`.
+function planningRow(item: string, now: string): GoalRow {
+	return {
+		goal: item,
+		standing: "planning",
+		title: "",
+		ticketCounts: { done: 0, running: 0, stuck: 0, ready: 0 },
+		runMs: 0,
+		tokens: 0,
+		costUsd: 0,
+		now,
+		workflow: "not chosen",
+		created: undefined,
+		sinceLastActivityMs: undefined,
+		tickets: [],
+		stepTotals: [],
+		description: [
+			"A Goal still being planned, with no Workflow or Tickets yet.",
+		],
+		planned: false,
 	};
 }
 
@@ -293,6 +386,7 @@ function goalRow(
 		tickets,
 		stepTotals: stepTotals(tickets),
 		description: joinParagraphs(state.description),
+		planned: state.planned,
 	};
 }
 

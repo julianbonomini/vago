@@ -1,13 +1,19 @@
-// Runs one Step for a Ticket or for the Goal as one Run: the only module
-// that spawns a Step's process. Hides how the Run is recorded and announced,
-// how a Step's command is spawned, how a Harness's stream is read and how
-// output reaches the log.
+// Runs one Step for a Ticket or for the Goal as one Run, and a read-only
+// Harness session such as a planning turn's: the only module that spawns a
+// Step's or an agent's process. Hides how the Run is recorded and
+// announced, how a command is spawned, how a Harness's stream is read and
+// how output reaches the log.
 
 import { closeSync, openSync, writeSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
-import { findHarness, type HarnessSessionReport } from "./harness/registry.ts";
+import {
+	findHarness,
+	type Harness,
+	type HarnessSessionReport,
+} from "./harness/registry.ts";
 import { printStepEnded, printStepStarted } from "./progress.ts";
+import { withoutWritesUnder } from "./sandbox.ts";
 import {
 	isLastTicket,
 	type RunOwner,
@@ -98,12 +104,7 @@ export async function runStep(
 	// One descriptor for both streams keeps stdout and stderr in the order the
 	// Step wrote them, which two separate pipes can't promise.
 	const fd = openSync(entry.log, "w");
-	// The Step runs in its own process group, out of reach of the terminal's
-	// Ctrl-C, so `vago` takes the signal and kills the group itself.
-	const interrupt = new AbortController();
-	const interruptRun = () => interrupt.abort();
-	process.on("SIGINT", interruptRun);
-	process.on("SIGTERM", interruptRun);
+	const interrupt = interruptOnSignal();
 	let outcome: RunOutcome;
 	let output: string;
 	let session: HarnessSessionReport | undefined;
@@ -155,8 +156,7 @@ export async function runStep(
 			output = shellOutput(code, await Bun.file(entry.log).text());
 		}
 	} finally {
-		process.off("SIGINT", interruptRun);
-		process.off("SIGTERM", interruptRun);
+		interrupt.release();
 		closeSync(fd);
 	}
 	if (interrupt.signal.aborted) outcome = { kind: "interrupted" };
@@ -198,6 +198,80 @@ export async function readRunOutput(
 	return resultText ?? "";
 }
 
+/** A read-only Harness session to run. */
+export type ReadOnlySession = {
+	harness: string;
+	model: string;
+	/** The session to resume; a fresh one when absent. */
+	resume?: string;
+	/** What the session reads on stdin. */
+	input: string;
+	/** The working directory, which nothing the session starts can write under. */
+	folder: string;
+	/** Absolute path of the log that gets the stream and stderr. */
+	log: string;
+};
+
+/**
+ * Runs `session` and waits for it to end. `onSessionId` gets the session's
+ * id as soon as the Harness reports it. A tool call the Harness refuses
+ * doesn't fail it. SIGINT or SIGTERM stops every process it started and
+ * ends it `interrupted`. No idle timeout, and no fallback when a resume
+ * fails to start: that ends it `exit N`. Throws, naming what to install,
+ * when the Harness's program isn't on `PATH`, and as `withoutWritesUnder`
+ * does.
+ */
+export async function runReadOnlySession(
+	session: ReadOnlySession,
+	onSessionId: (sessionId: string) => Promise<void>,
+): Promise<{ outcome: RunOutcome; report: HarnessSessionReport }> {
+	const harness = findHarness(session.harness);
+	// Checked here: inside the sandbox a missing program reads only as the
+	// sandbox's exit code.
+	if (Bun.which(harness.program) === null) {
+		throw new Error(
+			`${harness.program} isn't on PATH, so no ${harness.title} session can start; install ${harness.title} or put ${harness.program} on PATH`,
+		);
+	}
+	const command =
+		session.resume === undefined
+			? harness.readOnlyCommand(session.model)
+			: harness.readOnlyResumeCommand(session.resume, session.model);
+	// The Harness's own read-only tools are one guard; the sandbox is the one
+	// that holds even when the Harness lets a write through.
+	const spawned = await withoutWritesUnder(session.folder, command);
+	await mkdir(dirname(session.log), { recursive: true });
+	const fd = openSync(session.log, "w");
+	const interrupt = interruptOnSignal();
+	let ran: HarnessSessionRun;
+	try {
+		ran = await runSession({
+			harness,
+			command,
+			spawned,
+			stdin: session.input,
+			cwd: session.folder,
+			fd,
+			interrupt: interrupt.signal,
+			idleTimeoutMs: undefined,
+			onSessionId,
+		});
+	} finally {
+		interrupt.release();
+		closeSync(fd);
+	}
+	const { session: report, code } = ran;
+	let outcome: RunOutcome;
+	if (interrupt.signal.aborted) {
+		outcome = { kind: "interrupted" };
+	} else if (report.permissionModeFallback !== undefined) {
+		outcome = { kind: "permission-mode", mode: report.permissionModeFallback };
+	} else {
+		outcome = outcomeOf(code);
+	}
+	return { outcome, report };
+}
+
 // What a resumed session is handed in place of the Step's prompt.
 const continueMessage =
 	"You were interrupted. Continue the task from where you stopped; check the working tree first.\n";
@@ -222,15 +296,18 @@ async function runAgent(
 	const harness = findHarness(step.harness);
 	let ran: HarnessSessionRun | undefined;
 	if (resumes !== undefined) {
-		ran = await runSession(
-			harness.resumeCommand(resumes, step.model, step.args),
-			continueMessage,
-			step,
-			entry,
-			worktree,
+		const command = harness.resumeCommand(resumes, step.model, step.args);
+		ran = await runSession({
+			harness,
+			command,
+			spawned: command,
+			stdin: continueMessage,
+			cwd: worktree,
 			fd,
 			interrupt,
-		);
+			idleTimeoutMs: step.idleTimeoutMs,
+			onSessionId: (sessionId) => recordRunSession(entry, sessionId),
+		});
 		if (
 			ran.session.sessionId === undefined &&
 			!ran.idleTimedOut &&
@@ -254,15 +331,18 @@ async function runAgent(
 			goalName: goal,
 			stepOutputs,
 		});
-		ran = await runSession(
-			harness.command(step.model, step.args),
-			prompt,
-			step,
-			entry,
-			worktree,
+		const command = harness.command(step.model, step.args);
+		ran = await runSession({
+			harness,
+			command,
+			spawned: command,
+			stdin: prompt,
+			cwd: worktree,
 			fd,
 			interrupt,
-		);
+			idleTimeoutMs: step.idleTimeoutMs,
+			onSessionId: (sessionId) => recordRunSession(entry, sessionId),
+		});
 	}
 	const { session, code, idleTimedOut } = ran;
 	// A session out of the mode asked for is why its calls were denied, so
@@ -294,47 +374,61 @@ type HarnessSessionRun = {
 	idleTimedOut: boolean;
 };
 
-// Spawns `command`, a Harness session of `step`, with `stdin` as its input,
-// and waits for it to end. The log gets the raw stream and stderr together,
-// so a Harness that fails before streaming (bad login, unknown model) still
-// leaves its reason there. The session id goes to `entry` as soon as the
-// Harness reports it, so a Run still going, or one whose `vago` died, can be
-// resumed.
+// A Harness session for `runSession` to spawn.
+type HarnessSessionSpawn = {
+	harness: Harness;
+	/** The Harness's argv, which its stream lines are read against. */
+	command: string[];
+	/** What is spawned: `command`, or `command` wrapped in a sandbox. */
+	spawned: string[];
+	stdin: string;
+	cwd: string;
+	/** The log's descriptor, which gets the raw stream and stderr. */
+	fd: number;
+	interrupt: AbortSignal;
+	/** How long the session may stream nothing; no limit when undefined. */
+	idleTimeoutMs: number | undefined;
+	/** Gets the session's id as soon as the Harness reports it. */
+	onSessionId: (sessionId: string) => Promise<void>;
+};
+
+// Spawns `session` and waits for it to end. The log gets the raw stream and
+// stderr together, so a Harness that fails before streaming (bad login,
+// unknown model) still leaves its reason there. The session id goes to
+// `onSessionId` as soon as the Harness reports it, so a session still going,
+// or one whose `vago` died, can be resumed.
 async function runSession(
-	command: string[],
-	stdin: string,
-	step: AgentStep,
-	entry: TicketRunEntry,
-	worktree: string,
-	fd: number,
-	interrupt: AbortSignal,
+	session: HarnessSessionSpawn,
 ): Promise<HarnessSessionRun> {
-	const harness = findHarness(step.harness);
-	const child = Bun.spawn(command, {
-		cwd: worktree,
-		stdin: new Blob([stdin]),
+	const { harness, command, fd, idleTimeoutMs } = session;
+	const child = Bun.spawn(session.spawned, {
+		cwd: session.cwd,
+		stdin: new Blob([session.stdin]),
 		stdout: "pipe",
 		stderr: fd,
 		detached: true,
 	});
 	const idle = new AbortController();
-	const exit = exitCodeOf(child, AbortSignal.any([interrupt, idle.signal]));
-	const idleTimer = setTimeout(() => idle.abort(), step.idleTimeoutMs);
-	let session: HarnessSessionReport = {};
+	const exit = exitCodeOf(
+		child,
+		AbortSignal.any([session.interrupt, idle.signal]),
+	);
+	const idleTimer =
+		idleTimeoutMs === undefined
+			? undefined
+			: setTimeout(() => idle.abort(), idleTimeoutMs);
+	let report: HarnessSessionReport = {};
 	const readLine = async (line: string) => {
-		const report = harness.readLine(line, command);
-		if (
-			report.sessionId !== undefined &&
-			report.sessionId !== session.sessionId
-		) {
-			await recordRunSession(entry, report.sessionId);
+		const read = harness.readLine(line, command);
+		if (read.sessionId !== undefined && read.sessionId !== report.sessionId) {
+			await session.onSessionId(read.sessionId);
 		}
-		session = { ...session, ...report };
+		report = { ...report, ...read };
 	};
 	const decoder = new TextDecoder();
 	let partial = "";
 	for await (const chunk of child.stdout) {
-		idleTimer.refresh();
+		idleTimer?.refresh();
 		// Written as it arrives, so `tail -f` on the log follows the Run live.
 		writeSync(fd, chunk);
 		const lines = (partial + decoder.decode(chunk, { stream: true })).split(
@@ -346,7 +440,24 @@ async function runSession(
 	clearTimeout(idleTimer);
 	await readLine(partial + decoder.decode());
 	const code = await exit;
-	return { session, code, idleTimedOut: idle.signal.aborted };
+	return { session: report, code, idleTimedOut: idle.signal.aborted };
+}
+
+// A signal that aborts on SIGINT or SIGTERM until `release` is called. A
+// session or command runs in its own process group, out of reach of the
+// terminal's Ctrl-C, so `vago` takes the signal and stops the group itself.
+function interruptOnSignal(): { signal: AbortSignal; release: () => void } {
+	const interrupt = new AbortController();
+	const abort = () => interrupt.abort();
+	process.on("SIGINT", abort);
+	process.on("SIGTERM", abort);
+	return {
+		signal: interrupt.signal,
+		release: () => {
+			process.off("SIGINT", abort);
+			process.off("SIGTERM", abort);
+		},
+	};
 }
 
 /**

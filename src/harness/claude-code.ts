@@ -159,23 +159,27 @@ const ToolUseBlock = z.object({
 	input: ToolInput.catch({}),
 });
 
+const program = "claude";
+
 /**
  * Claude Code, run headless in its `auto` permission mode unless the Step's
  * `args` choose another. Its stream reports a fallback from the mode asked
  * for and every tool call Claude Code refused.
  */
 export const claudeCode: HarnessCli = {
+	title: "Claude Code",
+	program,
 	command(model, args) {
-		return ["claude", "-p", ...sessionFlags(model, args)];
+		return [program, "-p", ...sessionFlags(model, args)];
 	},
 	resumeCommand(sessionId, model, args) {
-		return [
-			"claude",
-			"-p",
-			"--resume",
-			sessionId,
-			...sessionFlags(model, args),
-		];
+		return [program, "-p", "--resume", sessionId, ...sessionFlags(model, args)];
+	},
+	readOnlyCommand(model) {
+		return [program, "-p", ...readOnlyFlags(model)];
+	},
+	readOnlyResumeCommand(sessionId, model) {
+		return [program, "-p", "--resume", sessionId, ...readOnlyFlags(model)];
 	},
 	events(line, command) {
 		const event = parseJson(line);
@@ -248,6 +252,25 @@ function sessionFlags(model: string, args: readonly string[]): string[] {
 		"--model",
 		model,
 		...args,
+	];
+}
+
+// What a read-only session runs with: only tools that read files or load a
+// Skill, and `dontAsk`, which refuses any call those tools don't cover
+// rather than wait for a human. No MCP server either, since one can change
+// things the tools list doesn't name.
+function readOnlyFlags(model: string): string[] {
+	return [
+		"--output-format",
+		"stream-json",
+		"--verbose",
+		"--permission-mode",
+		"dontAsk",
+		"--strict-mcp-config",
+		"--tools",
+		"Read,Grep,Glob,Skill",
+		"--model",
+		model,
 	];
 }
 

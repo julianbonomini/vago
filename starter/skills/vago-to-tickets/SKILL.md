@@ -1,7 +1,6 @@
 ---
 name: vago-to-tickets
 description: Break a Vago Goal into a set of tracer-bullet Tickets, each declaring its blocking edges, written with the vago CLI and ready for `vago run`.
-disable-model-invocation: true
 ---
 
 # To Tickets
@@ -9,6 +8,10 @@ disable-model-invocation: true
 Break a Vago Goal into a set of **Tickets**: tracer-bullet vertical slices, each declaring the Tickets that **block** it.
 
 Vago takes the Tickets through the Goal's Workflow with no human present, one at a time, the lowest-numbered ready Ticket first. Every agent Step of a Ticket reads the Goal and that Ticket, and nothing of the other Tickets. A stuck Ticket stops the Goal.
+
+## In a Vago planning chat
+
+When you plan a Goal in a Vago planning chat, the planning instructions you started from describe a proposal block. Put each Ticket from the template below in that block's `tickets`, in dependency order, with its blockers in `blocked_by`, as those instructions say. Don't run `vago` and don't write files: Vago saves the proposal, and the human accepts it. The steps below are for a chat outside Vago.
 
 ## Process
 

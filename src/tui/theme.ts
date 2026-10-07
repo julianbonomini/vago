@@ -35,7 +35,7 @@ export type ThemeColors = {
 };
 
 /**
- * The symbols. The keys for the six Goal standings are the standing words,
+ * The symbols. The keys for the seven Goal standings are the standing words,
  * so `symbol[standing]` is a standing's symbol. `blocked` is a ready Ticket
  * waiting on a blocker, `pending` a Step not run yet in a Ticket's pass,
  * `bar` one cell of a progress bar, `sep` the mark between items on a line,
@@ -52,6 +52,7 @@ export type ThemeSymbols = {
 	stuck: string;
 	lost: string;
 	broken: string;
+	planning: string;
 	blocked: string;
 	pending: string;
 	bar: string;
@@ -119,7 +120,7 @@ export function theme(): Theme {
 
 /**
  * The colour of a Goal's standing word and symbol: running accent, lost
- * warn, stuck and broken bad, ready fg, done ok.
+ * warn, stuck and broken bad, planning and ready fg, done ok.
  */
 export function goalColor(standing: GoalStanding): ColorInput {
 	const { color } = theme();
@@ -131,6 +132,7 @@ export function goalColor(standing: GoalStanding): ColorInput {
 		case "stuck":
 		case "broken":
 			return color.bad;
+		case "planning":
 		case "ready":
 			return color.fg;
 		case "done":
@@ -270,6 +272,7 @@ const glyphs: ThemeSymbols = {
 	stuck: "✗",
 	lost: "?",
 	broken: "!",
+	planning: "◇",
 	blocked: "◌",
 	pending: "·",
 	bar: "━",
@@ -291,6 +294,7 @@ const asciiGlyphs: ThemeSymbols = {
 	stuck: "x",
 	lost: "?",
 	broken: "!",
+	planning: "~",
 	blocked: "-",
 	pending: ".",
 	bar: "=",

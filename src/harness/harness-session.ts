@@ -21,6 +21,10 @@ import type {
  * resume hint. Turned into a `Harness` by `harnessFromCli`.
  */
 export type HarnessCli = {
+	/** As `Harness.title`. */
+	title: string;
+	/** As `Harness.program`. */
+	program: string;
 	/** As `Harness.command`. */
 	command(model: string, args: readonly string[]): string[];
 	/** As `Harness.resumeCommand`. */
@@ -29,6 +33,10 @@ export type HarnessCli = {
 		model: string,
 		args: readonly string[],
 	): string[];
+	/** As `Harness.readOnlyCommand`. */
+	readOnlyCommand(model: string): string[];
+	/** As `Harness.readOnlyResumeCommand`. */
+	readOnlyResumeCommand(sessionId: string, model: string): string[];
 	/**
 	 * The events one stream line carries, in the order it carries them; none
 	 * for a line that isn't a whole event the CLI knows. `command` is the
@@ -188,8 +196,12 @@ export type ModelPrice = {
 /** The `Harness` that drives `cli`, reading its stream through `cli.events`. */
 export function harnessFromCli(cli: HarnessCli): Harness {
 	return {
+		title: cli.title,
+		program: cli.program,
 		command: cli.command,
 		resumeCommand: cli.resumeCommand,
+		readOnlyCommand: cli.readOnlyCommand,
+		readOnlyResumeCommand: cli.readOnlyResumeCommand,
 		readLine: (line, command) =>
 			sessionReport(cli.events(line, command), cli.prices),
 		runActivity: (lines, root) =>

@@ -22,6 +22,9 @@ import goalReviewPrompt from "../starter/prompts/goal-review.md" with {
 import implementPrompt from "../starter/prompts/implement.md" with {
 	type: "text",
 };
+import planningPrompt from "../starter/prompts/planning.md" with {
+	type: "text",
+};
 import productPrompt from "../starter/prompts/product.md" with { type: "text" };
 import reviewPrompt from "../starter/prompts/review.md" with { type: "text" };
 import smallImplementPrompt from "../starter/prompts/small-implement.md" with {
@@ -41,6 +44,12 @@ import designModuleAposd from "../starter/skills/vago-design-module/aposd.md" wi
 	type: "text",
 };
 import designModuleSkill from "../starter/skills/vago-design-module/SKILL.md" with {
+	type: "text",
+};
+import grillingCredits from "../starter/skills/vago-grilling/CREDITS.md" with {
+	type: "text",
+};
+import grillingSkill from "../starter/skills/vago-grilling/SKILL.md" with {
 	type: "text",
 };
 import prCredits from "../starter/skills/vago-pr/CREDITS.md" with {
@@ -69,6 +78,8 @@ const skillFiles: Record<string, string> = {
 	"vago-check-red-flags/SKILL.md": checkRedFlagsSkill,
 	"vago-design-module/SKILL.md": designModuleSkill,
 	"vago-design-module/aposd.md": designModuleAposd,
+	"vago-grilling/CREDITS.md": grillingCredits,
+	"vago-grilling/SKILL.md": grillingSkill,
 	"vago-pr/CREDITS.md": prCredits,
 	"vago-pr/SKILL.md": prSkill,
 	"vago-to-goal/SKILL.md": toGoalSkill,
@@ -96,6 +107,7 @@ const starterFiles: Record<string, string> = {
 	".vago/prompts/small-review.md": smallReviewPrompt,
 	".vago/prompts/goal-review.md": goalReviewPrompt,
 	".vago/prompts/describe.md": describePrompt,
+	".vago/prompts/planning.md": planningPrompt,
 	".vago/scripts/branch.sh": branchScript,
 	".vago/scripts/merge.sh": mergeScript,
 	".vago/scripts/github.sh": githubScript,

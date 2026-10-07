@@ -29,14 +29,25 @@ const vago = [process.execPath, join(import.meta.dir, "..", "src", "cli.ts")];
 
 /**
  * The Project view of the Project at `root` in a test terminal of `size`,
- * destroyed after the test. It starts Goals with this checkout's `vago`.
+ * destroyed after the test. It starts Goals and planning turns with this
+ * checkout's `vago`, which gets `env` added to its environment, such as a
+ * fake Harness's `PATH`. `setEnv` can't do that: Bun starts a child with
+ * the environment this process started with. New Goal offers `harnesses`
+ * to plan on, the default first.
  */
 export async function renderView(
 	root: string,
 	size = { width: 80, height: 24 },
+	env: Record<string, string> = {},
+	harnesses = ["claude-code"],
 ): Promise<TestRendererSetup> {
+	const assignments = Object.entries(env).map(
+		([name, value]) => `${name}=${value}`,
+	);
+	const command =
+		assignments.length === 0 ? vago : ["env", ...assignments, ...vago];
 	const view = await testRender(
-		() => <ProjectView root={root} vago={vago} />,
+		() => <ProjectView root={root} vago={command} harnesses={harnesses} />,
 		size,
 	);
 	// Destroyed, so it doesn't keep drawing while the rest of the suite runs

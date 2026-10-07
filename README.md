@@ -42,14 +42,14 @@ vago init
 `vago init` copies the starter into `.vago/`:
 
 - `workflows/small.toml` and `workflows/try-hard.toml`, the two starter Workflows.
-- `prompts/`, the prompt of each agent Step.
+- `prompts/`, the prompt of each agent Step, and `planning.md`, the planning agent's instructions (see [Plan a Goal in the TUI](#plan-a-goal-in-the-tui)).
 - `scripts/branch.sh` and `scripts/merge.sh`, the git work of the `branch` and `merge` Steps.
 
-It also puts six skills into `.claude/skills/`, where Claude Code finds them, and the same six into `.agents/skills/`, where Codex finds them, so the starter prompts work on either Harness:
+It also puts seven skills into `.claude/skills/`, where Claude Code finds them, and the same seven into `.agents/skills/`, where Codex finds them, so the starter prompts work on either Harness:
 
 - `vago-write-code`, `vago-check-red-flags` and `vago-design-module` hold the design and code rules, from John Ousterhout's *A Philosophy of Software Design*. Each starter prompt names the ones its Step runs, and you can use them in your own sessions too.
 - `vago-pr` writes a PR body as a summary, evidence and merge danger. The `describe` Step runs it on the Goal's PR.
-- `vago-to-goal` and `vago-to-tickets` are for you, after a planning conversation: `/vago-to-goal` writes the conversation up as a Goal, and `/vago-to-tickets` slices that Goal into Tickets. They run only when you type their name.
+- `vago-grilling`, `vago-to-goal` and `vago-to-tickets` plan a Goal. The planning agent loads them as its work needs them. In a session of your own, `/vago-grilling` questions you about an idea, `/vago-to-goal` writes the conversation up as a Goal, and `/vago-to-tickets` slices that Goal into Tickets with the `vago` CLI.
 
 Before it writes anything, it asks `Commit the Workflow? [y/N]`. Answer `y` to leave `.vago/` and the skills for git, so everyone who clones the repo gets your Workflows. Any other answer adds `.vago/` and each skill's folder, in both places, to `.git/info/exclude`, so they stay in your checkout. Anything else in `.claude/` and `.agents/` stays as git saw it. Either way it adds `.vago-goals/`, where Goals and Tickets live, to `.git/info/exclude`.
 
@@ -133,6 +133,8 @@ Codex reports no cost, so Vago prices a Codex Run from its tokens and the model'
 
 ## Write a Goal and its Tickets
 
+You can plan a Goal and its Tickets with an agent in the TUI (see [Plan a Goal in the TUI](#plan-a-goal-in-the-tui)), or write them yourself with the CLI, as this section does.
+
 A Goal is an outcome you want, written in Markdown. Its Tickets are the units of work that get it done. Every agent Step sees the Goal's text and its Ticket's text in its prompt, so write them as you'd brief a developer: what to build, what done means, what's out of scope.
 
 Say you want search in your app, built in two parts where the second needs the first. Write the Goal to a file:
@@ -208,9 +210,29 @@ A Step ends `ok`, `exit <code>` for a shell Step or a Harness exiting non-zero, 
 
 ## Watch every Goal
 
-`vago` with no command, on a terminal, opens a full-screen view of every Goal of the Project: its state (running, lost, stuck, ready or done), a progress bar with its Tickets done of total, its run time (how long its Runs ran, pauses left out) and cost, and what it is doing or waiting for. The selected Goal's latest Runs and description show below the list. It reads `.vago-goals/` again every second, so you can leave it open while Goals run in other terminals. Its one action is `s`, which starts the selected Goal when it is ready, in a `vago run` of its own that keeps running after you quit the TUI. It stops and changes nothing.
+`vago` with no command, on a terminal, opens a full-screen view of every Goal of the Project: its state (running, lost, stuck, planning, ready or done), a progress bar with its Tickets done of total, its run time (how long its Runs ran, pauses left out) and cost, and what it is doing or waiting for. The selected Goal's latest Runs and description show below the list. It reads `.vago-goals/` again every second, so you can leave it open while Goals run in other terminals. `s` starts the selected Goal when it is ready, in a `vago run` of its own that keeps running after you quit the TUI. The TUI never stops a Goal or changes its Tickets; its other actions plan new Goals.
 
 A Goal shows as lost when one of its Tickets says `running` but no live `vago run` has the Goal; the next `vago run` picks that Ticket up at the Step it was on. Move with `↑↓` or `j k`, jump with `g` and `G`, open a Goal with Enter, start it with `s`, press `?` for the keys and `q` to quit. Set `NO_COLOR` to drop the colours and `VAGO_ASCII=1` for a terminal without the box and symbol glyphs. Run from inside a Goal's worktree, it shows the main checkout's Project. Without a terminal, `vago` prints the usage and exits 1.
+
+## Plan a Goal in the TUI
+
+Press `n` in the Goals list for a New Goal. Type a preliminary name and press Enter; when both `claude` and `codex` are on your `PATH`, Tab picks the Harness the planning agent runs on, Claude Code unless you pick Codex. Vago makes a planning item, a folder in `.vago-goals/` with no `goal.md`, and opens its chat.
+
+Type a message and press Enter. The agent reads the Project, starting from the instructions in `.vago/prompts/planning.md`, which you can edit like any prompt, and answers with a first Proposal and questions about the decisions still open. It runs in a sandbox (`sandbox-exec` on macOS, `bwrap` on Linux) that refuses every write under the Project. To revise it, answer in the chat; each answer that changes the plan replaces the Proposal.
+
+The Preview beside the chat shows the latest Proposal: the Goal, its Tickets in order with their blockers, and the Workflow the agent recommends and why. Tab moves the focus between the chat's field and the Preview; below 100 columns the focused one fills the screen. With the Preview focused:
+
+- `w` picks another Workflow from `.vago/workflows/`.
+- `a` asks to accept the Proposal, and `y` confirms. Accepting needs at least one Ticket and a Workflow. It writes the Goal and its Tickets, all `ready`, and starts nothing: select the Goal and press `s` when you want it to run.
+- `?` shows the planning keys.
+
+Esc goes back to the Goals list. A planning item shows there as `planning`, with what it is waiting for: `no chat yet`, `agent working`, `waiting for your reply`, `proposal ready`, `response failed` or `response interrupted`. Its run time and cost columns stay blank. Press Enter to reopen it, `r` to rename it, and `d` then `y` to discard it with its chat, which also stops a response being written.
+
+Each message runs in a `vago plan say` of its own, so a response keeps going after you quit the TUI, and the chat and Proposal are there when you open it again. When the `vago` writing a response dies, say because the machine restarted, the chat marks the response interrupted, and Ctrl-R answers it again under the same message.
+
+The chat's title row shows the agent's time and cost over every response. They stay out of the Goal's Runs, the TUI's spend and `vago goal report`. After acceptance, `p` in the Goal view opens the chat, read-only.
+
+The `vago plan` commands do the same from a shell: `new`, `rename`, `say`, `retry`, `workflow`, `accept` and `discard`. `vago plan <command> --help` gives each one's arguments.
 
 ## Recover a stuck Ticket
 

@@ -16,6 +16,7 @@ const commands = [
 	"run",
 	"goal new",
 	"goal report",
+	"plan accept",
 	"ticket add",
 	"ticket reset",
 ];
@@ -83,7 +84,7 @@ test("vago ticket reset --help says the Ticket starts over from its first Step",
 	const summary = await runVago(root, ["help"]);
 
 	expect(summary.stdout).toContain(
-		"ticket reset  Make a stuck Ticket start over from its first Step\n",
+		"ticket reset   Make a stuck Ticket start over from its first Step\n",
 	);
 	expect(result.stdout.replace(/\s+/g, " ")).toContain(
 		"the next vago run starts it over from its first Step, instead of picking it up at the Step it stopped on",
@@ -325,6 +326,13 @@ test("vago nope prints every command's usage, lined up, then points at --help", 
        vago run <goal>
        vago goal new <goal> --workflow <name> [--body-file <path>]
        vago goal report <goal>
+       vago plan new <name> [--harness <name>]
+       vago plan rename <name> <new-name>
+       vago plan say <name> --body-file <path>
+       vago plan retry <name>
+       vago plan workflow <name> <workflow>
+       vago plan accept <name>
+       vago plan discard <name>
        vago ticket add <goal> <slug> [--blocked-by <NN>]... [--workflow <name>] [--body-file <path>]
        vago ticket reset <goal> <NN>
 Run \`vago --help\` for what each command does.

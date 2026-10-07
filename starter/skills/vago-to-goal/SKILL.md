@@ -1,12 +1,15 @@
 ---
 name: vago-to-goal
 description: "Turn the current conversation into a Vago Goal, the spec its Tickets build: no interview, just synthesis of what you've already discussed."
-disable-model-invocation: true
 ---
 
 This skill takes the current conversation context and codebase understanding and produces a Goal: the spec of where the Project is going and why. Do NOT interview the user; just synthesize what you already know. Slice it into Tickets afterwards with `/vago-to-tickets`.
 
 Vago takes each of the Goal's Tickets through the Goal's Workflow with no human present, and every agent Step of every Ticket reads the Goal. So the Goal carries everything the Steps share. Vago runs in the human's checkout, driven by the Project's `.vago/`, the installed `vago` and the scripts its Workflow calls; changes to those wait until the Goal is merged.
+
+## In a Vago planning chat
+
+When you plan a Goal in a Vago planning chat, the planning instructions you started from describe a proposal block. Write the Goal from the template below into that block's `goal`, and the Workflow you recommend into its `workflow` with the reason in `workflow_reason`, as those instructions say. Don't run `vago` and don't write files: Vago saves the proposal, and the human accepts it. The steps below are for a chat outside Vago.
 
 ## Process
 

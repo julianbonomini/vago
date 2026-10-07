@@ -125,6 +125,10 @@ export type RunDiffLine = {
  * and the TUI feeds a Run's log to `runActivity`.
  */
 export type Harness = {
+	/** The name the human knows the Harness by, such as "Claude Code". */
+	title: string;
+	/** The CLI's program, the first word of every command, found on `PATH`. */
+	program: string;
 	/**
 	 * The argv that starts a fresh session on `model` in guarded mode, with
 	 * the Step's `args` appended as given.
@@ -142,10 +146,18 @@ export type Harness = {
 		args: readonly string[],
 	): string[];
 	/**
-	 * What one stream line of the session started with `command` or
-	 * `resumeCommand`, the argv it gave, carries. Fields the line doesn't
-	 * carry are left out, so the kernel spreads each result over the last; a
-	 * line that isn't an event it knows gives `{}`.
+	 * The argv that starts a fresh session on `model` whose tools can read
+	 * files and load Skills but never change a file, reading its prompt on
+	 * stdin and streaming as `command()`'s does.
+	 */
+	readOnlyCommand(model: string): string[];
+	/** As `readOnlyCommand`, resuming session `sessionId` with the message on stdin. */
+	readOnlyResumeCommand(sessionId: string, model: string): string[];
+	/**
+	 * What one stream line of the session started with `command`,
+	 * `resumeCommand` or a read-only command, the argv it gave, carries.
+	 * Fields the line doesn't carry are left out, so the kernel spreads each
+	 * result over the last; a line that isn't an event it knows gives `{}`.
 	 */
 	readLine(line: string, command: readonly string[]): HarnessSessionReport;
 	/**
@@ -167,6 +179,16 @@ const harnesses: Record<string, Harness> = {
 /** Whether a Harness is registered as `name`. */
 export function knownHarness(name: string): boolean {
 	return Object.hasOwn(harnesses, name);
+}
+
+/**
+ * The name of every registered Harness whose program is on `PATH`, Claude
+ * Code first; none when no program is.
+ */
+export function installedHarnesses(): string[] {
+	return Object.entries(harnesses)
+		.filter(([, harness]) => Bun.which(harness.program) !== null)
+		.map(([name]) => name);
 }
 
 /** Returns the Harness registered as `name`. Throws an Error when none is. */

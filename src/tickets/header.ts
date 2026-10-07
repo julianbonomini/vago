@@ -1,6 +1,8 @@
 // The `+++` TOML header that opens `goal.md` and every Ticket file: parsing
 // and checking it, writing it back, and rewriting a Ticket's or `goal.md`'s
-// header in place atomically with its body kept byte for byte.
+// header in place atomically with its body kept byte for byte. Also owns
+// that atomic write and reading a checked TOML file, which the planning
+// files share.
 
 import { rename } from "node:fs/promises";
 import { parse, stringify } from "smol-toml";
@@ -131,8 +133,7 @@ export function rewriteGoalHeader<Change>(
 }
 
 // Reads `file` with `read`, lets `change` edit the header, and writes the
-// header and the body back through a temp file renamed over `file`, so a
-// crash never leaves half of each.
+// header and the body back atomically.
 async function rewriteWith<Header extends Record<string, unknown>, Change>(
 	file: string,
 	read: (file: string) => Promise<{ header: Header; body: string }>,
@@ -140,10 +141,46 @@ async function rewriteWith<Header extends Record<string, unknown>, Change>(
 ): Promise<Change> {
 	const { header, body } = await read(file);
 	const changed = change(header);
-	const temp = `${file}.tmp`;
-	await Bun.write(temp, headedText(header, body));
-	await rename(temp, file);
+	await writeFileAtomically(file, headedText(header, body));
 	return changed;
+}
+
+/**
+ * `file` parsed and checked against `schema`, or undefined when there is no
+ * such file. Throws an Error naming the file when it isn't valid TOML or
+ * doesn't fit.
+ */
+export async function readTomlFile<T>(
+	file: string,
+	schema: z.ZodType<T>,
+): Promise<T | undefined> {
+	const text = Bun.file(file);
+	if (!(await text.exists())) return undefined;
+	let toml: unknown;
+	try {
+		// smol-toml, not Bun.TOML, so datetimes round-trip as in a header.
+		toml = parse(await text.text());
+	} catch (error) {
+		throw new Error(`${file} isn't valid TOML: ${error}`);
+	}
+	const checked = schema.safeParse(toml);
+	if (!checked.success) {
+		throw new Error(`${file}: ${z.prettifyError(checked.error)}`);
+	}
+	return checked.data;
+}
+
+/**
+ * Writes `text` to `file` through a temp file renamed over it, so a crash
+ * leaves the old file or the new one, never half of each.
+ */
+export async function writeFileAtomically(
+	file: string,
+	text: string,
+): Promise<void> {
+	const temp = `${file}.tmp`;
+	await Bun.write(temp, text);
+	await rename(temp, file);
 }
 
 // The checked header of the `goal.md` at `file` and its body exactly as
