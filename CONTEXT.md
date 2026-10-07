@@ -46,11 +46,15 @@ _Avoid_: epic, mission
 
 **Planning item**:
 A Goal still being planned: a folder in `.vago-goals/` with a `planning/` folder and no `goal.md`. It shows in the Goals list as `planning`, has a name the human may change, and can be discarded. It is no Goal: `vago run` doesn't find it, and it has no Workflow, Tickets or Runs. It holds its planning chat.
-_Avoid_: draft, idea, proposal
+_Avoid_: draft, idea
 
 **Planning chat**:
 A planning item's conversation with its planning agent, saved under its `planning/` folder and continued across TUI sessions.
 _Avoid_: session, thread
+
+**Proposal**:
+The Goal, ordered Tickets with their blockers, and recommended Workflow that a planning item's agent proposed last, with the human's Workflow choice. A revision replaces it. It is _ready to accept_ when nothing in it would stop acceptance; decisions still open don't.
+_Avoid_: plan, draft, preview (the pane that shows it)
 
 **Planning turn**:
 One message the human sends a planning item's agent and the agent's response to it. It is not a Run: it belongs to no Step, Ticket or Goal.

@@ -56,12 +56,16 @@ export async function sendPlanningMessage(
 	const ran = await runTurn(root, chat, harness, message, entry).catch(
 		async (error: unknown) => {
 			const reason = error instanceof Error ? error.message : String(error);
-			await recordPlanningTurnEnd(entry, "error", reason);
+			await recordPlanningTurnEnd(entry, "error", { reason });
 			throw error;
 		},
 	);
 	const outcome = spellOutcome(ran.outcome);
-	await recordPlanningTurnEnd(entry, outcome);
+	await recordPlanningTurnEnd(
+		entry,
+		outcome,
+		ran.outcome.kind === "ok" ? { answer: ran.report.resultText ?? "" } : {},
+	);
 	return ran.outcome.kind === "ok"
 		? { outcome: "ok", answer: ran.report.resultText ?? "" }
 		: {

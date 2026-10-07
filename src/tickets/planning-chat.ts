@@ -14,6 +14,7 @@ const TurnTable = z.looseObject({
 	ended: z.date().optional(),
 	outcome: z.string().optional(),
 	reason: z.string().optional(),
+	proposal_error: z.string().optional(),
 	log: z.string(),
 });
 

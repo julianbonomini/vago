@@ -15,8 +15,10 @@ import {
 	discardPlanningItem,
 	readGoal,
 	readGoalBody,
+	recordPlanningWorkflow,
 	renamePlanningItem,
 } from "./tickets/tickets.ts";
+import { listWorkflows } from "./workflow.ts";
 import { projectRoot } from "./worktree.ts";
 
 /** One positional argument, such as `<goal>`. */
@@ -132,6 +134,11 @@ const planningName: Operand = {
 const planningNewName: Operand = {
 	name: "<new-name>",
 	meaning: "The name it takes.",
+};
+
+const planningWorkflow: Operand = {
+	name: "<workflow>",
+	meaning: "The name of a Workflow in .vago/workflows/, without .toml.",
 };
 
 const messageFileFlag: RequiredFlag = {
@@ -310,9 +317,11 @@ Goal, and a name a Goal or planning item has.`,
 		description: `Sends the message to the agent of the planning item's chat and prints its
 answer. The first message starts the agent on .vago/prompts/planning.md in
 this repo; later ones continue the same conversation. The agent can read the
-repo but not change a file in it. Exits 1 with the reason when the response
-fails. It refuses a Goal, an empty message, and an item whose last response
-is still being written.`,
+repo but not change a file in it. The answer may end with the agent's
+proposal, a <vago-plan> block, which Vago saves in the item's planning/
+folder; no Goal or Ticket file is written before the proposal is accepted.
+Exits 1 with the reason when the response fails. It refuses a Goal, an empty
+message, and an item whose last response is still being written.`,
 		operands: [planningName],
 		flags: [messageFileFlag],
 		example: "vago plan say search --body-file -",
@@ -328,6 +337,26 @@ is still being written.`,
 				return 1;
 			}
 			console.log(response.answer);
+			return 0;
+		},
+	},
+	{
+		name: "plan workflow",
+		summary: "Choose the Workflow a planning item's Goal goes through",
+		description: `Records the Workflow the planning item's Goal will go through once accepted.
+The choice wins over the agent's recommendation and stays through every
+revision of the proposal. It refuses a Workflow that isn't in
+.vago/workflows/, naming the ones that are.`,
+		operands: [planningName, planningWorkflow],
+		flags: [],
+		example: "vago plan workflow search try-hard",
+		run: async (root, given) => {
+			await recordPlanningWorkflow(
+				root,
+				given.operand(planningName),
+				given.operand(planningWorkflow),
+				await listWorkflows(root),
+			);
 			return 0;
 		},
 	},

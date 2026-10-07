@@ -161,3 +161,40 @@ ${afterFixture}
 		},
 	};
 }
+
+/**
+ * Writes a temp fixture equal to `planningFixture` but whose final answer,
+ * the last assistant text and the `result`, is `answer`, and returns its
+ * path.
+ */
+export async function planningFixtureAnswering(
+	answer: string,
+): Promise<string> {
+	const lines = (await Bun.file(planningFixture).text()).trimEnd().split("\n");
+	const events: PlanningFixtureEvent[] = lines.map((line) => JSON.parse(line));
+	const lastText = events.findLast(
+		(event) =>
+			event.type === "assistant" &&
+			event.message?.content?.some((block) => block.type === "text"),
+	);
+	for (const block of lastText?.message?.content ?? []) {
+		if (block.type === "text") block.text = answer;
+	}
+	for (const event of events) {
+		if (event.type === "result") event.result = answer;
+	}
+	const dir = await mkdtemp(join(tmpdir(), "vago-fixture-"));
+	const path = join(dir, "planning-answer.jsonl");
+	await Bun.write(
+		path,
+		`${events.map((event) => JSON.stringify(event)).join("\n")}\n`,
+	);
+	return path;
+}
+
+// The fields of a Claude Code stream line `planningFixtureAnswering` edits.
+type PlanningFixtureEvent = {
+	type: string;
+	result?: string;
+	message?: { content?: { type: string; text?: string }[] };
+};

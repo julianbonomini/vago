@@ -2,6 +2,7 @@
 // shows on the left, bold, and its numbers on the right, dim. Hides how the
 // two share a narrow row and how the focused pane's title stands out.
 
+import type { ColorInput } from "@opentui/core";
 import type { JSX } from "@opentui/solid";
 import { Show } from "solid-js";
 import { fitText } from "./text-fit.ts";
@@ -11,11 +12,12 @@ import { theme } from "./theme.ts";
  * `title` on the left of a row `width` columns wide, cut when it doesn't
  * fit, and `aside` on its right, left out unless the whole title and two
  * spaces fit beside it. The title is bright, and in the focus look when
- * `focused`.
+ * `focused`. The aside is dim, or in `asideColor` when given.
  */
 export function PaneTitle(props: {
 	title: string;
 	aside?: string;
+	asideColor?: ColorInput;
 	focused: boolean;
 	width: number;
 }): JSX.Element {
@@ -42,7 +44,13 @@ export function PaneTitle(props: {
 			</Show>
 			<Show when={asideShown()}>
 				{" ".repeat(gap())}
-				<span style={dimSpan}>{aside()}</span>
+				<span
+					style={
+						props.asideColor === undefined ? dimSpan : { fg: props.asideColor }
+					}
+				>
+					{aside()}
+				</span>
 			</Show>
 		</text>
 	);

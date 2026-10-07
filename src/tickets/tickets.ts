@@ -6,8 +6,9 @@
 // Ticket number is spelled, the lock that marks a Goal as taken by a
 // `vago run`, and the planning items that share `.vago-goals/` with the
 // Goals, with each item's planning chat, its turns' logs and the rule that
-// one turn is open at a time. Only this file is imported from outside
-// `tickets/`.
+// one turn is open at a time, and each item's Proposal: the block in an
+// answer it is read from, the human's Workflow choice and whether it is
+// ready to accept. Only this file is imported from outside `tickets/`.
 
 import { mkdir, readdir, rename, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
@@ -28,6 +29,13 @@ import {
 	readPlanningChatFile,
 	rewritePlanningChatFile,
 } from "./planning-chat.ts";
+import {
+	parseProposalBlock,
+	readPlanningProposalFile,
+	readPlanningWorkflowFile,
+	writePlanningProposalFile,
+	writePlanningWorkflowFile,
+} from "./planning-proposal.ts";
 import { readTicketFolder, ticketFilePath } from "./ticket-folder.ts";
 
 /** Where a Ticket stands. Only Alpha writes it. */
@@ -425,7 +433,8 @@ export async function discardPlanningItem(
  * `outcome` is absent while the response is being written; otherwise it is
  * spelled like a Run's (`ok`, `exit 1`, `permission-mode default`,
  * `interrupted`), or `error` for a turn that stopped before or around its
- * session, with `reason` saying why.
+ * session, with `reason` saying why. `proposalError` says why the proposal
+ * block in the turn's answer couldn't be read.
  */
 export type PlanningTurn = {
 	number: number;
@@ -434,6 +443,7 @@ export type PlanningTurn = {
 	endedAt?: Date;
 	outcome?: string;
 	reason?: string;
+	proposalError?: string;
 	log: string;
 };
 
@@ -478,6 +488,7 @@ export async function readPlanningChat(
 			endedAt: turn.ended,
 			outcome: turn.outcome,
 			reason: turn.reason,
+			proposalError: turn.proposal_error,
 			log: join(folder, turn.log),
 		})),
 	};
@@ -520,13 +531,24 @@ export async function recordPlanningSession(
 	});
 }
 
-/** Closes the turn with `outcome`, and `reason` for an `error`. */
+/**
+ * Closes the turn with `outcome`, and `reason` for an `error`. `answer` is
+ * an `ok` turn's final answer: its last proposal block becomes the item's
+ * Proposal, saved before the turn shows as ended. An answer without a block
+ * leaves the Proposal as it was. A block that isn't valid TOML or doesn't
+ * fit the format leaves it as it was too, and records why on the turn.
+ * Never throws for the agent's text. Survives a crash.
+ */
 export async function recordPlanningTurnEnd(
 	entry: PlanningTurnEntry,
 	outcome: string,
-	reason?: string,
+	ended: { reason?: string; answer?: string } = {},
 ): Promise<void> {
 	const folder = entryFolder(entry);
+	const proposalError =
+		ended.answer === undefined
+			? undefined
+			: await saveProposal(folder, ended.answer, entry.number);
 	await rewritePlanningChatFile(folder, (chat) => {
 		const turn = chat.turns?.[entry.number - 1];
 		if (turn === undefined) {
@@ -536,8 +558,222 @@ export async function recordPlanningTurnEnd(
 		}
 		turn.ended = new Date();
 		turn.outcome = outcome;
-		if (reason !== undefined) turn.reason = reason;
+		if (ended.reason !== undefined) turn.reason = ended.reason;
+		if (proposalError !== undefined) turn.proposal_error = proposalError;
 	});
+}
+
+// Saves the last closed proposal block of `answer`, from turn `turn`, as
+// the Proposal in `folder`, and gives back why it couldn't, if it couldn't.
+// Even a failed write comes back as a reason, so the turn still ends.
+async function saveProposal(
+	folder: string,
+	answer: string,
+	turn: number,
+): Promise<string | undefined> {
+	const lines = answer.split(/\r?\n/);
+	const span = planningProposalSpans(lines).findLast(({ closed }) => closed);
+	if (span === undefined) return undefined;
+	const parsed = parseProposalBlock(
+		lines.slice(span.start + 1, span.end - 1).join("\n"),
+	);
+	if (parsed.outcome === "bad") return parsed.reason;
+	try {
+		await writePlanningProposalFile(folder, parsed.block, turn);
+		return undefined;
+	} catch (error) {
+		return error instanceof Error ? error.message : String(error);
+	}
+}
+
+/**
+ * Lines `start` up to `end` of an answer hold one proposal block: `start` is
+ * its opening tag's line and `end` is one past its closing tag's, or the
+ * answer's length when `closed` is false.
+ */
+export type PlanningProposalSpan = {
+	start: number;
+	end: number;
+	closed: boolean;
+};
+
+/**
+ * The proposal blocks in `lines`, an answer's lines, from each block's
+ * opening tag line through its closing one, in order. A block with no
+ * closing line yet runs to the end with `closed` false.
+ */
+export function planningProposalSpans(
+	lines: readonly string[],
+): PlanningProposalSpan[] {
+	const spans: PlanningProposalSpan[] = [];
+	let start: number | undefined;
+	for (const [index, line] of lines.entries()) {
+		const tag = line.trim();
+		if (start === undefined && tag === "<vago-plan>") start = index;
+		else if (start !== undefined && tag === "</vago-plan>") {
+			spans.push({ start, end: index + 1, closed: true });
+			start = undefined;
+		}
+	}
+	if (start !== undefined) {
+		spans.push({ start, end: lines.length, closed: false });
+	}
+	return spans;
+}
+
+/** A proposed Goal's text. */
+export type ProposedGoal = {
+	/** The first `# ` heading of `body`, or the planning item's name. */
+	title: string;
+	/** `body` after the line of its title, or all of it with none. */
+	description: string;
+	/** The Goal's text as `goal.md` would hold it after its header. */
+	body: string;
+};
+
+/** One Ticket of a Proposal, numbered by its place, from 1. */
+export type ProposedTicket = {
+	number: number;
+	slug: string;
+	/** The first `# ` heading of `body`, or the slug. */
+	title: string;
+	/** `body` after the line of its title, or all of it with none. */
+	description: string;
+	body: string;
+	blockedBy: number[];
+};
+
+/**
+ * The Goal, ordered Tickets and Workflow a planning item's agent proposed
+ * last, with the human's Workflow choice. `turn` is the chat turn that
+ * proposed it. `workflow` is the one acceptance uses: the human's choice,
+ * else the agent's recommendation. `problems` says why it can't be accepted
+ * yet; it is ready to accept when empty.
+ */
+export type PlanningProposal = {
+	turn: number;
+	goal: ProposedGoal;
+	tickets: ProposedTicket[];
+	openDecisions: string[];
+	recommendedWorkflow?: string;
+	workflowReason?: string;
+	chosenWorkflow?: string;
+	workflow?: string;
+	problems: string[];
+};
+
+/**
+ * The latest Proposal of planning item `item` of the Project at `root`, its
+ * `problems` judged against `workflows`, the names of the Project's
+ * Workflows. Undefined before the agent proposed one. Throws as
+ * `readPlanningChat` does, and naming the file when a saved Proposal is bad.
+ */
+export async function readPlanningProposal(
+	root: string,
+	item: string,
+	workflows: readonly string[],
+): Promise<PlanningProposal | undefined> {
+	const folder = planningFolder(await existingPlanningItem(root, item));
+	const file = await readPlanningProposalFile(folder);
+	if (file === undefined) return undefined;
+	const chosenWorkflow = await readPlanningWorkflowFile(folder);
+	const tickets = file.tickets.map((ticket, index) => ({
+		number: index + 1,
+		slug: ticket.slug,
+		title: headingTitle(ticket.body, ticket.slug),
+		description: afterHeading(ticket.body),
+		body: ticket.body,
+		blockedBy: ticket.blocked_by,
+	}));
+	const workflow = chosenWorkflow ?? file.workflow;
+	return {
+		turn: file.turn,
+		goal: {
+			title: headingTitle(file.goal, item),
+			description: afterHeading(file.goal),
+			body: file.goal,
+		},
+		tickets,
+		openDecisions: file.open_decisions,
+		recommendedWorkflow: file.workflow,
+		workflowReason: file.workflow_reason,
+		chosenWorkflow,
+		workflow,
+		problems: proposalProblems(file.goal, tickets, workflow, workflows),
+	};
+}
+
+// Why a Proposal of `goal` and `tickets` going through `workflow` can't be
+// accepted as a Goal and its Tickets, judged by the checks `createGoal` and
+// `addTicket` make. Open decisions are left to the human, so they never
+// count.
+function proposalProblems(
+	goal: string,
+	tickets: ProposedTicket[],
+	workflow: string | undefined,
+	workflows: readonly string[],
+): string[] {
+	const problems: string[] = [];
+	// The checks `addTicket` makes throw; here each becomes one problem.
+	const check = (run: () => void) => {
+		try {
+			run();
+		} catch (error) {
+			problems.push(error instanceof Error ? error.message : String(error));
+		}
+	};
+	check(() => checkBody("the Goal", goal));
+	if (tickets.length === 0) problems.push("The proposal has no Tickets");
+	for (const { number, slug, body, blockedBy } of tickets) {
+		const label = `Ticket ${ticketNumberText(number)} ${slug}`;
+		check(() =>
+			checkName(`The slug of Ticket ${ticketNumberText(number)}`, slug),
+		);
+		check(() => checkBody(label, body));
+		check(() => checkNoHeader(label, body));
+		// Only an earlier Ticket, so blockers come first and can't loop.
+		for (const blocker of blockedBy) {
+			if (blocker < 1 || blocker >= number) {
+				problems.push(
+					`${label} is blocked by ${blocker}, which isn't an earlier Ticket`,
+				);
+			}
+		}
+	}
+	if (workflow === undefined) {
+		problems.push("No Workflow is recommended or chosen");
+	} else {
+		check(() => checkWorkflow(workflow, workflows));
+	}
+	return problems;
+}
+
+// A Workflow outside `workflows`, the Project's, can't take the Goal.
+function checkWorkflow(workflow: string, workflows: readonly string[]): void {
+	if (!workflows.includes(workflow)) {
+		const held = workflows.length > 0 ? workflows.join(", ") : "none";
+		throw new Error(
+			`Workflow "${workflow}" isn't one of the Project's: ${held}`,
+		);
+	}
+}
+
+/**
+ * Records `workflow` as the human's choice for `item`'s Goal. It wins over
+ * the agent's recommendation and survives every revision. Throws an Error
+ * listing `workflows`, the names of the Project's Workflows, and records
+ * nothing, when `workflow` isn't one of them. Otherwise throws as
+ * `readPlanningChat` does.
+ */
+export async function recordPlanningWorkflow(
+	root: string,
+	item: string,
+	workflow: string,
+	workflows: readonly string[],
+): Promise<void> {
+	const folder = planningFolder(await existingPlanningItem(root, item));
+	checkWorkflow(workflow, workflows);
+	await writePlanningWorkflowFile(folder, workflow);
 }
 
 // A turn with no end is one whose response is still being written.
@@ -718,14 +954,7 @@ export async function addTicket(
 	checkName("Ticket slug", slug);
 	if (body !== undefined) {
 		checkBody(`Ticket ${slug}`, body);
-		// A header of the human's own could set status, which only Vago
-		// writes (ADR 0003). A +++ later in the body is fine: the header Vago
-		// writes closes before it.
-		if (/^\s*\+\+\+[ \t]*(\r?\n|$)/.test(body)) {
-			throw new Error(
-				`The body for Ticket ${slug} starts with a +++ header; only Vago writes a Ticket's header`,
-			);
-		}
+		checkNoHeader(`Ticket ${slug}`, body);
 	}
 	const { tickets } = await readGoal(root, goal);
 	for (const blocker of blockedBy) {
@@ -1062,6 +1291,17 @@ function afterHeading(body: string): string {
 	return heading === null
 		? body
 		: body.slice(heading.index + heading[0].length);
+}
+
+// A header of the human's own could set status, which only Vago writes
+// (ADR 0003). A +++ later in the body is fine: the header Vago writes closes
+// before it.
+function checkNoHeader(label: string, body: string): void {
+	if (/^\s*\+\+\+[ \t]*(\r?\n|$)/.test(body)) {
+		throw new Error(
+			`The body for ${label} starts with a +++ header; only Vago writes a Ticket's header`,
+		);
+	}
 }
 
 // A file with no body gives the agent nothing to work from.

@@ -46,6 +46,12 @@ import designModuleAposd from "../starter/skills/vago-design-module/aposd.md" wi
 import designModuleSkill from "../starter/skills/vago-design-module/SKILL.md" with {
 	type: "text",
 };
+import grillingCredits from "../starter/skills/vago-grilling/CREDITS.md" with {
+	type: "text",
+};
+import grillingSkill from "../starter/skills/vago-grilling/SKILL.md" with {
+	type: "text",
+};
 import prCredits from "../starter/skills/vago-pr/CREDITS.md" with {
 	type: "text",
 };
@@ -72,6 +78,8 @@ const skillFiles: Record<string, string> = {
 	"vago-check-red-flags/SKILL.md": checkRedFlagsSkill,
 	"vago-design-module/SKILL.md": designModuleSkill,
 	"vago-design-module/aposd.md": designModuleAposd,
+	"vago-grilling/CREDITS.md": grillingCredits,
+	"vago-grilling/SKILL.md": grillingSkill,
 	"vago-pr/CREDITS.md": prCredits,
 	"vago-pr/SKILL.md": prSkill,
 	"vago-to-goal/SKILL.md": toGoalSkill,
