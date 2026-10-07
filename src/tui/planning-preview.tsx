@@ -19,14 +19,14 @@ import { theme } from "./theme.ts";
 
 /**
  * `proposal`, planning item `item`'s in the Project at `root`, in a pane
- * titled Preview, `width` columns wide, its left edge the chat's right one
- * when `besideChat`. Its title row says whether it is ready to accept, or
- * that it was, once `accepted`; its body shows the Workflow, the problems,
- * the open decisions, the Goal and each Ticket with its blockers. While
- * `focused`, ↑↓, PgUp and PgDn scroll it. While `picking`, unless
+ * titled Preview, `width` columns wide, its left edge the session pane's
+ * right one when `besideSession`. Its title row says whether it is ready to
+ * accept, or that it was, once `accepted`; its body shows the Workflow, the
+ * problems, the open decisions, the Goal and each Ticket with its blockers.
+ * While `focused`, ↑↓, PgUp and PgDn scroll it. While `picking`, unless
  * `accepted`, it lists `workflows`, the recommended one marked and selected
- * first: ↑↓ move, and Enter records the selected one as the human's
- * choice and calls `onPicked` with why it was refused, if it was.
+ * first: ↑↓ move, and Enter records the selected one as the human's choice
+ * and calls `onPicked` with why it was refused, if it was.
  */
 export function PlanningPreview(props: {
 	root: string;
@@ -34,7 +34,7 @@ export function PlanningPreview(props: {
 	proposal: PlanningProposal | undefined;
 	workflows: string[];
 	width: number;
-	besideChat: boolean;
+	besideSession: boolean;
 	focused: boolean;
 	accepted: boolean;
 	picking: boolean;
@@ -86,7 +86,7 @@ export function PlanningPreview(props: {
 		<box
 			ref={pane}
 			border
-			marginLeft={props.besideChat ? -sharedLine : 0}
+			marginLeft={props.besideSession ? -sharedLine : 0}
 			paddingLeft={1}
 			paddingRight={1}
 			flexGrow={1}

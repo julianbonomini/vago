@@ -1,9 +1,10 @@
-// The `vago` commands the TUI starts: a ready, stuck or lost Goal's `vago run`, a planning
-// turn's `vago plan say` and a Retry response's `vago plan retry`, which it
-// lets go of, and `vago plan accept` and `vago plan discard`, which it waits
-// for. None of them is the TUI's to stop, and the TUI stops nothing itself:
-// `vago plan discard` stops a response (ADR 0005). Hides how each is cut
-// loose from the TUI and its terminal, and how a refusal is read back.
+// The `vago` commands the TUI starts: a ready, stuck or lost Goal's `vago
+// run`, which it lets go of, `vago plan accept` and `vago plan discard`,
+// which it waits for, and a planning item's `vago plan session`, which it
+// owns while the planning view is open and stops when the view closes
+// (ADR 0015). It stops nothing else: `vago plan discard` stops a session or
+// a response (ADR 0005). Hides how each is cut loose from the TUI and its
+// terminal, the session's pseudo-terminal, and how a refusal is read back.
 
 import type { GoalRow } from "./goal-rows.ts";
 
@@ -20,42 +21,8 @@ export function startGoal(vago: string[], root: string, row: GoalRow): string {
 	if (!["ready", "stuck", "lost"].includes(row.standing)) {
 		return `${row.goal} is ${row.standing}; only a ready, stuck or lost Goal starts here.`;
 	}
-	startDetached(vago, root, ["run", row.goal], "ignore");
+	startDetached(vago, root, ["run", row.goal]);
 	return `Started vago run ${row.goal}.`;
-}
-
-/**
- * Starts `vago plan say <item>` with `message` on stdin, as a process of
- * its own that outlives the TUI and writes nothing to its screen. The turn
- * shows in the item's chat once `vago plan say` records it; one refused
- * before that, such as for a blank message, leaves the chat as it was.
- */
-export function startPlanningTurn(
-	vago: string[],
-	root: string,
-	item: string,
-	message: string,
-): void {
-	startDetached(
-		vago,
-		root,
-		["plan", "say", item, "--body-file", "-"],
-		new Blob([message]),
-	);
-}
-
-/**
- * Starts `vago plan retry <item>` as a process of its own that outlives the
- * TUI and writes nothing to its screen. The retry shows in the item's chat
- * once `vago plan retry` reopens the turn; one refused before that leaves
- * the chat as it was.
- */
-export function startPlanningRetry(
-	vago: string[],
-	root: string,
-	item: string,
-): void {
-	startDetached(vago, root, ["plan", "retry", item], "ignore");
 }
 
 /** How `vago plan accept` ended: accepted, or refused with its reason. */
@@ -127,22 +94,81 @@ async function runWaited(
 	return reason === "" ? `vago ${args.join(" ")} exited ${exitCode}` : reason;
 }
 
-// Starts `vago <args>` in `root` with `stdin`, and lets go of it.
-function startDetached(
-	vago: string[],
-	root: string,
-	args: string[],
-	stdin: "ignore" | Blob,
-): void {
+// Starts `vago <args>` in `root`, and lets go of it.
+function startDetached(vago: string[], root: string, args: string[]): void {
 	const child = Bun.spawn([...vago, ...args], {
 		cwd: root,
 		// Its own process group, so neither a Ctrl-C nor the terminal closing
 		// on the TUI reaches it.
 		detached: true,
-		stdin,
+		stdin: "ignore",
 		stdout: "ignore",
 		stderr: "ignore",
 	});
 	// The TUI quits without waiting for it.
 	child.unref();
+}
+
+/** A `vago plan session` the TUI started and owns. */
+export type PlanningSessionProcess = {
+	/** Sends `bytes` to the session as typed on its terminal. */
+	write(bytes: Uint8Array): void;
+	resize(cols: number, rows: number): void;
+	/** Ends it and everything it started; calling it again does nothing. */
+	stop(): void;
+	/** Its exit code, once it has exited and released the item. */
+	exited: Promise<number>;
+};
+
+/**
+ * Runs `vago plan session <item>` in the Project at `root` on a
+ * pseudo-terminal of `screen`'s size, whose output reaches
+ * `screen.onOutput`. `vago` is the command that runs this same `vago`.
+ * Unlike the commands `startDetached` lets go of, the TUI owns this one, so
+ * it doesn't outlive the TUI: the caller stops it.
+ */
+export function startPlanningSession(
+	vago: string[],
+	root: string,
+	item: string,
+	screen: {
+		cols: number;
+		rows: number;
+		onOutput: (bytes: Uint8Array) => void;
+	},
+): PlanningSessionProcess {
+	const child = Bun.spawn([...vago, "plan", "session", item], {
+		cwd: root,
+		terminal: {
+			cols: screen.cols,
+			rows: screen.rows,
+			data: (_terminal, bytes) => screen.onOutput(bytes),
+		},
+	});
+	let stopped = false;
+	// Nothing goes to a terminal already closed.
+	const open = () => !stopped && child.terminal?.closed === false;
+	return {
+		write: (bytes) => {
+			if (open()) child.terminal?.write(bytes);
+		},
+		resize: (cols, rows) => {
+			if (open()) child.terminal?.resize(cols, rows);
+		},
+		stop: () => {
+			if (stopped) return;
+			stopped = true;
+			// Its whole group, since it leads the session of its own terminal.
+			// A group already gone answers ESRCH, or EPERM on macOS while its
+			// last processes wait to be reaped.
+			try {
+				process.kill(-child.pid, "SIGTERM");
+			} catch (error) {
+				const code = (error as NodeJS.ErrnoException).code;
+				if (code !== "ESRCH" && code !== "EPERM") throw error;
+			}
+			child.terminal?.close();
+		},
+		exited: child.exited,
+	};
 }

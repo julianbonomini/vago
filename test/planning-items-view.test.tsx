@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { TestRendererSetup } from "@opentui/core/testing";
+import { makeFakeInteractiveClaude } from "./fake-harness.ts";
 import {
 	goalText,
 	heldLock,
@@ -30,6 +31,24 @@ function rowOf(frame: string, name: string): string {
 		.find((line) => line.includes(` ${name} `) && line.includes("━"));
 	if (row === undefined) throw new Error(`No row shows ${name}:\n${frame}`);
 	return row;
+}
+
+// What the planning view's footer says while its session has the focus.
+const sessionFooter = "Ctrl-] Preview";
+
+// Leaves the open planning view of `view` for the Goals list, through the
+// Preview, since Esc in the session is the session's.
+async function leavePlanningView(view: TestRendererSetup): Promise<string> {
+	view.mockInput.pressKey("]", { ctrl: true });
+	await frameWith(view, "Ctrl-] Session");
+	view.mockInput.pressEscape();
+	return frameWithout(view, "Ctrl-] Session");
+}
+
+// The `PATH` of a fake `claude`, for a view that opens a planning item, so
+// its session never starts the real one.
+async function fakeSessionEnv(): Promise<Record<string, string>> {
+	return (await makeFakeInteractiveClaude()).env;
 }
 
 // Presses ↓ until the row of `name` is the selected one, whose name then
@@ -122,7 +141,7 @@ test("each planning row says what its chat is doing or waiting for", async () =>
 
 test("n asks for a name and opens a new planning item, which Esc leaves in the list", async () => {
 	const root = await makeProject(readyGoal);
-	const view = await renderView(root);
+	const view = await renderView(root, undefined, await fakeSessionEnv());
 	await frameWith(view, " 1/1 ");
 
 	view.mockInput.pressKey("n");
@@ -130,11 +149,10 @@ test("n asks for a name and opens a new planning item, which Esc leaves in the l
 	await view.mockInput.typeText("search");
 	view.mockInput.pressEnter();
 
-	const opened = await frameWith(view, "No messages yet.");
+	const opened = await frameWith(view, sessionFooter);
 	expect(opened).toContain(" search ");
 	expect(await readdir(join(root, ".vago-goals"))).toContain("search");
-	view.mockInput.pressEscape();
-	const list = await frameWithout(view, "No messages yet.");
+	const list = await leavePlanningView(view);
 	expect(rowOf(list, "search")).toContain("planning");
 	expect(list).toContain(" 1/2 ");
 	expect(existsSync(join(root, ".vago-goals/search/goal.md"))).toBe(false);
@@ -178,7 +196,10 @@ function chatOf(root: string, name: string): Promise<string> {
 
 test("New Goal picks Claude Code or Codex with Tab, Claude Code by default", async () => {
 	const root = await makeProject(readyGoal);
-	const view = await renderView(root, undefined, {}, ["claude-code", "codex"]);
+	const view = await renderView(root, undefined, await fakeSessionEnv(), [
+		"claude-code",
+		"codex",
+	]);
 	await frameWith(view, " 1/1 ");
 
 	view.mockInput.pressKey("n");
@@ -187,9 +208,8 @@ test("New Goal picks Claude Code or Codex with Tab, Claude Code by default", asy
 	expect(asked).toContain("Tab Harness");
 	await view.mockInput.typeText("search");
 	view.mockInput.pressEnter();
-	await frameWith(view, "No messages yet.");
-	view.mockInput.pressEscape();
-	await frameWithout(view, "No messages yet.");
+	await frameWith(view, sessionFooter);
+	await leavePlanningView(view);
 	view.mockInput.pressKey("n");
 	await frameWith(view, "New Goal name:");
 	view.mockInput.pressTab();
@@ -197,14 +217,16 @@ test("New Goal picks Claude Code or Codex with Tab, Claude Code by default", asy
 	await view.mockInput.typeText("ideas");
 	view.mockInput.pressEnter();
 
-	await frameWith(view, "No messages yet.");
+	await frameWith(view, sessionFooter);
 	expect(await chatOf(root, "search")).toContain('harness = "claude-code"');
 	expect(await chatOf(root, "ideas")).toContain('harness = "codex"');
 });
 
 test("New Goal offers no choice when one Harness can plan", async () => {
 	const root = await makeProject(readyGoal);
-	const view = await renderView(root, undefined, {}, ["codex"]);
+	const view = await renderView(root, undefined, await fakeSessionEnv(), [
+		"codex",
+	]);
 	await frameWith(view, " 1/1 ");
 
 	view.mockInput.pressKey("n");
@@ -212,7 +234,7 @@ test("New Goal offers no choice when one Harness can plan", async () => {
 	await view.mockInput.typeText("search");
 	view.mockInput.pressEnter();
 
-	await frameWith(view, "No messages yet.");
+	await frameWith(view, sessionFooter);
 	expect(asked).not.toContain("Codex");
 	expect(asked).not.toContain("Tab");
 	expect(await chatOf(root, "search")).toContain('harness = "codex"');
@@ -236,12 +258,13 @@ test("a planning item opens again after the TUI closes and opens", async () => {
 	await frameWith(first, " 1/2 ");
 	first.renderer.destroy();
 
-	const view = await renderView(root);
+	const view = await renderView(root, undefined, await fakeSessionEnv());
 	await frameWith(view, " 1/2 ");
 	await selectRow(view, "search");
 	view.mockInput.pressEnter();
 
-	expect(await frameWith(view, "No messages yet.")).toContain(" search ");
+	await frameWith(view, sessionFooter);
+	await frameWith(view, " search ");
 });
 
 test("r renames the selected planning item, and the other one stays as it was", async () => {

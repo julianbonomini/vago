@@ -1,7 +1,8 @@
 // The `running.lock` that marks a Goal as taken by a `vago run`, or a
-// planning item as being accepted, answered, renamed or discarded: taking it
-// with this process's pid, taking over one a dead holder left, releasing it,
-// telling who holds it, and stopping a live holder.
+// planning item as having its planning session open, or being accepted,
+// answered, renamed or discarded: taking it with this process's pid, taking
+// over one a dead holder left, releasing it, telling who holds it, and
+// stopping a live holder.
 // Hides the lock's format, how a holder is found alive or dead, and how one
 // is stopped.
 

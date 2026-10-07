@@ -1,10 +1,11 @@
 // A planning item's agent: the Harnesses it can run on, making an item on
-// one, one planning turn (the message the human sends the agent and the
-// response to it, written while this process holds the item), and Retry
-// response, which answers an interrupted turn again. Hides each Harness's
-// planning model, the default Harness, recording the turn, the planning
-// instructions ahead of a fresh session's message, fresh vs. resumed, and
-// how a failure is recorded.
+// one, its planning session (the Harness's own interactive session, run
+// while this process holds the item), one planning turn (the message the
+// human sends the agent and the response to it, written while this process
+// holds the item), and Retry response, which answers an interrupted turn
+// again. Hides each Harness's planning model, the default Harness, the
+// session's id, recording the turn, the planning instructions, fresh vs.
+// resumed, and how a failure is recorded.
 
 import {
 	type HarnessSessionReport,
@@ -12,6 +13,7 @@ import {
 } from "./harness/registry.ts";
 import {
 	type RunOutcome,
+	runInteractiveReadOnlySession,
 	runReadOnlySession,
 	spellOutcome,
 } from "./step-runner.ts";
@@ -20,6 +22,7 @@ import {
 	type PlanningTurnEntry,
 	readPlanningChat,
 	recordPlanningSession,
+	recordPlanningSessionId,
 	recordPlanningTurnEnd,
 	recordPlanningTurnRetry,
 	recordPlanningTurnStart,
@@ -92,6 +95,50 @@ function planningModel(harness: string): string {
 		);
 	}
 	return model;
+}
+
+/**
+ * Runs planning item `item`'s agent, in the Project at `root`, in the
+ * Harness's own interactive session on this process's terminal until it
+ * ends, and returns how it ended. The item is held for the whole session.
+ * The session resumes the item's saved session id, or starts one under a
+ * new id that is saved before it starts. The planning prompt is added on
+ * every start. Once, a resume that ends `exit N` is replaced by a fresh
+ * session under the same id. Throws, recording nothing, when `item` isn't a
+ * planning item, was accepted, or is held by another vago. Throws when the
+ * planning prompt is missing, when no sandbox is available, when the
+ * Harness's program isn't on `PATH`, or when the item's Harness can't run a
+ * session.
+ */
+export async function runPlanningSession(
+	root: string,
+	item: string,
+): Promise<RunOutcome> {
+	return withPlanningItemClaimed(root, item, async () => {
+		const chat = await readPlanningChat(root, item);
+		const harness = chat.harness ?? harnessByDefault();
+		// Only a hand-edited `chat.toml` names a Harness this throws for.
+		const model = planningModel(harness);
+		const instructions = (await readPlanningPrompt(root)).trimEnd();
+		const saved = chat.sessionId;
+		const sessionId = saved ?? crypto.randomUUID();
+		// Saved before the Harness starts, since an interactive session
+		// reports no id of its own.
+		if (saved === undefined) {
+			await recordPlanningSessionId(root, item, sessionId);
+		}
+		const session = { harness, model, instructions, sessionId, folder: root };
+		const ran = await runInteractiveReadOnlySession({
+			...session,
+			resume: saved !== undefined,
+		});
+		if (saved === undefined || ran.kind !== "exit") return ran;
+		// A Harness saves a conversation only once the human has sent a
+		// message, so an item opened and left before that has an id with
+		// nothing behind it, and resuming it fails. That is the common case,
+		// so the id is started fresh instead, once.
+		return runInteractiveReadOnlySession({ ...session, resume: false });
+	});
 }
 
 /** How a planning turn's response ended. */

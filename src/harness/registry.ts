@@ -154,6 +154,18 @@ export type Harness = {
 	/** As `readOnlyCommand`, resuming session `sessionId` with the message on stdin. */
 	readOnlyResumeCommand(sessionId: string, model: string): string[];
 	/**
+	 * The argv of the Harness's own interactive UI, for a terminal, on
+	 * `model`. Its tools can read files and load Skills but never change a
+	 * file. It starts session `sessionId` fresh, or resumes it when `resume`
+	 * is true, with `instructions` added to the agent's system prompt.
+	 */
+	interactiveReadOnlyCommand(session: {
+		model: string;
+		instructions: string;
+		sessionId: string;
+		resume: boolean;
+	}): string[];
+	/**
 	 * What one stream line of the session started with `command`,
 	 * `resumeCommand` or a read-only command, the argv it gave, carries.
 	 * Fields the line doesn't carry are left out, so the kernel spreads each

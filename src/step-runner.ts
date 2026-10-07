@@ -1,8 +1,8 @@
-// Runs one Step for a Ticket or for the Goal as one Run, and a read-only
-// Harness session such as a planning turn's: the only module that spawns a
-// Step's or an agent's process. Hides how the Run is recorded and
-// announced, how a command is spawned, how a Harness's stream is read and
-// how output reaches the log.
+// Runs one Step for a Ticket or for the Goal as one Run, a read-only Harness
+// session such as a planning turn's, and a Harness's own interactive session:
+// the only module that spawns a Step's or an agent's process. Hides how the
+// Run is recorded and announced, how a command is spawned, how a Harness's
+// stream is read and how output reaches the log.
 
 import { closeSync, openSync, writeSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
@@ -104,7 +104,7 @@ export async function runStep(
 	// One descriptor for both streams keeps stdout and stderr in the order the
 	// Step wrote them, which two separate pipes can't promise.
 	const fd = openSync(entry.log, "w");
-	const interrupt = interruptOnSignal();
+	const interrupt = interruptOnSignal(["SIGINT", "SIGTERM"]);
 	let outcome: RunOutcome;
 	let output: string;
 	let session: HarnessSessionReport | undefined;
@@ -149,7 +149,7 @@ export async function runStep(
 				stderr: fd,
 				detached: true,
 			});
-			const code = await exitCodeOf(child, interrupt.signal);
+			const code = await exitCodeOf(child, interrupt.signal, "group");
 			outcome = outcomeOf(code);
 			// Read back from the log, so a review prompt sees stdout and stderr
 			// interleaved the way the Step wrote them.
@@ -226,23 +226,14 @@ export async function runReadOnlySession(
 	onSessionId: (sessionId: string) => Promise<void>,
 ): Promise<{ outcome: RunOutcome; report: HarnessSessionReport }> {
 	const harness = findHarness(session.harness);
-	// Checked here: inside the sandbox a missing program reads only as the
-	// sandbox's exit code.
-	if (Bun.which(harness.program) === null) {
-		throw new Error(
-			`${harness.program} isn't on PATH, so no ${harness.title} session can start; install ${harness.title} or put ${harness.program} on PATH`,
-		);
-	}
 	const command =
 		session.resume === undefined
 			? harness.readOnlyCommand(session.model)
 			: harness.readOnlyResumeCommand(session.resume, session.model);
-	// The Harness's own read-only tools are one guard; the sandbox is the one
-	// that holds even when the Harness lets a write through.
-	const spawned = await withoutWritesUnder(session.folder, command);
+	const spawned = await spawnableReadOnly(harness, session.folder, command);
 	await mkdir(dirname(session.log), { recursive: true });
 	const fd = openSync(session.log, "w");
-	const interrupt = interruptOnSignal();
+	const interrupt = interruptOnSignal(["SIGINT", "SIGTERM"]);
 	let ran: HarnessSessionRun;
 	try {
 		ran = await runSession({
@@ -270,6 +261,74 @@ export async function runReadOnlySession(
 		outcome = outcomeOf(code);
 	}
 	return { outcome, report };
+}
+
+/** A Harness's own interactive session to run, read-only. */
+export type InteractiveReadOnlySession = {
+	harness: string;
+	model: string;
+	/** What is added to the agent's system prompt. */
+	instructions: string;
+	sessionId: string;
+	/** Whether session `sessionId` is resumed rather than started. */
+	resume: boolean;
+	/** The working directory, which nothing the session starts can write under. */
+	folder: string;
+};
+
+/**
+ * Runs `session` on this process's terminal and waits for it to end. Its
+ * stdin, stdout and stderr are this process's, and it stays in the
+ * terminal's foreground. Nothing it starts can write under its folder.
+ * SIGHUP, SIGTERM or SIGINT stops it within 5 seconds and ends it
+ * `interrupted`; otherwise it ends `ok` or `exit N`. Throws, naming what to
+ * install, when the Harness's program isn't on `PATH`, and as
+ * `withoutWritesUnder` does.
+ */
+export async function runInteractiveReadOnlySession(
+	session: InteractiveReadOnlySession,
+): Promise<RunOutcome> {
+	const harness = findHarness(session.harness);
+	const spawned = await spawnableReadOnly(
+		harness,
+		session.folder,
+		harness.interactiveReadOnlyCommand(session),
+	);
+	// SIGHUP too: it is how this process hears that its terminal closed.
+	const interrupt = interruptOnSignal(["SIGINT", "SIGTERM", "SIGHUP"]);
+	let code: number;
+	try {
+		// Not detached, so the session stays in the terminal's foreground
+		// group and can read it.
+		const child = Bun.spawn(spawned, {
+			cwd: session.folder,
+			stdio: ["inherit", "inherit", "inherit"],
+		});
+		code = await exitCodeOf(child, interrupt.signal, "process");
+	} finally {
+		interrupt.release();
+	}
+	return interrupt.signal.aborted ? { kind: "interrupted" } : outcomeOf(code);
+}
+
+// `command`, a read-only session of `harness`, wrapped so nothing it starts
+// can write under `folder`. Throws, naming what to install, when the
+// Harness's program isn't on `PATH`, and as `withoutWritesUnder` does.
+async function spawnableReadOnly(
+	harness: Harness,
+	folder: string,
+	command: string[],
+): Promise<string[]> {
+	// Checked here: inside the sandbox a missing program reads only as the
+	// sandbox's exit code.
+	if (Bun.which(harness.program) === null) {
+		throw new Error(
+			`${harness.program} isn't on PATH, so no ${harness.title} session can start; install ${harness.title} or put ${harness.program} on PATH`,
+		);
+	}
+	// The Harness's own read-only tools are one guard; the sandbox is the one
+	// that holds even when the Harness lets a write through.
+	return withoutWritesUnder(folder, command);
 }
 
 // What a resumed session is handed in place of the Step's prompt.
@@ -412,6 +471,7 @@ async function runSession(
 	const exit = exitCodeOf(
 		child,
 		AbortSignal.any([session.interrupt, idle.signal]),
+		"group",
 	);
 	const idleTimer =
 		idleTimeoutMs === undefined
@@ -443,19 +503,22 @@ async function runSession(
 	return { session: report, code, idleTimedOut: idle.signal.aborted };
 }
 
-// A signal that aborts on SIGINT or SIGTERM until `release` is called. A
-// session or command runs in its own process group, out of reach of the
-// terminal's Ctrl-C, so `vago` takes the signal and stops the group itself.
-function interruptOnSignal(): { signal: AbortSignal; release: () => void } {
+// A signal that aborts on any of `signals` until `release` is called, so
+// `vago` takes the signal and stops what it started itself: a detached
+// session or command, in a process group of its own out of reach of the
+// terminal's Ctrl-C, or an interactive session, which a closed terminal
+// would leave running.
+function interruptOnSignal(signals: NodeJS.Signals[]): {
+	signal: AbortSignal;
+	release: () => void;
+} {
 	const interrupt = new AbortController();
 	const abort = () => interrupt.abort();
-	process.on("SIGINT", abort);
-	process.on("SIGTERM", abort);
+	for (const name of signals) process.on(name, abort);
 	return {
 		signal: interrupt.signal,
 		release: () => {
-			process.off("SIGINT", abort);
-			process.off("SIGTERM", abort);
+			for (const name of signals) process.off(name, abort);
 		},
 	};
 }
@@ -478,18 +541,20 @@ function shellOutput(code: number, log: string): string {
 	return `exit code ${code}\n${log}`;
 }
 
-// Stops the child's group when `stop` aborts, at once if it already has, as
-// when the signal came while the Step was still being set up. Resolves to the
-// exit code once the child has exited and, if it was stopped, once its group
-// is gone too, since the leader can exit while the rest of its group still
-// ignores SIGTERM.
+// Stops the child when `stop` aborts, at once if it already has, as when the
+// signal came while the Step was still being set up: the group it leads when
+// it was spawned detached, or the child alone, which leads no group. Resolves
+// to the exit code once the child has exited and, if it was stopped, once
+// what was signalled is gone too, since a leader can exit while the rest of
+// its group still ignores SIGTERM.
 async function exitCodeOf(
 	child: Bun.Subprocess,
 	stop: AbortSignal,
+	scope: "group" | "process",
 ): Promise<number> {
 	let stopping: Promise<void> | undefined;
 	const startStopping = () => {
-		stopping = stopGroup(child.pid);
+		stopping = stopProcesses(scope === "group" ? -child.pid : child.pid);
 	};
 	if (stop.aborted) startStopping();
 	else stop.addEventListener("abort", startStopping, { once: true });
@@ -502,32 +567,33 @@ async function exitCodeOf(
 // Long enough for a Harness to stop the tool commands it started.
 const stopGraceMs = 5_000;
 
-// The whole group, since a process the Step started would otherwise live on
-// and could hold the Harness's stdout open, so its stream would never end.
-// SIGTERM first, because a Harness can run its tool commands in process groups
-// of their own, which no signal to this group reaches, and only the Harness
-// can stop them. SIGKILL after the grace period, because a Step that ignores
-// SIGTERM must still end. Resolves once the group is gone or has been sent
-// SIGKILL.
-async function stopGroup(leader: number): Promise<void> {
+// `target` as `process.kill` takes it: a pid, or a group leader's pid negated
+// for the whole group. The whole group of a detached child, since a process
+// the Step started would otherwise live on and could hold the Harness's
+// stdout open, so its stream would never end. SIGTERM first, because a
+// Harness can run its tool commands in process groups of their own, which no
+// signal to this group reaches, and only the Harness can stop them. SIGKILL
+// after the grace period, because a Step that ignores SIGTERM must still end.
+// Resolves once the target is gone or has been sent SIGKILL.
+async function stopProcesses(target: number): Promise<void> {
 	const deadline = Date.now() + stopGraceMs;
-	signalGroup(leader, "SIGTERM");
-	while (signalGroup(leader, 0)) {
+	signalTarget(target, "SIGTERM");
+	while (signalTarget(target, 0)) {
 		if (Date.now() >= deadline) {
-			signalGroup(leader, "SIGKILL");
+			signalTarget(target, "SIGKILL");
 			return;
 		}
 		await Bun.sleep(50);
 	}
 }
 
-// False when the group is gone, as it is already when the signal comes just
-// after the Step ended. Signal 0 only asks whether the group is alive. macOS
-// answers EPERM, not ESRCH, while every process left in the group is a zombie
-// waiting to be reaped, and no signal can reach such a group either.
-function signalGroup(leader: number, signal: NodeJS.Signals | 0): boolean {
+// False when the target is gone, as it is already when the signal comes just
+// after the Step ended. Signal 0 only asks whether it is alive. macOS answers
+// EPERM, not ESRCH, while every process left in a group is a zombie waiting
+// to be reaped, and no signal can reach such a group either.
+function signalTarget(target: number, signal: NodeJS.Signals | 0): boolean {
 	try {
-		process.kill(-leader, signal);
+		process.kill(target, signal);
 		return true;
 	} catch (error) {
 		const code = (error as NodeJS.ErrnoException).code;

@@ -261,7 +261,7 @@ test("plan retry refuses an answered response, a held item and an accepted Goal"
 		["a", "a has no interrupted response to retry"],
 		[
 			"busy",
-			"busy: a response is still being written, or another vago is changing the item",
+			"busy: its planning session is open, a response is still being written, or another vago is changing the item",
 		],
 		["done", "done was accepted as a Goal; its planning chat is read-only"],
 	] as const) {

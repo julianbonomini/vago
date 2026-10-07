@@ -101,6 +101,10 @@ export const codex: HarnessCli = {
 	readOnlyResumeCommand(sessionId, model) {
 		return [...readOnlyExecCommand(model), "resume", sessionId, "-"];
 	},
+	interactiveReadOnlyCommand() {
+		// TODO(planning-real-session 03): Codex's interactive session
+		throw new Error("A Codex planning session isn't built yet");
+	},
 	events(line, command) {
 		const event = parseJson(line);
 		const thread = ThreadStartedEvent.safeParse(event);

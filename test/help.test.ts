@@ -328,6 +328,7 @@ test("vago nope prints every command's usage, lined up, then points at --help", 
        vago goal report <goal>
        vago plan new <name> [--harness <name>]
        vago plan rename <name> <new-name>
+       vago plan session <name>
        vago plan say <name> --body-file <path>
        vago plan retry <name>
        vago plan workflow <name> <workflow>

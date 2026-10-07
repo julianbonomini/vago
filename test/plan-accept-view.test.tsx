@@ -3,6 +3,10 @@ import { existsSync } from "node:fs";
 import { realpath, rm } from "node:fs/promises";
 import { join } from "node:path";
 import type { TestRendererSetup } from "@opentui/core/testing";
+import {
+	type FakeInteractiveHarness,
+	makeFakeInteractiveClaude,
+} from "./fake-harness.ts";
 import { goalText, makeProject, oneStep, ticketText } from "./project.ts";
 import { frameWith, frameWithout, renderView } from "./view-render.tsx";
 
@@ -68,6 +72,7 @@ async function planningProject(
 		...files,
 	};
 	const root = await makeProject({
+		".vago/prompts/planning.md": "You help plan a Goal.\n",
 		".vago/workflows/small.toml": oneStep("true"),
 		".vago/workflows/try-hard.toml": oneStep("true"),
 		...Object.fromEntries(
@@ -80,13 +85,24 @@ async function planningProject(
 	return realpath(root);
 }
 
+// The Project at `root` in a view of `size`, whose planning sessions run
+// `fake`, a fake `claude` made here unless given.
+async function acceptView(
+	root: string,
+	size = wide,
+	fake?: FakeInteractiveHarness,
+): Promise<TestRendererSetup> {
+	const harness = fake ?? (await makeFakeInteractiveClaude());
+	return renderView(root, size, harness.env);
+}
+
 // Opens the only planning item of the Project shown in `view` and focuses
 // its Preview once the Proposal shows.
 async function openPreview(view: TestRendererSetup): Promise<void> {
 	await frameWith(view, " 1/1 ");
 	view.mockInput.pressEnter();
 	await frameWith(view, "02 Rank results by score");
-	view.mockInput.pressTab();
+	view.mockInput.pressKey("]", { ctrl: true });
 	await frameWith(view, "w Workflow");
 }
 
@@ -96,7 +112,7 @@ function exists(root: string, path: string): boolean {
 
 test("a accepts the Proposal as a ready Goal that s starts", async () => {
 	const root = await planningProject();
-	const view = await renderView(root, wide);
+	const view = await acceptView(root);
 	await openPreview(view);
 	expect(await frameWith(view, "a Accept")).toContain("a Accept");
 
@@ -127,11 +143,11 @@ test("the question counts one Ticket as one", async () => {
 		'\n[[tickets]]\nslug = "rank-by-score"',
 	);
 	const root = await planningProject({ "proposal.toml": oneTicket });
-	const view = await renderView(root, wide);
+	const view = await acceptView(root);
 	await frameWith(view, " 1/1 ");
 	view.mockInput.pressEnter();
 	await frameWith(view, "01 Score each result");
-	view.mockInput.pressTab();
+	view.mockInput.pressKey("]", { ctrl: true });
 	await frameWith(view, "a Accept");
 
 	await view.mockInput.typeText("a");
@@ -143,7 +159,7 @@ test("the question counts one Ticket as one", async () => {
 
 test("a on a Proposal that isn't ready says why and accepts nothing", async () => {
 	const root = await planningProject({ "proposal.toml": proposalToml(2) });
-	const view = await renderView(root, wide);
+	const view = await acceptView(root);
 	await openPreview(view);
 
 	await view.mockInput.typeText("a");
@@ -157,7 +173,7 @@ test("a on a Proposal that isn't ready says why and accepts nothing", async () =
 
 test("a key other than y cancels the question", async () => {
 	const root = await planningProject();
-	const view = await renderView(root, wide);
+	const view = await acceptView(root);
 	await openPreview(view);
 	await view.mockInput.typeText("a");
 	await frameWith(view, "y accepts");
@@ -170,10 +186,13 @@ test("a key other than y cancels the question", async () => {
 	expect(await frameWith(view, "a Accept")).toContain("Preview");
 });
 
-test("a refusal from vago plan accept shows in the open planning view", async () => {
+test("a refusal from vago plan accept shows in the open planning view, and the session resumes", async () => {
 	const root = await planningProject();
-	const view = await renderView(root, wide);
+	const view = await acceptView(root);
 	await openPreview(view);
+	const id = /fake claude fresh (\S+)/.exec(
+		await frameWith(view, "fake claude fresh"),
+	)?.[1];
 	await Bun.write(join(root, ".vago/workflows/small.toml"), "steps = [");
 
 	await view.mockInput.typeText("a");
@@ -183,14 +202,14 @@ test("a refusal from vago plan accept shows in the open planning view", async ()
 	const frame = await frameWith(view, "small.toml");
 	expect(frame).not.toContain(root);
 	expect(frame).not.toContain("vago:");
-	expect(frame).toContain("Plan search");
 	expect(frame).toContain("02 Rank results by score");
 	expect(exists(root, "goal.md")).toBe(false);
+	await frameWith(view, `fake claude resumed ${id}`);
 });
 
 test("accepting from the view starts nothing", async () => {
 	const root = await planningProject();
-	const view = await renderView(root, wide);
+	const view = await acceptView(root);
 	await openPreview(view);
 	await view.mockInput.typeText("a");
 	await frameWith(view, "y accepts");
@@ -227,59 +246,57 @@ async function openGoal(view: TestRendererSetup): Promise<string> {
 	return frameWith(view, "Tab Pane");
 }
 
-test("p opens an accepted Goal's planning chat, read-only", async () => {
+test("p opens an accepted Goal's planning item, with no session", async () => {
 	const root = await acceptedProject();
-	const view = await renderView(root, wider);
+	const fake = await makeFakeInteractiveClaude();
+	const view = await acceptView(root, wider, fake);
 	expect(await openGoal(view)).toContain("p Planning");
 
 	await view.mockInput.typeText("p");
 
-	const chat = await frameWith(view, "this chat is read-only");
-	expect(chat).toContain("Plan search");
-	expect(chat).not.toContain("Message the planning agent");
+	await frameWith(view, "Accepted as a Goal.");
 	const preview = await frameWith(view, "02 Rank results by score");
 	const titles = preview.split("\n").find((line) => line.includes("Preview"));
-	expect(titles).toContain("accepted · 1m 0s · $0.25");
+	expect(titles).toContain("accepted");
 	// The Goal's build spend leaves its planning out.
 	expect(preview).toContain("$0.00 spent");
 	const chatBefore = await Bun.file(
 		join(root, item, "planning/chat.toml"),
 	).text();
-	await view.mockInput.typeText("hello");
-	view.mockInput.pressEnter();
-	view.mockInput.pressTab();
-	const footer = await frameWith(view, "Tab Chat");
+	const footer = await frameWith(view, "Esc Back");
+	expect(footer).not.toContain("Ctrl-] Session");
 	expect(footer).not.toContain("a Accept");
 	expect(footer).not.toContain("w Workflow");
 	await view.mockInput.typeText("a");
 	await view.mockInput.typeText("y");
 	await Bun.sleep(300);
-	expect(await frameWith(view, "Tab Chat")).not.toContain("y accepts");
+	expect(await frameWith(view, "Esc Back")).not.toContain("y accepts");
 	expect(await Bun.file(join(root, item, "planning/chat.toml")).text()).toBe(
 		chatBefore,
 	);
 	expect(existsSync(join(root, item, "tickets/02-rank-by-score.md"))).toBe(
 		false,
 	);
+	expect(await fake.calls()).toEqual([]);
 	view.mockInput.pressEscape();
 	await frameWith(view, "p Planning");
 });
 
 test("a Goal made without planning offers no planning chat", async () => {
-	const view = await renderView(await acceptedProject(false), wider);
+	const view = await acceptView(await acceptedProject(false), wider);
 
 	expect(await openGoal(view)).not.toContain("p Planning");
 });
 
-test("in the chat field a types and asks nothing", async () => {
+test("in the session a types and asks nothing", async () => {
 	const root = await planningProject();
-	const view = await renderView(root, wide);
+	const view = await acceptView(root);
 	await frameWith(view, " 1/1 ");
 	view.mockInput.pressEnter();
-	await frameWith(view, "02 Rank results by score");
+	await frameWith(view, "fake claude fresh");
 
 	await view.mockInput.typeText("a");
 
-	const frame = await frameWith(view, "> a");
+	const frame = await frameWith(view, "key a");
 	expect(frame).not.toContain("y accepts");
 });

@@ -33,13 +33,16 @@ const vago = [process.execPath, join(import.meta.dir, "..", "src", "cli.ts")];
  * checkout's `vago`, which gets `env` added to its environment, such as a
  * fake Harness's `PATH`. `setEnv` can't do that: Bun starts a child with
  * the environment this process started with. New Goal offers `harnesses`
- * to plan on, the default first.
+ * to plan on, the default first. With `kittyKeyboard`, keys come as a
+ * terminal speaking the kitty keyboard protocol sends them, so Shift+Enter
+ * is told apart from Enter.
  */
 export async function renderView(
 	root: string,
 	size = { width: 80, height: 24 },
 	env: Record<string, string> = {},
 	harnesses = ["claude-code"],
+	{ kittyKeyboard = false }: { kittyKeyboard?: boolean } = {},
 ): Promise<TestRendererSetup> {
 	const assignments = Object.entries(env).map(
 		([name, value]) => `${name}=${value}`,
@@ -48,7 +51,8 @@ export async function renderView(
 		assignments.length === 0 ? vago : ["env", ...assignments, ...vago];
 	const view = await testRender(
 		() => <ProjectView root={root} vago={command} harnesses={harnesses} />,
-		size,
+		// Ctrl-C is the TUI's to handle, as `tui.tsx` sets it.
+		{ ...size, kittyKeyboard, exitOnCtrlC: false },
 	);
 	// Destroyed, so it doesn't keep drawing while the rest of the suite runs
 	// in the same process.

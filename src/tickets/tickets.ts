@@ -413,7 +413,7 @@ export async function createPlanningItem(
  * with everything it holds. Throws an Error naming the problem, and changes
  * nothing, when there is no such item, `name` is a Goal, a Goal or planning
  * item already has `newName`, `newName` isn't a valid name, or another vago
- * holds the item, such as one writing a response. Refuses a Goal accepted
+ * holds the item, such as one running its session. Refuses a Goal accepted
  * from a planning item: its planning chat is read-only.
  */
 export async function renamePlanningItem(
@@ -438,11 +438,12 @@ export async function renamePlanningItem(
 }
 
 /**
- * Stops a response to planning item `name` of the Project at `root` that is
- * in progress, then removes the item and everything it holds. Throws an
- * Error naming the problem, and removes nothing, when there is no such item,
- * `name` is a Goal, or another vago takes the item first. Refuses a Goal
- * accepted from a planning item: its planning chat is read-only.
+ * Stops the open session of planning item `name` of the Project at `root`,
+ * or a response to it in progress, then removes the item and everything it
+ * holds. Throws an Error naming the problem, and removes nothing, when there
+ * is no such item, `name` is a Goal, or another vago takes the item first.
+ * Refuses a Goal accepted from a planning item: its planning chat is
+ * read-only.
  */
 export async function discardPlanningItem(
 	root: string,
@@ -562,8 +563,9 @@ const stoppedEarly = "the response stopped before it ended";
  * Runs `run` while this process holds planning item `item` of the Project
  * at `root`, and returns what `run` returns. Releases the item however `run`
  * ends, and takes over a hold whose vago died. Throws, without calling
- * `run`, when another live vago holds the item, such as one writing a
- * response, and when `item` is no planning item or was accepted as a Goal.
+ * `run`, when another live vago holds the item, such as one running its
+ * planning session or writing a response, and when `item` is no planning
+ * item or was accepted as a Goal.
  */
 export async function withPlanningItemClaimed<T>(
 	root: string,
@@ -576,7 +578,7 @@ export async function withPlanningItemClaimed<T>(
 	await claimLock(
 		lock,
 		(pid) =>
-			`${item}: a response is still being written, or another vago is changing the item (pid ${pid})`,
+			`${item}: its planning session is open, a response is still being written, or another vago is changing the item (pid ${pid})`,
 	);
 	try {
 		// Checked again under the lock: another vago may have accepted it
@@ -622,6 +624,25 @@ export async function recordPlanningTurnStart(
 		return { number, log };
 	});
 	return { root, item, number, log: join(folder, log) };
+}
+
+/**
+ * Saves `sessionId` as planning item `item`'s own session id, which
+ * `readPlanningChat` gives back as `sessionId` on the next read. Must run
+ * inside `withPlanningItemClaimed`, and throws otherwise. Refuses a Goal
+ * accepted from a planning item: its planning chat is read-only. Survives a
+ * crash.
+ */
+export async function recordPlanningSessionId(
+	root: string,
+	item: string,
+	sessionId: string,
+): Promise<void> {
+	await mustHold(root, item);
+	const folder = planningFolder(await planningItemToChange(root, item));
+	await rewritePlanningChatFile(folder, (chat) => {
+		chat.session_id = sessionId;
+	});
 }
 
 /**
@@ -745,23 +766,19 @@ async function saveProposal(
 	}
 }
 
-/**
- * Lines `start` up to `end` of an answer hold one proposal block: `start` is
- * its opening tag's line and `end` is one past its closing tag's, or the
- * answer's length when `closed` is false.
- */
-export type PlanningProposalSpan = {
+// Lines `start` up to `end` of an answer hold one proposal block: `start` is
+// its opening tag's line and `end` is one past its closing tag's, or the
+// answer's length when `closed` is false.
+type PlanningProposalSpan = {
 	start: number;
 	end: number;
 	closed: boolean;
 };
 
-/**
- * The proposal blocks in `lines`, an answer's lines, from each block's
- * opening tag line through its closing one, in order. A block with no
- * closing line yet runs to the end with `closed` false.
- */
-export function planningProposalSpans(
+// The proposal blocks in `lines`, an answer's lines, from each block's
+// opening tag line through its closing one, in order. A block with no
+// closing line yet runs to the end with `closed` false.
+function planningProposalSpans(
 	lines: readonly string[],
 ): PlanningProposalSpan[] {
 	const spans: PlanningProposalSpan[] = [];
@@ -945,7 +962,7 @@ export async function recordPlanningWorkflow(
  * blockers. The Goal and its Tickets appear together; its planning chat
  * stays with it, read-only. Returns the path of `goal.md`. Throws an Error
  * naming the problem, and creates no Goal, when `item` is already a Goal or
- * no planning item, another vago holds it, such as one writing a response,
+ * no planning item, another vago holds it, such as one running its session,
  * its last response was interrupted, it has no Proposal, or the Proposal has
  * problems judged against `workflows`, the names of the Project's
  * Workflows.
@@ -1016,12 +1033,12 @@ function isInterrupted(turn: PlanningTurnTable): boolean {
 	return turn.ended === undefined || turn.outcome === "interrupted";
 }
 
-// Throws unless this process holds planning item `item`: what a turn
-// records is right only while no other vago can write the item.
+// Throws unless this process holds planning item `item`: what a turn or a
+// session records is right only while no other vago can write the item.
 async function mustHold(root: string, item: string): Promise<void> {
 	if (!(await isLockMine(goalLockPath(root, item)))) {
 		throw new Error(
-			`${item} must be held with withPlanningItemClaimed to record a turn`,
+			`${item} must be held with withPlanningItemClaimed to record its chat`,
 		);
 	}
 }

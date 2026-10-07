@@ -16,6 +16,7 @@ import { initProject, updateProject } from "./init.ts";
 import {
 	planNewGoal,
 	retryPlanningResponse,
+	runPlanningSession,
 	sendPlanningMessage,
 } from "./planning-runner.ts";
 import { printGoalReport } from "./progress.ts";
@@ -321,8 +322,8 @@ a name a Goal or planning item has.`,
 		name: "plan rename",
 		summary: "Rename a planning item",
 		description: `Gives a planning item a new name, keeping everything it holds. It refuses a
-Goal, a name a Goal or planning item has, and an item while a response to it
-is being written.`,
+Goal, a name a Goal or planning item has, and an item while its planning
+session is open or a response to it is being written.`,
 		operands: [planningName, planningNewName],
 		flags: [],
 		example: "vago plan rename search ranked-search",
@@ -333,6 +334,24 @@ is being written.`,
 				given.operand(planningNewName),
 			);
 			return 0;
+		},
+	},
+	{
+		name: "plan session",
+		summary: "Run a planning item's agent in its Harness's own session",
+		description: `Runs the planning item's agent in its Harness's own session on this terminal,
+resuming the item's session when it has one, until the session ends. The agent
+can read the Project but not write under it. The TUI runs it beside the
+Preview.`,
+		operands: [planningName],
+		flags: [],
+		example: "vago plan session search",
+		run: async (root, given) => {
+			const outcome = await runPlanningSession(
+				root,
+				given.operand(planningName),
+			);
+			return outcome.kind === "exit" ? outcome.code : 0;
 		},
 	},
 	{
@@ -416,9 +435,10 @@ revision of the proposal. It refuses a Workflow that isn't in
 		summary: "Accept a planning item's proposal as a ready Goal",
 		description: `Turns the planning item into a ready Goal with its proposed Tickets, all at
 once, and prints the path of its goal.md. It refuses, creating nothing, when
-the proposal isn't ready to accept, vago run would refuse its Workflow, a
-response is still being written or the last one was interrupted, or the item
-was already accepted. It starts nothing: vago run does.`,
+the proposal isn't ready to accept, vago run would refuse its Workflow, its
+planning session is open, a response is still being written or the last one
+was interrupted, or the item was already accepted. It starts nothing: vago run
+does.`,
 		operands: [planningName],
 		flags: [],
 		example: "vago plan accept search",
@@ -430,9 +450,9 @@ was already accepted. It starts nothing: vago run does.`,
 	{
 		name: "plan discard",
 		summary: "Remove a planning item and everything it holds",
-		description: `Removes a planning item and everything saved with it. A response to the item
-still being written is stopped first. It refuses a Goal, which it never
-removes.`,
+		description: `Removes a planning item and everything saved with it. Its open planning
+session, or a response to the item still being written, is stopped first. It
+refuses a Goal, which it never removes.`,
 		operands: [planningName],
 		flags: [],
 		example: "vago plan discard search",

@@ -1,6 +1,6 @@
 // The Claude Code Harness: the `claude -p` command and how its stream-json
-// events read as a Harness session's events. Hides Claude Code's flags,
-// event shapes, tool names and its models' prices.
+// events read as a Harness session's events, and the interactive `claude`.
+// Hides Claude Code's flags, event shapes, tool names and its models' prices.
 
 import { z } from "zod";
 import type {
@@ -181,6 +181,18 @@ export const claudeCode: HarnessCli = {
 	readOnlyResumeCommand(sessionId, model) {
 		return [program, "-p", "--resume", sessionId, ...readOnlyFlags(model)];
 	},
+	interactiveReadOnlyCommand({ model, instructions, sessionId, resume }) {
+		return [
+			program,
+			resume ? "--resume" : "--session-id",
+			sessionId,
+			"--append-system-prompt",
+			instructions,
+			...readOnlyPermissions,
+			"--model",
+			model,
+		];
+	},
 	events(line, command) {
 		const event = parseJson(line);
 		const denied = PermissionDeniedEvent.safeParse(event);
@@ -255,20 +267,25 @@ function sessionFlags(model: string, args: readonly string[]): string[] {
 	];
 }
 
-// What a read-only session runs with: only tools that read files or load a
+// What keeps a session read-only: only tools that read files or load a
 // Skill, and `dontAsk`, which refuses any call those tools don't cover
 // rather than wait for a human. No MCP server either, since one can change
 // things the tools list doesn't name.
+const readOnlyPermissions = [
+	"--permission-mode",
+	"dontAsk",
+	"--strict-mcp-config",
+	"--tools",
+	"Read,Grep,Glob,Skill",
+];
+
+// What a headless read-only session runs with.
 function readOnlyFlags(model: string): string[] {
 	return [
 		"--output-format",
 		"stream-json",
 		"--verbose",
-		"--permission-mode",
-		"dontAsk",
-		"--strict-mcp-config",
-		"--tools",
-		"Read,Grep,Glob,Skill",
+		...readOnlyPermissions,
 		"--model",
 		model,
 	];

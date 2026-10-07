@@ -177,7 +177,11 @@ test("plan say refuses a Goal, no item, a blank message and an open turn", async
 		["ready", "Hi", "ready is a Goal, not a planning item"],
 		["nope", "Hi", "No planning item nope"],
 		["search", " \n", "The message for search is empty"],
-		["busy", "Hi", "busy: a response is still being written"],
+		[
+			"busy",
+			"Hi",
+			"busy: its planning session is open, a response is still being written",
+		],
 	] as const) {
 		const refused = await say(root, item, message, fake);
 
@@ -196,7 +200,9 @@ test("plan rename refuses an item whose response is still being written", async 
 	const refused = await runVago(root, ["plan", "rename", "busy", "other"]);
 
 	expect(refused.exitCode).toBe(1);
-	expect(refused.stderr).toContain("busy: a response is still being written");
+	expect(refused.stderr).toContain(
+		"busy: its planning session is open, a response is still being written",
+	);
 	expect(existsSync(join(root, ".vago-goals/busy/planning/chat.toml"))).toBe(
 		true,
 	);

@@ -446,7 +446,7 @@ test("plan accept is refused while a response is being written", async () => {
 
 	expect(refused.exitCode).toBe(1);
 	expect(refused.stderr).toContain(
-		"search: a response is still being written, or another vago is changing the item",
+		"search: its planning session is open, a response is still being written, or another vago is changing the item",
 	);
 	expect(existsSync(join(root, item, "goal.md"))).toBe(false);
 	worker.kill("SIGTERM");

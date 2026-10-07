@@ -54,7 +54,11 @@ _Avoid_: status (a Ticket's), state
 
 **Planning chat**:
 A planning item's conversation with its planning agent, saved under its `planning/` folder and continued across TUI sessions. It is read-only once the item is accepted, and still readable from the Goal.
-_Avoid_: session, thread
+_Avoid_: thread; session for the chat itself (a _planning session_ is the Harness's own session it runs in)
+
+**Planning session**:
+The Harness's own interactive session a planning item's agent runs in, inside the planning view. It is open while the view is, and reopening the item resumes it by its saved session id.
+_Avoid_: chat session, terminal
 
 **Proposal**:
 The Goal, ordered Tickets with their blockers, and recommended Workflow that a planning item's agent proposed last, with the human's Workflow choice. A revision replaces it. It is _ready to accept_ when nothing in it would stop acceptance; decisions still open don't.

@@ -222,3 +222,122 @@ export async function codexFixtureAnswering(answer: string): Promise<string> {
 
 // The fields of a Codex stream line `codexFixtureAnswering` edits.
 type CodexFixtureEvent = { item?: { type: string; text?: string } };
+
+/** What one call of the fake interactive `claude` left behind. */
+export type FakeInteractiveCall = {
+	/** Its argv without the program name. */
+	argv: string[];
+	pid: number;
+	/** Whether a SIGHUP, a SIGTERM or its terminal closing ended it. */
+	ended: boolean;
+};
+
+/** A fake interactive Harness CLI, ready to put on the `PATH` of a `vago` child. */
+export type FakeInteractiveHarness = {
+	/** Environment for `runVago` that puts the fake first on `PATH`. */
+	env: Record<string, string>;
+	/** Every call so far, first call first. */
+	calls(): Promise<FakeInteractiveCall[]>;
+	/** Waits until there was a call and every call so far has ended. */
+	allEnded(): Promise<void>;
+};
+
+/**
+ * Writes a fake interactive `claude` into a fresh temp directory. Each call
+ * prints `fake claude fresh <id>` for `--session-id <id>`, or
+ * `fake claude resumed <id>` for `--resume <id>`, then runs the shell command
+ * `afterStart`. It then asks for the kitty keyboard protocol, reads its
+ * terminal raw, and prints `key <name>` for each key: `key q`,
+ * `key escape`, `key ctrl+c`, `key enter`, `key shift+enter`. Typing `exit`
+ * ends it with exit code 3. A SIGHUP, a SIGTERM or its terminal closing
+ * ends it, recorded as `ended`. With `resume` set to `refused`, a resume
+ * fails as `claude` does when it never saved the session: an error on
+ * stderr and exit 1.
+ */
+export async function makeFakeInteractiveClaude(
+	options: { resume?: "accepted" | "refused"; afterStart?: string } = {},
+): Promise<FakeInteractiveHarness> {
+	const dir = await mkdtemp(join(tmpdir(), "vago-fake-interactive-claude-"));
+	const callsDir = join(dir, "calls");
+	await mkdir(callsDir);
+	// A Bun program, since sh can't read a raw terminal key by key. Its argv
+	// is JSON because the planning prompt it is handed spans lines. Each call
+	// gets the next numbered folder, as `makeFake`'s do.
+	const script = `#!${process.execPath}
+import { mkdirSync, readdirSync, writeFileSync } from "node:fs";
+const calls = ${JSON.stringify(callsDir)};
+const call = calls + "/" + readdirSync(calls).length;
+mkdirSync(call);
+const args = process.argv.slice(2);
+writeFileSync(call + "/argv", JSON.stringify(args));
+writeFileSync(call + "/pid", String(process.pid));
+const end = () => {
+	writeFileSync(call + "/ended", "");
+	process.exit(0);
+};
+process.on("SIGHUP", end);
+process.on("SIGTERM", end);
+const resumed = args.indexOf("--resume");
+if (resumed !== -1 && ${JSON.stringify(options.resume === "refused")}) {
+	process.stderr.write("No conversation found with session ID " + args[resumed + 1] + "\\r\\n");
+	process.exit(1);
+}
+const id = resumed === -1 ? args[args.indexOf("--session-id") + 1] : args[resumed + 1];
+process.stdout.write("fake claude " + (resumed === -1 ? "fresh" : "resumed") + " " + id + "\\r\\n");
+Bun.spawnSync(["sh", "-c", ${JSON.stringify(options.afterStart ?? "true")}], { stdio: ["ignore", "inherit", "inherit"] });
+process.stdout.write("\\x1b[>1u");
+process.stdin.setRawMode(true);
+// A closed terminal reads as the end of stdin, often before its SIGHUP.
+process.stdin.on("end", end);
+let typed = "";
+const kitty = { "27": "escape", "13": "enter", "13;2": "shift+enter", "99;5": "ctrl+c" };
+process.stdin.on("data", (chunk) => {
+	let text = chunk.toString();
+	while (text !== "") {
+		const csi = /^\\x1b\\[([\\d;?]*)([A-Za-z~])/.exec(text);
+		let name;
+		if (csi !== null) {
+			text = text.slice(csi[0].length);
+			if (csi[2] === "u") name = kitty[csi[1]] ?? "csi " + csi[1];
+		} else {
+			const char = text[0];
+			text = text.slice(1);
+			name = char === "\\x1b" ? "escape" : char === "\\r" ? "enter" : char === "\\x03" ? "ctrl+c" : char;
+		}
+		if (name === undefined) continue;
+		process.stdout.write("key " + name + "\\r\\n");
+		typed += name.length === 1 ? name : " ";
+		if (typed.endsWith("exit")) process.exit(3);
+	}
+});
+`;
+	const program = join(dir, "claude");
+	await Bun.write(program, script);
+	await chmod(program, 0o755);
+	const fake: FakeInteractiveHarness = {
+		env: { PATH: `${dir}:${process.env.PATH}` },
+		async calls() {
+			const names = await readdir(callsDir);
+			names.sort((a, b) => Number(a) - Number(b));
+			const calls: FakeInteractiveCall[] = [];
+			for (const name of names) {
+				const call = join(callsDir, name);
+				calls.push({
+					argv: JSON.parse(await Bun.file(join(call, "argv")).text()),
+					pid: Number(await Bun.file(join(call, "pid")).text()),
+					ended: await Bun.file(join(call, "ended")).exists(),
+				});
+			}
+			return calls;
+		},
+		async allEnded() {
+			for (let tries = 0; ; tries++) {
+				const calls = await fake.calls();
+				if (calls.length > 0 && calls.every((call) => call.ended)) return;
+				if (tries === 200) throw new Error("A session never ended");
+				await Bun.sleep(50);
+			}
+		},
+	};
+	return fake;
+}
