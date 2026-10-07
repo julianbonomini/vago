@@ -1,7 +1,8 @@
-// The `vago` processes the TUI starts and lets go of: a ready Goal's
-// `vago run` and a planning turn's `vago plan say`, which the TUI never owns
-// (ADR 0005). Hides how such a process is cut loose from the TUI and its
-// terminal.
+// The `vago` commands the TUI starts: a ready Goal's `vago run` and a
+// planning turn's `vago plan say`, which it lets go of, and
+// `vago plan accept`, which it waits for; none of them is the TUI's to stop
+// (ADR 0005). Hides how each is cut loose from the TUI and its terminal, and
+// how a refusal is read back.
 
 import type { GoalRow } from "./goal-rows.ts";
 
@@ -39,6 +40,44 @@ export function startPlanningTurn(
 		["plan", "say", item, "--body-file", "-"],
 		new Blob([message]),
 	);
+}
+
+/** How `vago plan accept` ended: accepted, or refused with its reason. */
+export type PlanAcceptEnd =
+	| { outcome: "accepted" }
+	| { outcome: "refused"; reason: string };
+
+/**
+ * Runs `vago plan accept <item>` in the Project at `root` as a process of
+ * its own that neither a Ctrl-C nor a quit stops, and waits for it. `vago`
+ * is the command that runs this same `vago`. A refusal carries the reason
+ * the command gave.
+ */
+export async function runPlanAccept(
+	vago: string[],
+	root: string,
+	item: string,
+): Promise<PlanAcceptEnd> {
+	const child = Bun.spawn([...vago, "plan", "accept", item], {
+		cwd: root,
+		// Its own process group, as for `startDetached`, so acceptance isn't
+		// cut short halfway.
+		detached: true,
+		stdin: "ignore",
+		stdout: "ignore",
+		stderr: "pipe",
+	});
+	const [stderr, exitCode] = await Promise.all([
+		new Response(child.stderr).text(),
+		child.exited,
+	]);
+	if (exitCode === 0) return { outcome: "accepted" };
+	// `cli.ts` prints a refusal as `vago: <reason>`.
+	const reason = stderr.trim().replace(/^vago: /, "");
+	return {
+		outcome: "refused",
+		reason: reason === "" ? `vago plan accept exited ${exitCode}` : reason,
+	};
 }
 
 // Starts `vago <args>` in `root` with `stdin`, and lets go of it.

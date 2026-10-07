@@ -17,12 +17,12 @@ import {
 	type RunToolCalls,
 } from "../harness/registry.ts";
 import { ticketRunResumeWords } from "../tickets/tickets.ts";
-import { startGoal } from "./detached-vago.ts";
 import { type GoalRow, ticketTotal } from "./goal-rows.ts";
 import type { GoalTicket, GoalTicketStep } from "./goal-tickets.ts";
 import { liveRunLog } from "./live-run-log.ts";
 import { sharedLine, usePane } from "./pane-grid.ts";
 import { PaneTitle } from "./pane-title.tsx";
+import { PlanningView } from "./planning-view.tsx";
 import {
 	activityItemId,
 	editIndexes,
@@ -46,6 +46,7 @@ import {
 } from "./theme.ts";
 import { TicketBar } from "./ticket-bar.tsx";
 import { duration, money, tokenCount } from "./time-and-money.ts";
+import { startGoal } from "./vago-commands.ts";
 
 /**
  * The Goal view of the Goal `row` shows, of the Project at `root`, the
@@ -74,7 +75,8 @@ import { duration, money, tokenCount } from "./time-and-money.ts";
  * `e` selects the shown Run's latest edit, then the edit before it, and `E`
  * the one after, scrolled into view; `d` shows the selected edit's diff in
  * place of the Run, the latest edit's when none is selected, until `d` or
- * Esc.
+ * Esc. For a Goal accepted from a planning item, `p` opens its planning
+ * chat, read-only, in place of the panes, with its own keys until its Esc.
  */
 export function GoalView(props: {
 	root: string;
@@ -167,6 +169,7 @@ export function GoalView(props: {
 	const [notice, setNotice] = createSignal<string>();
 	const [focus, setFocus] = createSignal<GoalViewPane>("tickets");
 	const [fullScreen, setFullScreen] = createSignal<"ticket" | "run">();
+	const [planningOpen, setPlanningOpen] = createSignal(false);
 	// The scrollboxes of the Ticket's text and the shown Run, which the keys
 	// scroll.
 	let ticketBox: ScrollBoxRenderable | undefined;
@@ -215,6 +218,8 @@ export function GoalView(props: {
 		setFocus(pane);
 	};
 	useKeyboard((key) => {
+		// The planning view has every key while it is open.
+		if (planningOpen()) return;
 		// The pane 1 to 4 name, undefined for any other key.
 		const numbered = paneOrder[Number(key.name) - 1];
 		setNotice(undefined);
@@ -237,6 +242,7 @@ export function GoalView(props: {
 		else if (key.name === "]") props.onNeighbour(1);
 		else if (key.name === "s")
 			setNotice(startGoal(props.vago, props.root, props.row));
+		else if (key.name === "p" && props.row.planned) setPlanningOpen(true);
 		// The selected edit is filled only in the focused pane, so picking
 		// one focuses the Run.
 		else if (key.name === "e") {
@@ -283,12 +289,21 @@ export function GoalView(props: {
 				count={props.count}
 				width={terminal().width}
 			/>
+			<Show when={planningOpen()}>
+				<PlanningView
+					root={props.root}
+					vago={props.vago}
+					name={props.row.goal}
+					onClose={() => setPlanningOpen(false)}
+				/>
+			</Show>
 			{/* A pane off the whole screen is hidden, not dropped, so it keeps
 			    its scroll and its Run's log. Each box under or beside another
-			    pane overlaps it by its shared line. */}
+			    pane overlaps it by its shared line. The planning chat hides
+			    them all the same way. */}
 			<box
 				flexDirection="row"
-				visible={fullScreen() !== "run"}
+				visible={!planningOpen() && fullScreen() !== "run"}
 				height={fullScreen() === "ticket" ? undefined : topRows()}
 				flexGrow={fullScreen() === "ticket" ? 1 : 0}
 				flexShrink={0}
@@ -339,7 +354,7 @@ export function GoalView(props: {
 			<box
 				flexGrow={1}
 				marginTop={fullScreen() === "run" ? 0 : -sharedLine}
-				visible={fullScreen() !== "ticket"}
+				visible={!planningOpen() && fullScreen() !== "ticket"}
 			>
 				<RunPane
 					ticket={ticket()}
@@ -359,15 +374,22 @@ export function GoalView(props: {
 					}}
 				/>
 			</box>
-			<box flexShrink={0} paddingLeft={1} paddingRight={1}>
+			<box
+				flexShrink={0}
+				paddingLeft={1}
+				paddingRight={1}
+				visible={!planningOpen()}
+			>
 				<KeyFooter
-					keys={footerKeys(symbol.upDown, symbol.leftRight)}
+					keys={footerKeys(symbol.upDown, symbol.leftRight, props.row.planned)}
 					width={terminal().width - 2}
 					notice={notice()}
 				/>
 			</box>
 			<Show when={helpShown()}>
-				<KeyHelp keys={helpKeys(symbol.upDown, symbol.leftRight)} />
+				<KeyHelp
+					keys={helpKeys(symbol.upDown, symbol.leftRight, props.row.planned)}
+				/>
 			</Show>
 		</box>
 	);
@@ -378,8 +400,13 @@ type GoalViewPane = "tickets" | "runs" | "ticket" | "run";
 const paneOrder: GoalViewPane[] = ["tickets", "runs", "ticket", "run"];
 
 // `q` and Ctrl-C belong to `tui.tsx`, which quits on them on every screen.
-// `upDown` and `leftRight` name the arrow keys.
-const footerKeys = (upDown: string, leftRight: string): FooterKey[] => [
+// `upDown` and `leftRight` name the arrow keys. `p` is there only for a
+// Goal that was `planned`.
+const footerKeys = (
+	upDown: string,
+	leftRight: string,
+	planned: boolean,
+): FooterKey[] => [
 	{ keys: upDown, label: "Move", use: 5 },
 	{ keys: leftRight, label: "Run", use: 4 },
 	{ keys: "Tab", label: "Pane", use: 3 },
@@ -389,13 +416,18 @@ const footerKeys = (upDown: string, leftRight: string): FooterKey[] => [
 	{ keys: "t r", label: "Full screen", use: 2 },
 	{ keys: "G", label: "Follow", use: 2 },
 	{ keys: "e d", label: "Diff", use: 2 },
+	...(planned ? [{ keys: "p", label: "Planning", use: 1 }] : []),
 	{ keys: "Esc", label: "Goals", use: 3 },
 	// Kept over the rest at small sizes, since it names what drops out.
 	{ keys: "?", label: "Help", use: 3 },
 	{ keys: "q", label: "Quit", use: 1 },
 ];
 
-const helpKeys = (upDown: string, leftRight: string): HelpKey[] => [
+const helpKeys = (
+	upDown: string,
+	leftRight: string,
+	planned: boolean,
+): HelpKey[] => [
 	{ keys: `${upDown} j k`, meaning: "move in the focused pane" },
 	{ keys: `${leftRight} h l`, meaning: "select the Run before, after" },
 	{ keys: "Tab", meaning: "focus the next pane, Shift the previous" },
@@ -408,6 +440,14 @@ const helpKeys = (upDown: string, leftRight: string): HelpKey[] => [
 	{ keys: "d", meaning: "show, hide the selected edit's diff" },
 	{ keys: "[ ]", meaning: "open the Goal before, after" },
 	{ keys: "s", meaning: "start this Goal in vago run" },
+	...(planned
+		? [
+				{
+					keys: "p",
+					meaning: "the planning chat this Goal was accepted from, read-only",
+				},
+			]
+		: []),
 	{ keys: "click", meaning: "select the Ticket or Run, focus the pane" },
 	{ keys: "wheel", meaning: "scroll the pane under the pointer" },
 	{ keys: "Esc", meaning: "close the diff, full screen, then the Goals" },

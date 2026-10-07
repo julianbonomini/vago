@@ -100,6 +100,8 @@ export type GoalRow = {
 	 * broken Goal, why its files can't be read.
 	 */
 	description: string[];
+	/** Whether the Goal was accepted from a planning item, whose chat it keeps. */
+	planned: boolean;
 };
 
 /** The Runs of one Workflow Step summed over every Ticket of a Goal. */
@@ -267,6 +269,7 @@ function brokenRow(goal: string, message: string): GoalRow {
 		tickets: [],
 		stepTotals: [],
 		description: joinParagraphs(message),
+		planned: false,
 	};
 }
 
@@ -290,6 +293,7 @@ function planningRow(item: string): GoalRow {
 		description: [
 			"A Goal still being planned, with no Workflow or Tickets yet.",
 		],
+		planned: false,
 	};
 }
 
@@ -330,6 +334,7 @@ function goalRow(
 		tickets,
 		stepTotals: stepTotals(tickets),
 		description: joinParagraphs(state.description),
+		planned: state.planned,
 	};
 }
 

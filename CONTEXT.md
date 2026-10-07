@@ -45,16 +45,20 @@ An outcome the human wants for a Project, from a one-Ticket feature to a whole a
 _Avoid_: epic, mission
 
 **Planning item**:
-A Goal still being planned: a folder in `.vago-goals/` with a `planning/` folder and no `goal.md`. It shows in the Goals list as `planning`, has a name the human may change, and can be discarded. It is no Goal: `vago run` doesn't find it, and it has no Workflow, Tickets or Runs. It holds its planning chat.
+A Goal still being planned: a folder in `.vago-goals/` with a `planning/` folder and no `goal.md`. It shows in the Goals list as `planning`, has a name the human may change, and can be discarded. It is no Goal: `vago run` doesn't find it, and it has no Workflow, Tickets or Runs. It holds its planning chat. Accepting it writes its `goal.md`, which turns it into a Goal that keeps its `planning/` folder.
 _Avoid_: draft, idea
 
 **Planning chat**:
-A planning item's conversation with its planning agent, saved under its `planning/` folder and continued across TUI sessions.
+A planning item's conversation with its planning agent, saved under its `planning/` folder and continued across TUI sessions. It is read-only once the item is accepted, and still readable from the Goal.
 _Avoid_: session, thread
 
 **Proposal**:
 The Goal, ordered Tickets with their blockers, and recommended Workflow that a planning item's agent proposed last, with the human's Workflow choice. A revision replaces it. It is _ready to accept_ when nothing in it would stop acceptance; decisions still open don't.
 _Avoid_: plan, draft, preview (the pane that shows it)
+
+**Accept**:
+Turns a planning item whose Proposal is ready to accept into a ready Goal with ready Tickets, all at once. It starts nothing, and the planning chat stays with the Goal, read-only.
+_Avoid_: approve, commit, publish
 
 **Planning turn**:
 One message the human sends a planning item's agent and the agent's response to it. It is not a Run: it belongs to no Step, Ticket or Goal.

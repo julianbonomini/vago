@@ -1,9 +1,9 @@
-// The planning view: a planning item opened from the Goals list, under the
-// Project view's header, holding its chat with the planning agent, the
-// field the human types the next message in, and the Preview of the agent's
-// Proposal beside them. Hides its layout, its keys, when the chat and the
-// Proposal are read again and how a sent message shows before its turn is
-// recorded.
+// The planning view: a planning item opened from the Goals list, or an
+// accepted Goal's from the Goal view, holding its chat with the planning
+// agent, the field the human types the next message in, the Preview of the
+// agent's Proposal beside them, and Accept. Hides its layout, its keys, when
+// the chat and the Proposal are read again, how a sent message shows before
+// its turn is recorded, and how an acceptance is asked for and waited on.
 
 import type { InputRenderable } from "@opentui/core";
 import { type JSX, useKeyboard, useTerminalDimensions } from "@opentui/solid";
@@ -23,7 +23,6 @@ import {
 	readPlanningProposal,
 } from "../tickets/tickets.ts";
 import { listWorkflows } from "../workflow.ts";
-import { startPlanningTurn } from "./detached-vago.ts";
 import { projectMessage } from "./goal-rows.ts";
 import { liveRunLog } from "./live-run-log.ts";
 import { sharedLine, usePane } from "./pane-grid.ts";
@@ -33,6 +32,7 @@ import { RunActivityLines } from "./run-activity.tsx";
 import { type FooterKey, KeyFooter } from "./screen-keys.tsx";
 import { fitText, joinParagraphs, wrapText } from "./text-fit.ts";
 import { theme } from "./theme.ts";
+import { runPlanAccept, startPlanningTurn } from "./vago-commands.ts";
 
 // How often the chat and the Proposal are read again: a turn `vago plan
 // say` records shows within this.
@@ -60,14 +60,20 @@ type PlanningViewPane = "chat" | "preview";
  * shows why. Beside the chat, or in its place below 100 columns while it
  * has the focus, the Preview shows the agent's Proposal. Tab moves the
  * focus between the field and the Preview; with the Preview focused no
- * field has the focus, so `q` quits. Esc calls `onClose`. Reads the chat
- * and the Proposal itself, and again every second.
+ * field has the focus, so `q` quits. There `a` asks whether to accept a
+ * Proposal that is ready, or says why it isn't, and `y` accepts it in a
+ * `vago plan accept` (`runPlanAccept`) that the view waits on, any other
+ * key cancelling. A refusal shows in the footer and the view stays; an
+ * acceptance calls `onClose` with the notice to show. Once the item was
+ * accepted, the chat is read-only: no field, and no `a` or `w`. Esc calls
+ * `onClose` with no notice. Reads the chat and the Proposal itself, and
+ * again every second.
  */
 export function PlanningView(props: {
 	root: string;
 	vago: string[];
 	name: string;
-	onClose: () => void;
+	onClose: (notice?: string) => void;
 }): JSX.Element {
 	const { color, dimText } = theme();
 	const terminal = useTerminalDimensions();
@@ -78,6 +84,9 @@ export function PlanningView(props: {
 	const [focus, setFocus] = createSignal<PlanningViewPane>("chat");
 	const [picking, setPicking] = createSignal(false);
 	const [notice, setNotice] = createSignal<string>();
+	// The question `a` asks before accepting, shown until the next key.
+	const [question, setQuestion] = createSignal<string>();
+	const [accepting, setAccepting] = createSignal(false);
 	// A message sent whose turn the chat doesn't show yet, and how many turns
 	// the chat had when it was sent.
 	const [pending, setPending] = createSignal<{
@@ -85,6 +94,7 @@ export function PlanningView(props: {
 		turnsBefore: number;
 	}>();
 	const turns = () => chat()?.turns ?? [];
+	const accepted = () => chat()?.accepted === true;
 	const shownPending = () => {
 		const sent = pending();
 		return sent !== undefined && turns().length <= sent.turnsBefore
@@ -99,26 +109,62 @@ export function PlanningView(props: {
 	let field: InputRenderable | undefined;
 	const send = () => {
 		const message = field?.value ?? "";
-		if (message.trim() === "" || answering() || chat() === undefined) return;
+		const blocked = answering() || accepting() || chat() === undefined;
+		if (message.trim() === "" || blocked) return;
 		startPlanningTurn(props.vago, props.root, props.name, message);
 		setPending({ message, turnsBefore: turns().length });
 		if (field !== undefined) field.value = "";
 	};
+	// Asks whether to accept the Proposal, or says why it can't be.
+	const askAccept = () => {
+		const shown = proposal();
+		if (shown === undefined) return setNotice("No proposal to accept yet.");
+		const [problem] = shown.problems;
+		if (problem !== undefined) {
+			return setNotice(`Not ready to accept: ${problem}`);
+		}
+		const whose =
+			shown.chosenWorkflow === undefined
+				? "recommended by the agent"
+				: "your choice";
+		setQuestion(
+			`Accept ${props.name} as a ready Goal with Workflow ${shown.workflow} (${whose}; w changes it) and ${ticketCount(shown.tickets.length)}? y accepts`,
+		);
+	};
+	const accept = async () => {
+		setAccepting(true);
+		const end = await runPlanAccept(props.vago, props.root, props.name);
+		setAccepting(false);
+		if (end.outcome === "refused") {
+			setNotice(projectMessage(end.reason, props.root));
+			return;
+		}
+		const tickets = ticketCount(proposal()?.tickets.length ?? 0);
+		props.onClose(
+			`Accepted ${props.name} as a ready Goal with ${tickets}; s starts it.`,
+		);
+	};
 	useKeyboard((key) => {
 		setNotice(undefined);
+		// Any key answers the question; only `y` accepts.
+		if (question() !== undefined) {
+			setQuestion(undefined);
+			if (key.name === "y") accept();
+			return;
+		}
 		if (key.name === "escape" && picking()) setPicking(false);
 		else if (key.name === "escape") props.onClose();
 		// The picker has the arrows and Enter until it closes.
 		else if (picking()) return;
 		else if (key.name === "tab") {
 			setFocus(focus() === "chat" ? "preview" : "chat");
-		} else if (
-			key.name === "w" &&
-			focus() === "preview" &&
-			proposal() !== undefined
-		) {
-			setPicking(true);
 		}
+		// One acceptance at a time, and no new choice meanwhile or after. Until
+		// the chat is read, whether the item was accepted isn't known.
+		else if (accepting() || chat() === undefined || accepted()) return;
+		else if (focus() !== "preview") return;
+		else if (key.name === "w" && proposal() !== undefined) setPicking(true);
+		else if (key.name === "a") askAccept();
 	});
 	const pane = usePane();
 	const split = () => terminal().width >= splitWidth;
@@ -141,7 +187,7 @@ export function PlanningView(props: {
 				>
 					<PaneTitle
 						title={props.name}
-						aside="planning"
+						aside={accepted() ? "accepted" : "planning"}
 						focused={focus() === "chat"}
 						width={inner()}
 					/>
@@ -190,25 +236,34 @@ export function PlanningView(props: {
 							)}
 						</Show>
 					</scrollbox>
-					<box flexShrink={0} flexDirection="row">
-						<text fg={color.accent} flexShrink={0} wrapMode="none">
-							{"> "}
+					<Show when={accepted()}>
+						<text {...dimText} flexShrink={0} wrapMode="none">
+							{fitText("Accepted as a Goal; this chat is read-only.", inner())}
 						</text>
-						<input
-							ref={(input: InputRenderable) => {
-								field = input;
-							}}
-							focused={focus() === "chat"}
-							flexGrow={1}
-							placeholder="Message the planning agent"
-							textColor={color.fg}
-							focusedTextColor={color.fg}
-							backgroundColor="transparent"
-							focusedBackgroundColor="transparent"
-							cursorColor={color.fg}
-							onSubmit={send}
-						/>
-					</box>
+					</Show>
+					{/* Not there until the chat is read, so nothing is typed into
+					    an accepted Goal's chat. */}
+					<Show when={chat() !== undefined && !accepted()}>
+						<box flexShrink={0} flexDirection="row">
+							<text fg={color.accent} flexShrink={0} wrapMode="none">
+								{"> "}
+							</text>
+							<input
+								ref={(input: InputRenderable) => {
+									field = input;
+								}}
+								focused={focus() === "chat"}
+								flexGrow={1}
+								placeholder="Message the planning agent"
+								textColor={color.fg}
+								focusedTextColor={color.fg}
+								backgroundColor="transparent"
+								focusedBackgroundColor="transparent"
+								cursorColor={color.fg}
+								onSubmit={send}
+							/>
+						</box>
+					</Show>
 				</box>
 				<Show when={split() || focus() === "preview"}>
 					<PlanningPreview
@@ -223,6 +278,7 @@ export function PlanningView(props: {
 						}
 						besideChat={split()}
 						focused={focus() === "preview"}
+						accepted={accepted()}
 						picking={picking()}
 						onPicked={(refusal) => {
 							setPicking(false);
@@ -234,9 +290,14 @@ export function PlanningView(props: {
 			</box>
 			<box flexShrink={0} paddingLeft={1} paddingRight={1}>
 				<KeyFooter
-					keys={footerKeys(focus(), proposal() !== undefined)}
+					keys={footerKeys(focus(), {
+						shown: proposal() !== undefined,
+						accepted: accepted(),
+					})}
 					width={terminal().width - 2}
 					notice={
+						question() ??
+						(accepting() ? "Accepting…" : undefined) ??
 						notice() ??
 						(answering()
 							? "The agent is still answering; press Enter again once it has."
@@ -248,20 +309,35 @@ export function PlanningView(props: {
 	);
 }
 
-// The keys of the footer while `focus` has the focus, `w` only while a
-// Proposal is `shown`. In the field `q` types, so only Ctrl-C quits there,
+// "1 Ticket", "2 Tickets".
+function ticketCount(count: number): string {
+	return `${count} ${count === 1 ? "Ticket" : "Tickets"}`;
+}
+
+// The keys of the footer while `focus` has the focus, `w` and `a` only
+// while a Proposal is `shown` and not yet `accepted`, which also leaves no
+// field to send from. In the field `q` types, so only Ctrl-C quits there,
 // which `tui.tsx` owns.
-function footerKeys(focus: PlanningViewPane, shown: boolean): FooterKey[] {
+function footerKeys(
+	focus: PlanningViewPane,
+	proposal: { shown: boolean; accepted: boolean },
+): FooterKey[] {
+	const { shown, accepted } = proposal;
 	if (focus === "chat") {
 		return [
-			{ keys: "Enter", label: "Send", use: 3 },
+			...(accepted ? [] : [{ keys: "Enter", label: "Send", use: 3 }]),
 			{ keys: "Tab", label: "Preview", use: 2 },
 			{ keys: "Esc", label: "Back", use: 1 },
 		];
 	}
 	return [
 		{ keys: "Tab", label: "Chat", use: 3 },
-		...(shown ? [{ keys: "w", label: "Workflow", use: 2 }] : []),
+		...(shown && !accepted
+			? [
+					{ keys: "a", label: "Accept", use: 2 },
+					{ keys: "w", label: "Workflow", use: 2 },
+				]
+			: []),
 		{ keys: "q", label: "Quit", use: 2 },
 		{ keys: "Esc", label: "Back", use: 1 },
 	];

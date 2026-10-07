@@ -5,7 +5,13 @@
 // argument parsing all come from its one entry in `commands`, and its `run`
 // reads what was given through that same entry's declarations.
 
-import { newGoal, newTicket, resetTicket, runGoal } from "./goal-runner.ts";
+import {
+	acceptPlan,
+	newGoal,
+	newTicket,
+	resetTicket,
+	runGoal,
+} from "./goal-runner.ts";
 import { initProject, updateProject } from "./init.ts";
 import { sendPlanningMessage } from "./planning-runner.ts";
 import { printGoalReport } from "./progress.ts";
@@ -357,6 +363,22 @@ revision of the proposal. It refuses a Workflow that isn't in
 				given.operand(planningWorkflow),
 				await listWorkflows(root),
 			);
+			return 0;
+		},
+	},
+	{
+		name: "plan accept",
+		summary: "Accept a planning item's proposal as a ready Goal",
+		description: `Turns the planning item into a ready Goal with its proposed Tickets, all at
+once, and prints the path of its goal.md. It refuses, creating nothing, when
+the proposal isn't ready to accept, vago run would refuse its Workflow, a
+response is still being written, or the item was already accepted. It starts
+nothing: vago run does.`,
+		operands: [planningName],
+		flags: [],
+		example: "vago plan accept search",
+		run: async (root, given) => {
+			console.log(await acceptPlan(root, given.operand(planningName)));
 			return 0;
 		},
 	},

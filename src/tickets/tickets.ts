@@ -8,9 +8,11 @@
 // Goals, with each item's planning chat, its turns' logs and the rule that
 // one turn is open at a time, and each item's Proposal: the block in an
 // answer it is read from, the human's Workflow choice and whether it is
-// ready to accept. Only this file is imported from outside `tickets/`.
+// ready to accept, and accepting an item's Proposal as a ready Goal, after
+// which its chat is read-only. Only this file is imported from outside
+// `tickets/`.
 
-import { mkdir, readdir, rename, rm, stat } from "node:fs/promises";
+import { link, mkdir, readdir, rename, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { HarnessSessionReport } from "../harness/registry.ts";
 import type { GoalStepGroup, Step } from "../workflow.ts";
@@ -197,6 +199,8 @@ export type GoalState = {
 		| undefined;
 	/** Whether every Ticket is `done`, which a Goal with no Tickets is. */
 	done: boolean;
+	/** Whether the Goal was accepted from a planning item, whose chat it keeps. */
+	planned: boolean;
 };
 
 /**
@@ -335,11 +339,13 @@ export async function createGoal(
 		throw new Error(`Goal ${goal} already exists: ${goalFile}`);
 	}
 	await mkdir(join(folder, "tickets"), { recursive: true });
-	await Bun.write(
-		goalFile,
-		headedText({ workflow, created: new Date() }, body ?? `# ${goal}\n`),
-	);
+	await Bun.write(goalFile, newGoalText(workflow, body ?? `# ${goal}\n`));
 	return goalFile;
+}
+
+// A new `goal.md` naming `workflow`, created now, with `body` after it.
+function newGoalText(workflow: string, body: string): string {
+	return headedText({ workflow, created: new Date() }, body);
 }
 
 /**
@@ -397,14 +403,15 @@ export async function createPlanningItem(
  * with everything it holds. Throws an Error naming the problem, and changes
  * nothing, when there is no such item, `name` is a Goal, a Goal or planning
  * item already has `newName`, `newName` isn't a valid name, or a response
- * to the item's chat is still being written.
+ * to the item's chat is still being written. Refuses a Goal accepted from a
+ * planning item: its planning chat is read-only.
  */
 export async function renamePlanningItem(
 	root: string,
 	name: string,
 	newName: string,
 ): Promise<void> {
-	const folder = await existingPlanningItem(root, name);
+	const folder = await planningItemToChange(root, name);
 	// The `vago plan say` writing it records its end under the old name.
 	const chat = await readPlanningChatFile(planningFolder(folder));
 	if (isOpen(chat.turns?.at(-1))) throw new Error(stillAnswering(name));
@@ -418,13 +425,14 @@ export async function renamePlanningItem(
 /**
  * Removes planning item `name` of the Project at `root` and everything it
  * holds. Throws an Error naming the problem, and removes nothing, when
- * there is no such item or `name` is a Goal.
+ * there is no such item or `name` is a Goal. Refuses a Goal accepted from a
+ * planning item: its planning chat is read-only.
  */
 export async function discardPlanningItem(
 	root: string,
 	name: string,
 ): Promise<void> {
-	await rm(await existingPlanningItem(root, name), { recursive: true });
+	await rm(await planningItemToChange(root, name), { recursive: true });
 }
 
 /**
@@ -456,6 +464,8 @@ export type PlanningChat = {
 	harness?: string;
 	sessionId?: string;
 	turns: PlanningTurn[];
+	/** Whether the item was accepted as a Goal, which makes its chat read-only. */
+	accepted: boolean;
 };
 
 /** Where `planning-runner.ts` records a turn it started. */
@@ -467,15 +477,20 @@ export type PlanningTurnEntry = {
 };
 
 /**
- * The conversation of planning item `item` of the Project at `root`; no
- * turns when none was sent. Throws an Error naming the folder when `item`
- * is a Goal or no planning item, and naming the file when its chat is bad.
+ * The conversation of planning item `item` of the Project at `root`, or of
+ * the Goal accepted from it; no turns when none was sent. Throws an Error
+ * naming the folder when `item` is neither a planning item nor a Goal
+ * accepted from one, and naming the file when its chat is bad.
  */
 export async function readPlanningChat(
 	root: string,
 	item: string,
 ): Promise<PlanningChat> {
-	const folder = planningFolder(await existingPlanningItem(root, item));
+	const { folder: itemFolder, accepted } = await planningFolderToRead(
+		root,
+		item,
+	);
+	const folder = planningFolder(itemFolder);
 	const chat = await readPlanningChatFile(folder);
 	return {
 		item,
@@ -491,6 +506,7 @@ export async function readPlanningChat(
 			proposalError: turn.proposal_error,
 			log: join(folder, turn.log),
 		})),
+		accepted,
 	};
 }
 
@@ -498,8 +514,9 @@ export async function readPlanningChat(
  * Appends an open turn holding `message` to `item`'s chat, recording
  * `harness` as the chat's when it has none, and gives back where the turn
  * is recorded and its log goes. Throws "a response is still being written"
- * when the last turn is open, and as `readPlanningChat` does. Survives a
- * crash (temp file and rename).
+ * when the last turn is open, and as `readPlanningChat` does. Refuses a
+ * Goal accepted from a planning item: its planning chat is read-only.
+ * Survives a crash (temp file and rename).
  */
 export async function recordPlanningTurnStart(
 	root: string,
@@ -507,7 +524,7 @@ export async function recordPlanningTurnStart(
 	message: string,
 	harness: string,
 ): Promise<PlanningTurnEntry> {
-	const folder = planningFolder(await existingPlanningItem(root, item));
+	const folder = planningFolder(await planningItemToChange(root, item));
 	const { number, log } = await rewritePlanningChatFile(folder, (chat) => {
 		const turns = chat.turns ?? [];
 		if (isOpen(turns.at(-1))) throw new Error(stillAnswering(item));
@@ -663,17 +680,19 @@ export type PlanningProposal = {
 };
 
 /**
- * The latest Proposal of planning item `item` of the Project at `root`, its
- * `problems` judged against `workflows`, the names of the Project's
- * Workflows. Undefined before the agent proposed one. Throws as
- * `readPlanningChat` does, and naming the file when a saved Proposal is bad.
+ * The latest Proposal of planning item `item` of the Project at `root`, or
+ * of the Goal accepted from it, its `problems` judged against `workflows`,
+ * the names of the Project's Workflows. Undefined before the agent proposed
+ * one. Throws as `readPlanningChat` does, and naming the file when a saved
+ * Proposal is bad.
  */
 export async function readPlanningProposal(
 	root: string,
 	item: string,
 	workflows: readonly string[],
 ): Promise<PlanningProposal | undefined> {
-	const folder = planningFolder(await existingPlanningItem(root, item));
+	const { folder: itemFolder } = await planningFolderToRead(root, item);
+	const folder = planningFolder(itemFolder);
 	const file = await readPlanningProposalFile(folder);
 	if (file === undefined) return undefined;
 	const chosenWorkflow = await readPlanningWorkflowFile(folder);
@@ -763,7 +782,8 @@ function checkWorkflow(workflow: string, workflows: readonly string[]): void {
  * the agent's recommendation and survives every revision. Throws an Error
  * listing `workflows`, the names of the Project's Workflows, and records
  * nothing, when `workflow` isn't one of them. Otherwise throws as
- * `readPlanningChat` does.
+ * `readPlanningChat` does, and refuses a Goal accepted from a planning item:
+ * its planning chat is read-only.
  */
 export async function recordPlanningWorkflow(
 	root: string,
@@ -771,9 +791,80 @@ export async function recordPlanningWorkflow(
 	workflow: string,
 	workflows: readonly string[],
 ): Promise<void> {
-	const folder = planningFolder(await existingPlanningItem(root, item));
+	const folder = planningFolder(await planningItemToChange(root, item));
 	checkWorkflow(workflow, workflows);
 	await writePlanningWorkflowFile(folder, workflow);
+}
+
+/**
+ * Turns planning item `item` of the Project at `root` into a ready Goal: its
+ * `goal.md` names the Proposal's Workflow and holds the proposed Goal's
+ * body, and each proposed Ticket is a ready Ticket with its body and
+ * blockers. The Goal and its Tickets appear together; its planning chat
+ * stays with it, read-only. Returns the path of `goal.md`. Throws an Error
+ * naming the problem, and creates no Goal, when `item` is already a Goal or
+ * no planning item, another vago holds it, a response is still being
+ * written, it has no Proposal, or the Proposal has problems judged against
+ * `workflows`, the names of the Project's Workflows.
+ */
+export async function acceptPlanningItem(
+	root: string,
+	item: string,
+	workflows: readonly string[],
+): Promise<string> {
+	// Checked first: taking the lock would create a mistyped item's folder.
+	const folder = await planningItemToChange(root, item);
+	const lock = goalLockPath(root, item);
+	await claimLock(lock, item);
+	try {
+		// Checked again under the lock: another vago may have accepted it
+		// between the first check and taking the lock.
+		await planningItemToChange(root, item);
+		const chat = await readPlanningChatFile(planningFolder(folder));
+		if (isOpen(chat.turns?.at(-1))) throw new Error(stillAnswering(item));
+		const proposal = await readPlanningProposal(root, item, workflows);
+		if (proposal === undefined) {
+			throw new Error(`${item} has no proposal to accept yet`);
+		}
+		// A Proposal with no Workflow has that as a problem; checked here too
+		// so the Workflow below is known to be there.
+		if (proposal.workflow === undefined || proposal.problems.length > 0) {
+			throw new Error(
+				`${item} isn't ready to accept: ${proposal.problems.join("; ")}`,
+			);
+		}
+		const staging = join(planningFolder(folder), "accepting");
+		await rm(staging, { recursive: true, force: true });
+		await mkdir(join(staging, "tickets"), { recursive: true });
+		for (const { number, slug, body, blockedBy } of proposal.tickets) {
+			await Bun.write(
+				ticketFilePath(join(staging, "tickets"), ticketName(number, slug)),
+				readyTicketText(blockedBy, undefined, body),
+			);
+		}
+		await Bun.write(
+			goalFileIn(staging),
+			newGoalText(proposal.workflow, proposal.goal.body),
+		);
+		// The folder isn't a Goal and this vago holds its lock, so a `tickets/`
+		// there can only be what a crashed acceptance left.
+		await rm(join(folder, "tickets"), { recursive: true, force: true });
+		await rename(join(staging, "tickets"), join(folder, "tickets"));
+		try {
+			// The commit point: the folder is a Goal from here on, and a link
+			// fails rather than replace one.
+			await link(goalFileIn(staging), goalFileIn(folder));
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+				throw new Error(acceptedReadOnly(item, folder));
+			}
+			throw error;
+		}
+		await rm(staging, { recursive: true, force: true });
+		return goalFileIn(folder);
+	} finally {
+		await releaseLock(lock);
+	}
 }
 
 // A turn with no end is one whose response is still being written.
@@ -826,20 +917,51 @@ async function goalFolderKind(folder: string): Promise<GoalFolderKind> {
 	return (await exists(planningFolder(folder))) ? "planning" : "neither";
 }
 
-// The folder of planning item `name`, checked to be one.
-async function existingPlanningItem(
+// The folder of planning item `name`, checked to be one that may change: a
+// Goal accepted from one keeps its chat read-only.
+async function planningItemToChange(
 	root: string,
 	name: string,
 ): Promise<string> {
 	const folder = goalFolder(root, name);
 	const kind = await goalFolderKind(folder);
 	if (kind === "goal") {
-		throw new Error(`${name} is a Goal, not a planning item: ${folder}`);
+		throw new Error(
+			(await exists(planningFolder(folder)))
+				? acceptedReadOnly(name, folder)
+				: goalNotPlanningItem(name, folder),
+		);
 	}
-	if (kind === "neither") {
-		throw new Error(`No planning item ${name}: ${folder} isn't one`);
-	}
+	if (kind === "neither") throw new Error(noPlanningItem(name, folder));
 	return folder;
+}
+
+// The folder of planning item `name`, or of a Goal accepted from one, for
+// reading its chat and Proposal.
+async function planningFolderToRead(
+	root: string,
+	name: string,
+): Promise<{ folder: string; accepted: boolean }> {
+	const folder = goalFolder(root, name);
+	const kind = await goalFolderKind(folder);
+	if (kind === "planning") return { folder, accepted: false };
+	if (kind === "neither") throw new Error(noPlanningItem(name, folder));
+	if (!(await exists(planningFolder(folder)))) {
+		throw new Error(goalNotPlanningItem(name, folder));
+	}
+	return { folder, accepted: true };
+}
+
+function goalNotPlanningItem(name: string, folder: string): string {
+	return `${name} is a Goal, not a planning item: ${folder}`;
+}
+
+function noPlanningItem(name: string, folder: string): string {
+	return `No planning item ${name}: ${folder} isn't one`;
+}
+
+function acceptedReadOnly(name: string, folder: string): string {
+	return `${name} was accepted as a Goal; its planning chat is read-only: ${folder}`;
 }
 
 // Goals and planning items share `.vago-goals`, so one name can't be both.
@@ -926,6 +1048,7 @@ export async function readGoal(root: string, goal: string): Promise<GoalState> {
 						runs: next.runs,
 					},
 		done: entries.every(({ header }) => header.status === "done"),
+		planned: await exists(planningFolder(folder)),
 	};
 }
 
@@ -966,12 +1089,26 @@ export async function addTicket(
 	}
 	const number = Math.max(0, ...tickets.map(({ ticket }) => ticket.number)) + 1;
 	const ticket = { root, goal, name: ticketName(number, slug), number };
+	const file = ticketFile(ticket);
+	await Bun.write(
+		file,
+		readyTicketText(blockedBy, workflow, body ?? `\n# ${slug}\n`),
+	);
+	return file;
+}
+
+// A new ready Ticket file, created now, blocked by `blockedBy` (each once),
+// going through `workflow` or, when it's undefined, the Goal's, with `body`
+// after its header.
+function readyTicketText(
+	blockedBy: number[],
+	workflow: string | undefined,
+	body: string,
+): string {
 	const header: TicketHeader = { status: "ready", created: new Date() };
 	if (blockedBy.length > 0) header.blocked_by = [...new Set(blockedBy)];
 	if (workflow !== undefined) header.workflow = workflow;
-	const file = ticketFile(ticket);
-	await Bun.write(file, headedText(header, body ?? `\n# ${slug}\n`));
-	return file;
+	return headedText(header, body);
 }
 
 /**

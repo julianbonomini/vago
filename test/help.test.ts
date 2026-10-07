@@ -16,6 +16,7 @@ const commands = [
 	"run",
 	"goal new",
 	"goal report",
+	"plan accept",
 	"ticket add",
 	"ticket reset",
 ];
@@ -329,6 +330,7 @@ test("vago nope prints every command's usage, lined up, then points at --help", 
        vago plan rename <name> <new-name>
        vago plan say <name> --body-file <path>
        vago plan workflow <name> <workflow>
+       vago plan accept <name>
        vago plan discard <name>
        vago ticket add <goal> <slug> [--blocked-by <NN>]... [--workflow <name>] [--body-file <path>]
        vago ticket reset <goal> <NN>

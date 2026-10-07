@@ -20,11 +20,12 @@ import { theme } from "./theme.ts";
 /**
  * `proposal`, planning item `item`'s in the Project at `root`, in a pane
  * titled Preview, `width` columns wide, its left edge the chat's right one
- * when `besideChat`. Its title row says whether it is ready to accept; its
- * body shows the Workflow, the problems, the open decisions, the Goal and
- * each Ticket with its blockers. While `focused`, ↑↓, PgUp and PgDn scroll
- * it. While `picking`, it lists `workflows`, the recommended one marked and
- * selected first: ↑↓ move, and Enter records the selected one as the human's
+ * when `besideChat`. Its title row says whether it is ready to accept, or
+ * that it was, once `accepted`; its body shows the Workflow, the problems,
+ * the open decisions, the Goal and each Ticket with its blockers. While
+ * `focused`, ↑↓, PgUp and PgDn scroll it. While `picking`, unless
+ * `accepted`, it lists `workflows`, the recommended one marked and selected
+ * first: ↑↓ move, and Enter records the selected one as the human's
  * choice and calls `onPicked` with why it was refused, if it was.
  */
 export function PlanningPreview(props: {
@@ -35,21 +36,21 @@ export function PlanningPreview(props: {
 	width: number;
 	besideChat: boolean;
 	focused: boolean;
+	accepted: boolean;
 	picking: boolean;
 	onPicked: (refusal?: string) => void;
 }): JSX.Element {
 	const { color } = theme();
+	// An accepted item's Workflow is its Goal's, so it is never picked again.
+	const picking = () => props.picking && !props.accepted;
 	const inner = () => props.width - paneEdges;
 	const [picked, setPicked] = createSignal(0);
 	createEffect(
-		on(
-			() => props.picking,
-			(picking) => {
-				if (!picking) return;
-				const recommended = props.proposal?.recommendedWorkflow ?? "";
-				setPicked(Math.max(0, props.workflows.indexOf(recommended)));
-			},
-		),
+		on(picking, (opened) => {
+			if (!opened) return;
+			const recommended = props.proposal?.recommendedWorkflow ?? "";
+			setPicked(Math.max(0, props.workflows.indexOf(recommended)));
+		}),
 	);
 	let scroll: ScrollBoxRenderable | undefined;
 	const pick = async () => {
@@ -70,7 +71,7 @@ export function PlanningPreview(props: {
 	useKeyboard((key) => {
 		if (!props.focused) return;
 		const last = props.workflows.length - 1;
-		if (props.picking) {
+		if (picking()) {
 			if (key.name === "up") setPicked(Math.max(0, picked() - 1));
 			else if (key.name === "down") setPicked(Math.min(last, picked() + 1));
 			else if (key.name === "return") pick();
@@ -96,11 +97,13 @@ export function PlanningPreview(props: {
 				aside={
 					props.proposal === undefined
 						? undefined
-						: ready()
-							? "ready to accept"
-							: "not ready"
+						: props.accepted
+							? "accepted"
+							: ready()
+								? "ready to accept"
+								: "not ready"
 				}
-				asideColor={ready() ? color.ok : undefined}
+				asideColor={ready() || props.accepted ? color.ok : undefined}
 				focused={props.focused}
 				width={inner()}
 			/>
@@ -128,7 +131,7 @@ export function PlanningPreview(props: {
 						<ProposalLines
 							proposal={proposal()}
 							workflows={props.workflows}
-							picking={props.picking}
+							picking={picking()}
 							picked={picked()}
 							width={inner()}
 						/>

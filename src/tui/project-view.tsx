@@ -22,7 +22,6 @@ import {
 	discardPlanningItem,
 	renamePlanningItem,
 } from "../tickets/tickets.ts";
-import { startGoal } from "./detached-vago.ts";
 import { GoalPreview } from "./goal-preview.tsx";
 import {
 	type GoalRow,
@@ -51,6 +50,7 @@ import { fitText } from "./text-fit.ts";
 import { goalColor, theme } from "./theme.ts";
 import { TicketBar } from "./ticket-bar.tsx";
 import { duration, money } from "./time-and-money.ts";
+import { startGoal } from "./vago-commands.ts";
 
 // How often the Goals are read again: a change on disk shows within this.
 const refreshMs = 1000;
@@ -115,9 +115,11 @@ function liveGoalRows(root: string): {
  * all this; its `[` and `]` open the Goal before and after, passing over
  * broken ones and stopping at the ends, and its Esc leaves the selection on
  * the Goal last open. Enter on a planning item opens it in the planning
- * view, which sends its messages through the command `vago`. `s` starts
- * the selected Goal in a `vago run` of its own, through the command `vago`
- * (`startGoal`), and the footer says what came of it until the next key.
+ * view, which sends its messages and accepts it through the command `vago`;
+ * once it accepts, the Goals show again with its notice in the footer. `s`
+ * starts the selected Goal in a `vago run` of its own, through the command
+ * `vago` (`startGoal`), and the footer says what came of it until the next
+ * key.
  * Reads the Goals itself, and again every second, so changes on disk show
  * without a key; the selection stays on its Goal when the rows reorder.
  * Throws what the first read throws.
@@ -349,7 +351,11 @@ export function ProjectView(props: {
 								root={props.root}
 								vago={props.vago}
 								name={row().goal}
-								onClose={() => setOpened(undefined)}
+								onClose={(closing) => {
+									setOpened(undefined);
+									setNotice(closing);
+									refresh();
+								}}
 							/>
 						</Show>
 					)}

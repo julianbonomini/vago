@@ -1,8 +1,9 @@
 // A Goal's lifecycle: creating it and its Tickets with the Workflows they
-// name, the main loop of `vago run`, which runs the Goal's `before_all` once,
-// then takes the Goal's Tickets one at a time through the Steps of their
-// Workflow in the Goal's worktree, then its `after_all`, and closes it once
-// the Goal is done, and resetting a stuck Ticket. Hides the order of a Goal's
+// name, accepting a planning item's Proposal as a ready Goal, the main loop
+// of `vago run`, which runs the Goal's `before_all` once, then takes the
+// Goal's Tickets one at a time through the Steps of their Workflow in the
+// Goal's worktree, then its `after_all`, and closes it once the Goal is
+// done, and resetting a stuck Ticket. Hides the order of a Goal's
 // lifecycle and where its Steps run.
 
 import { type PassEnd, runPass } from "./pass-runner.ts";
@@ -12,15 +13,17 @@ import {
 	printWorktreeClose,
 } from "./progress.ts";
 import {
+	acceptPlanningItem,
 	addTicket,
 	closeOpenRun,
 	createGoal,
 	goalStepsPass,
 	readGoal,
+	readPlanningProposal,
 	setStatus,
 	withGoalClaimed,
 } from "./tickets/tickets.ts";
-import { loadWorkflow, type Workflow } from "./workflow.ts";
+import { listWorkflows, loadWorkflow, type Workflow } from "./workflow.ts";
 import { closeWorktree, openWorktree } from "./worktree.ts";
 
 /**
@@ -77,6 +80,22 @@ export async function newTicket(
 		}
 	}
 	return addTicket(root, goal, slug, blockedBy, workflow, body);
+}
+
+/**
+ * Accepts planning item `item` of the Project at `root` as
+ * `acceptPlanningItem` does, and also refuses, creating nothing, when
+ * `vago run` would refuse the Proposal's Workflow. Returns the path of
+ * `goal.md`.
+ */
+export async function acceptPlan(root: string, item: string): Promise<string> {
+	const workflows = await listWorkflows(root);
+	const proposal = await readPlanningProposal(root, item, workflows);
+	// The check vago run makes, so accepting never writes a Goal vago run would refuse.
+	if (proposal?.workflow !== undefined && proposal.problems.length === 0) {
+		await loadWorkflow(root, proposal.workflow);
+	}
+	return acceptPlanningItem(root, item, workflows);
 }
 
 /**

@@ -1,6 +1,7 @@
-// The `running.lock` that marks a Goal as taken by a `vago run`: taking it
-// with this process's pid, taking over one a dead run left, releasing it, and
-// telling whether another live process holds it.
+// The `running.lock` that marks a Goal as taken by a `vago run`, or a
+// planning item as being accepted: taking it with this process's pid, taking
+// over one a dead holder left, releasing it, and telling whether another live
+// process holds it.
 // Hides the lock's format and how a holder is found alive or dead.
 
 import { link, rm } from "node:fs/promises";
@@ -23,7 +24,7 @@ export async function claimLock(lock: string, goal: string): Promise<void> {
 		holder = await lockHolder(lock);
 	}
 	throw new Error(
-		`Goal ${goal} is already being run by vago (pid ${holder ?? "unknown"}). If no vago run is running it, delete ${lock}`,
+		`Goal ${goal} is already being run or accepted by vago (pid ${holder ?? "unknown"}). If no vago is running or accepting it, delete ${lock}`,
 	);
 }
 
