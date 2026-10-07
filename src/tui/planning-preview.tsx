@@ -24,8 +24,9 @@ import { theme } from "./theme.ts";
  * that it was, once `accepted`; its body shows the Workflow, the problems,
  * the open decisions, the Goal and each Ticket with its blockers. While
  * `focused`, ↑↓, PgUp and PgDn scroll it. While `picking`, unless
- * `accepted`, it lists `workflows`, the recommended one marked and selected
- * first: ↑↓ move, and Enter records the selected one as the human's
+ * `accepted`, it lists `workflows` above the body, where no scrolling
+ * hides them, the recommended one marked and selected first: ↑↓ move and
+ * scroll nothing, and Enter records the selected one as the human's
  * choice and calls `onPicked` with why it was refused, if it was.
  */
 export function PlanningPreview(props: {
@@ -107,10 +108,21 @@ export function PlanningPreview(props: {
 				focused={props.focused}
 				width={inner()}
 			/>
+			{/* Above the scrollbox, so no scrolling hides it. */}
+			<Show when={picking()}>
+				<WorkflowPicker
+					workflows={props.workflows}
+					recommended={props.proposal?.recommendedWorkflow}
+					picked={picked()}
+				/>
+			</Show>
+			{/* Never focused, so a click leaves the keys to this pane's own
+			    handler and the picker keeps the arrows. */}
 			<scrollbox
 				ref={(box: ScrollBoxRenderable) => {
 					scroll = box;
 				}}
+				focusable={false}
 				flexGrow={1}
 				verticalScrollbarOptions={{ visible: false }}
 			>
@@ -130,9 +142,7 @@ export function PlanningPreview(props: {
 					{(proposal: () => PlanningProposal) => (
 						<ProposalLines
 							proposal={proposal()}
-							workflows={props.workflows}
 							picking={picking()}
-							picked={picked()}
 							width={inner()}
 						/>
 					)}
@@ -148,17 +158,14 @@ const paneEdges = 4;
 // Where a Ticket's blockers and text start, past its number and a space.
 const ticketIndent = "   ";
 
-// `proposal`'s body, `width` columns wide: its Workflow, or the picker of
-// `workflows` with the `picked`th selected while `picking`, its problems,
-// open decisions, Goal and Tickets.
+// `proposal`'s body, `width` columns wide: its Workflow unless `picking`,
+// its problems, open decisions, Goal and Tickets.
 function ProposalLines(props: {
 	proposal: PlanningProposal;
-	workflows: string[];
 	picking: boolean;
-	picked: number;
 	width: number;
 }): JSX.Element {
-	const { color, selection } = theme();
+	const { color } = theme();
 	const paragraphs = (text: string, indent: string) =>
 		joinParagraphs(text).flatMap((paragraph) =>
 			wrapText(paragraph, props.width - indent.length).map(
@@ -167,34 +174,9 @@ function ProposalLines(props: {
 		);
 	return (
 		<>
-			<Show
-				when={props.picking}
-				fallback={
-					<For each={wrapText(workflowText(props.proposal), props.width)}>
-						{(line) => <PlainLine text={line} />}
-					</For>
-				}
-			>
-				<DimLine text="Choose the Workflow:" />
-				<For each={props.workflows}>
-					{(name, index) => {
-						const selected = () => index() === props.picked;
-						const recommended =
-							name === props.proposal.recommendedWorkflow
-								? ", recommended"
-								: "";
-						return (
-							<text
-								fg={selected() ? selection.fg : color.fg}
-								bg={selected() ? selection.bg : undefined}
-								attributes={selected() ? selection.attributes : 0}
-								flexShrink={0}
-								wrapMode="none"
-							>
-								{`  ${name}${recommended}`}
-							</text>
-						);
-					}}
+			<Show when={!props.picking}>
+				<For each={wrapText(workflowText(props.proposal), props.width)}>
+					{(line) => <PlainLine text={line} />}
 				</For>
 			</Show>
 			<For
@@ -248,6 +230,37 @@ function ProposalLines(props: {
 				)}
 			</For>
 		</>
+	);
+}
+
+// `workflows`, the `picked`th selected and the `recommended` one marked.
+function WorkflowPicker(props: {
+	workflows: string[];
+	recommended: string | undefined;
+	picked: number;
+}): JSX.Element {
+	const { color, selection } = theme();
+	return (
+		<box flexShrink={0} flexDirection="column">
+			<DimLine text="Choose the Workflow:" />
+			<For each={props.workflows}>
+				{(name, index) => {
+					const selected = () => index() === props.picked;
+					const recommended = name === props.recommended ? ", recommended" : "";
+					return (
+						<text
+							fg={selected() ? selection.fg : color.fg}
+							bg={selected() ? selection.bg : undefined}
+							attributes={selected() ? selection.attributes : 0}
+							flexShrink={0}
+							wrapMode="none"
+						>
+							{`  ${name}${recommended}`}
+						</text>
+					);
+				}}
+			</For>
+		</box>
 	);
 }
 
