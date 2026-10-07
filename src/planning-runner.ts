@@ -52,7 +52,11 @@ export function planningHarnesses(): string[] {
 	const installed = installedHarnesses().filter((name) =>
 		Object.hasOwn(planningModels, name),
 	);
-	return installed.length === 0 ? [defaultHarness] : installed;
+	if (installed.length === 0) return [defaultHarness];
+	// The default first, whatever order the registry lists them in.
+	return installed.sort(
+		(a, b) => Number(b === defaultHarness) - Number(a === defaultHarness),
+	);
 }
 
 // What an item plans on when the human chose nothing.
@@ -171,11 +175,11 @@ async function answerTurn(
 		},
 	);
 	const outcome = spellOutcome(ran.outcome);
-	await recordPlanningTurnEnd(
-		entry,
-		outcome,
-		ran.outcome.kind === "ok" ? { answer: ran.report.resultText ?? "" } : {},
-	);
+	await recordPlanningTurnEnd(entry, outcome, {
+		answer:
+			ran.outcome.kind === "ok" ? (ran.report.resultText ?? "") : undefined,
+		costUsd: ran.report.costUsd,
+	});
 	return ran.outcome.kind === "ok"
 		? { outcome: "ok", answer: ran.report.resultText ?? "" }
 		: {

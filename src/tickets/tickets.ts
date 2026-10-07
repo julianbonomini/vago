@@ -470,10 +470,16 @@ export async function discardPlanningItem(
 export type PlanningTurn = {
 	number: number;
 	message: string;
+	/** When the latest attempt at the response started. */
 	startedAt: Date;
 	endedAt?: Date;
 	outcome?: string;
 	reason?: string;
+	/**
+	 * What the Harness reported the response cost; absent while it is being
+	 * written, after an interruption, or when the Harness reported none.
+	 */
+	costUsd?: number;
 	proposalError?: string;
 	log: string;
 	interruptedLogs: string[];
@@ -537,6 +543,7 @@ export async function readPlanningChat(
 				endedAt: turn.ended,
 				outcome: stopped ? "interrupted" : turn.outcome,
 				reason: stopped ? stoppedEarly : turn.reason,
+				costUsd: turn.cost_usd,
 				proposalError: turn.proposal_error,
 				log: join(folder, turn.log),
 				interruptedLogs: (turn.interrupted_logs ?? []).map((log) =>
@@ -667,6 +674,9 @@ export async function recordPlanningTurnRetry(
 		const earlier = turn.interrupted_logs ?? [];
 		turn.interrupted_logs = [...earlier, turn.log];
 		turn.log = `logs/turn-${ticketNumberText(turns.length)}-retry-${earlier.length + 1}.jsonl`;
+		// Restarted, so the agent's time leaves out the interrupted attempt,
+		// whose end nobody recorded.
+		turn.started = new Date();
 		delete turn.ended;
 		delete turn.outcome;
 		delete turn.reason;
@@ -679,17 +689,18 @@ export async function recordPlanningTurnRetry(
 }
 
 /**
- * Closes the turn with `outcome`, and `reason` for an `error`. `answer` is
- * an `ok` turn's final answer: its last proposal block becomes the item's
- * Proposal, saved before the turn shows as ended. An answer without a block
- * leaves the Proposal as it was. A block that isn't valid TOML or doesn't
+ * Closes the turn with `outcome`, `reason` for an `error`, and what its
+ * session cost when the Harness reported it. `answer` is an `ok` turn's
+ * final answer: its last proposal block becomes the item's Proposal, saved
+ * before the turn shows as ended. An answer without a block leaves the
+ * Proposal as it was. A block that isn't valid TOML or doesn't
  * fit the format leaves it as it was too, and records why on the turn.
  * Never throws for the agent's text. Survives a crash.
  */
 export async function recordPlanningTurnEnd(
 	entry: PlanningTurnEntry,
 	outcome: string,
-	ended: { reason?: string; answer?: string } = {},
+	ended: { reason?: string; answer?: string; costUsd?: number } = {},
 ): Promise<void> {
 	const folder = entryFolder(entry);
 	const proposalError =
@@ -706,6 +717,7 @@ export async function recordPlanningTurnEnd(
 		turn.ended = new Date();
 		turn.outcome = outcome;
 		if (ended.reason !== undefined) turn.reason = ended.reason;
+		if (ended.costUsd !== undefined) turn.cost_usd = ended.costUsd;
 		if (proposalError !== undefined) turn.proposal_error = proposalError;
 	});
 }

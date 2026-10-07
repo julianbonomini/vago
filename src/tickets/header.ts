@@ -1,7 +1,8 @@
 // The `+++` TOML header that opens `goal.md` and every Ticket file: parsing
 // and checking it, writing it back, and rewriting a Ticket's or `goal.md`'s
 // header in place atomically with its body kept byte for byte. Also owns
-// that atomic write, which `planning-chat.ts` shares.
+// that atomic write and reading a checked TOML file, which the planning
+// files share.
 
 import { rename } from "node:fs/promises";
 import { parse, stringify } from "smol-toml";
@@ -142,6 +143,31 @@ async function rewriteWith<Header extends Record<string, unknown>, Change>(
 	const changed = change(header);
 	await writeFileAtomically(file, headedText(header, body));
 	return changed;
+}
+
+/**
+ * `file` parsed and checked against `schema`, or undefined when there is no
+ * such file. Throws an Error naming the file when it isn't valid TOML or
+ * doesn't fit.
+ */
+export async function readTomlFile<T>(
+	file: string,
+	schema: z.ZodType<T>,
+): Promise<T | undefined> {
+	const text = Bun.file(file);
+	if (!(await text.exists())) return undefined;
+	let toml: unknown;
+	try {
+		// smol-toml, not Bun.TOML, so datetimes round-trip as in a header.
+		toml = parse(await text.text());
+	} catch (error) {
+		throw new Error(`${file} isn't valid TOML: ${error}`);
+	}
+	const checked = schema.safeParse(toml);
+	if (!checked.success) {
+		throw new Error(`${file}: ${z.prettifyError(checked.error)}`);
+	}
+	return checked.data;
 }
 
 /**

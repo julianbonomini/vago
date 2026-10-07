@@ -88,7 +88,10 @@ export async function newTicket(
  * `vago run` would refuse the Proposal's Workflow. Returns the path of
  * `goal.md`.
  */
-export async function acceptPlan(root: string, item: string): Promise<string> {
+export async function acceptProposal(
+	root: string,
+	item: string,
+): Promise<string> {
 	const workflows = await listWorkflows(root);
 	const proposal = await readPlanningProposal(root, item, workflows);
 	// The check vago run makes, so accepting never writes a Goal vago run would refuse.

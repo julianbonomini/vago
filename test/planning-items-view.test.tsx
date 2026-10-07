@@ -3,7 +3,13 @@ import { existsSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { TestRendererSetup } from "@opentui/core/testing";
-import { goalText, heldLock, makeProject, ticketText } from "./project.ts";
+import {
+	goalText,
+	heldLock,
+	makeProject,
+	oneStep,
+	ticketText,
+} from "./project.ts";
 import { frameWith, frameWithout, renderView } from "./view-render.tsx";
 
 // The files of planning item `name`, as `vago plan new` makes it.
@@ -47,6 +53,71 @@ test("a planning item is a planning row in the Goals list, beside the Goals", as
 
 	expect(rowOf(frame, "search")).toMatch(/planning +search /);
 	expect(rowOf(frame, "ready")).toMatch(/ready +ready /);
+});
+
+// The `chat.toml` of a planning item whose one turn ended with `outcome`, or
+// is still open without one.
+function oneTurnChat(outcome?: string): string {
+	const ended =
+		outcome === undefined
+			? ""
+			: `ended = 2026-10-06T10:01:00.000Z\noutcome = "${outcome}"\n`;
+	return `harness = "claude-code"
+
+[[turns]]
+message = "Plan search"
+started = 2026-10-06T10:00:00.000Z
+log = "logs/turn-01.jsonl"
+${ended}`;
+}
+
+// A `proposal.toml` of one Ticket recommending Workflow `small`.
+const readyProposal = `turn = 1
+workflow = "small"
+goal = """
+# Search
+"""
+
+[[tickets]]
+slug = "score"
+body = """
+# Score each result
+"""
+`;
+
+test("each planning row says what its chat is doing or waiting for", async () => {
+	const chat = (name: string, files: Record<string, string>) =>
+		Object.fromEntries(
+			Object.entries(files).map(([path, text]) => [
+				`.vago-goals/${name}/planning/${path}`,
+				text,
+			]),
+		);
+	const root = await makeProject({
+		".vago/workflows/small.toml": oneStep("true"),
+		...planningItem("fresh"),
+		...chat("working", { "chat.toml": oneTurnChat() }),
+		...chat("cut-off", { "chat.toml": oneTurnChat() }),
+		...chat("asked", { "chat.toml": oneTurnChat("ok") }),
+		...chat("failed", { "chat.toml": oneTurnChat("exit 1") }),
+		...chat("proposed", {
+			"chat.toml": oneTurnChat("ok"),
+			"proposal.toml": readyProposal,
+		}),
+	});
+	await heldLock(root, "working");
+	const view = await renderView(root, { width: 120, height: 40 });
+
+	const frame = await frameWith(view, "proposal ready");
+
+	expect(rowOf(frame, "fresh")).toContain("no chat yet");
+	expect(rowOf(frame, "working")).toContain("agent working");
+	expect(rowOf(frame, "cut-off")).toContain("response interrupted");
+	expect(rowOf(frame, "asked")).toContain("waiting for your reply");
+	expect(rowOf(frame, "failed")).toContain("response failed");
+	expect(rowOf(frame, "proposed")).toContain("proposal ready");
+	// The build Runs' columns: a planning item has none.
+	expect(rowOf(frame, "asked")).not.toContain("$0.00");
 });
 
 test("n asks for a name and opens a new planning item, which Esc leaves in the list", async () => {

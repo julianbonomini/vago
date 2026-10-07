@@ -124,6 +124,7 @@ test("a stopped worker records its response interrupted, and plan retry answers 
 	await worker.exited;
 
 	await chatWith(root, "a", 'outcome = "interrupted"');
+	const askedAt = (await turnsOf(root, "a"))[0]?.started;
 	const answers = await makeFakeClaude("exit 0", planningFixture);
 	const retried = await runVago(root, ["plan", "retry", "a"], answers.env);
 	expect(retried.stderr).toBe("");
@@ -132,7 +133,28 @@ test("a stopped worker records its response interrupted, and plan retry answers 
 	const turns = await turnsOf(root, "a");
 	expect(turns).toHaveLength(1);
 	expect(turns[0]?.outcome).toBe("ok");
+	// The interrupted attempt's time isn't the agent's: the turn's starts again.
+	expect(Date.parse(`${turns[0]?.started}`)).toBeGreaterThan(
+		Date.parse(`${askedAt}`),
+	);
 });
+
+test("each response records what its session cost on its turn", async () => {
+	const root = await planningProject();
+	const answers = await makeFakeClaude("exit 0", planningFixture);
+
+	await say(root, "a", "What should search rank by?", answers);
+	await say(root, "a", "And ties?", answers);
+
+	const turns = await turnsOf(root, "a");
+	expect(turns.map(({ cost_usd }) => cost_usd)).toEqual([
+		fixtureCostUsd,
+		fixtureCostUsd,
+	]);
+});
+
+// The cost `planningFixture`'s session reports.
+const fixtureCostUsd = 0.10768140000000001;
 
 // Answers turn 1 of item `a`, then SIGKILLs the `vago plan say` of turn 2
 // once its session has reported, leaving the response open with no live

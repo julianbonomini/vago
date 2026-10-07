@@ -350,6 +350,22 @@ test("plan accept starts nothing", async () => {
 	}
 });
 
+test("the accepted Goal's report counts its build Runs, not its planning", async () => {
+	const { root } = await readyProject();
+	expect((await accept(root)).exitCode).toBe(0);
+
+	const report = await runVago(root, ["goal", "report", "search"]);
+
+	expect(report.exitCode).toBe(0);
+	expect(report.stdout).toContain("| **Total** | **0** | **0.0s** | **** |");
+	// What `planningFixture`'s session cost.
+	expect(report.stdout).not.toContain("$0.11");
+	const chat = Bun.TOML.parse(await file(root, "planning/chat.toml")) as {
+		turns: { cost_usd?: number }[];
+	};
+	expect(chat.turns[0]?.cost_usd).toBeGreaterThan(0);
+});
+
 test("an accepted Goal's planning chat is read-only", async () => {
 	const { root } = await readyProject();
 	await accept(root);

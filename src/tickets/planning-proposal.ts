@@ -6,7 +6,7 @@
 import { join } from "node:path";
 import { parse, stringify } from "smol-toml";
 import { z } from "zod";
-import { writeFileAtomically } from "./header.ts";
+import { readTomlFile, writeFileAtomically } from "./header.ts";
 
 // Strict, so a misspelled field such as `blockers` is refused rather than
 // silently dropped.
@@ -100,26 +100,4 @@ export async function writePlanningWorkflowFile(
 		join(folder, "workflow.toml"),
 		stringify({ workflow }),
 	);
-}
-
-// `file` parsed and checked against `schema`, or undefined when there is no
-// such file. Throws an Error naming the file when it isn't valid TOML or
-// doesn't fit.
-async function readTomlFile<T>(
-	file: string,
-	schema: z.ZodType<T>,
-): Promise<T | undefined> {
-	const text = Bun.file(file);
-	if (!(await text.exists())) return undefined;
-	let toml: unknown;
-	try {
-		toml = parse(await text.text());
-	} catch (error) {
-		throw new Error(`${file} isn't valid TOML: ${error}`);
-	}
-	const checked = schema.safeParse(toml);
-	if (!checked.success) {
-		throw new Error(`${file}: ${z.prettifyError(checked.error)}`);
-	}
-	return checked.data;
 }

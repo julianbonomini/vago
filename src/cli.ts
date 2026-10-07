@@ -6,7 +6,7 @@
 // reads what was given through that same entry's declarations.
 
 import {
-	acceptPlan,
+	acceptProposal,
 	newGoal,
 	newTicket,
 	resetTicket,
@@ -423,7 +423,7 @@ was already accepted. It starts nothing: vago run does.`,
 		flags: [],
 		example: "vago plan accept search",
 		run: async (root, given) => {
-			console.log(await acceptPlan(root, given.operand(planningName)));
+			console.log(await acceptProposal(root, given.operand(planningName)));
 			return 0;
 		},
 	},

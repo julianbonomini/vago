@@ -29,9 +29,15 @@ import { sharedLine, usePane } from "./pane-grid.ts";
 import { PaneTitle } from "./pane-title.tsx";
 import { PlanningPreview } from "./planning-preview.tsx";
 import { RunActivityLines } from "./run-activity.tsx";
-import { type FooterKey, KeyFooter } from "./screen-keys.tsx";
+import {
+	type FooterKey,
+	type HelpKey,
+	KeyFooter,
+	KeyHelp,
+} from "./screen-keys.tsx";
 import { fitText, joinParagraphs, wrapText } from "./text-fit.ts";
 import { theme } from "./theme.ts";
+import { duration, money } from "./time-and-money.ts";
 import {
 	runPlanAccept,
 	startPlanningRetry,
@@ -57,8 +63,11 @@ type PlanningViewPane = "chat" | "preview";
  * the header: a pane titled with its name over its chat, each turn the
  * human's message under `you` and then the agent's response as it is
  * written, the newest at the bottom, and under the chat a field that has
- * every key typed while it has the focus. Enter sends a message that isn't
- * blank in a `vago plan say` of its own, through the command `vago`
+ * every key typed while it has the focus. The title row's right side gives
+ * the agent's time and cost over every response, which stay the item's
+ * own, kept once it is accepted and never added to a Goal's Runs. Enter
+ * sends a message that isn't blank in a `vago plan say` of its own, through
+ * the command `vago`
  * (`startPlanningTurn`), and shows it at once; while a response is being
  * written, Enter sends nothing and the footer says so. A turn that failed
  * shows why. An interrupted last response says so, and Ctrl-R, in either
@@ -68,10 +77,10 @@ type PlanningViewPane = "chat" | "preview";
  * chat, or in its place below 100 columns while it has the focus, the
  * Preview shows the agent's Proposal. Tab moves the focus between the field
  * and the Preview; with the Preview focused no field has the focus, so `q`
- * quits. There `a` asks whether to accept a
- * Proposal that is ready, or says why it isn't, and `y` accepts it in a
- * `vago plan accept` (`runPlanAccept`) that the view waits on, any other
- * key cancelling. A refusal shows in the footer and the view stays; an
+ * quits and `?` shows every key until `?` or Esc. There `a` asks whether
+ * to accept a Proposal that is ready, or says why it isn't, and `y` accepts
+ * it in a `vago plan accept` (`runPlanAccept`) that the view waits on, any
+ * other key cancelling. A refusal shows in the footer and the view stays; an
  * acceptance calls `onClose` with the notice to show. Once the item was
  * accepted, the chat is read-only: no field, and no `a` or `w`. Esc calls
  * `onClose` with no notice. Reads the chat and the Proposal itself, and
@@ -83,14 +92,15 @@ export function PlanningView(props: {
 	name: string;
 	onClose: (notice?: string) => void;
 }): JSX.Element {
-	const { color, dimText } = theme();
+	const { color, dimText, symbol } = theme();
 	const terminal = useTerminalDimensions();
-	const { chat, proposal, workflows, failure, reread } = livePlanning(
+	const { chat, proposal, workflows, failure, readAt, reread } = livePlanning(
 		props.root,
 		props.name,
 	);
 	const [focus, setFocus] = createSignal<PlanningViewPane>("chat");
 	const [picking, setPicking] = createSignal(false);
+	const [helpShown, setHelpShown] = createSignal(false);
 	const [notice, setNotice] = createSignal<string>();
 	// The question `a` asks before accepting, shown until the next key.
 	const [question, setQuestion] = createSignal<string>();
@@ -103,6 +113,14 @@ export function PlanningView(props: {
 	}>();
 	const turns = () => chat()?.turns ?? [];
 	const accepted = () => chat()?.accepted === true;
+	const titleAside = () => {
+		const { agentMs, costUsd } = agentTotals(turns(), readAt());
+		return [
+			accepted() ? "accepted" : "planning",
+			duration(agentMs),
+			money(costUsd),
+		].join(` ${symbol.sep} `);
+	};
 	const shownPending = () => {
 		const sent = pending();
 		return sent !== undefined && turns().length <= sent.turnsBefore
@@ -179,6 +197,10 @@ export function PlanningView(props: {
 			if (key.name === "y") accept();
 			return;
 		}
+		if (helpShown()) {
+			if (key.name === "escape" || key.name === "?") setHelpShown(false);
+			return;
+		}
 		if (key.name === "escape" && picking()) setPicking(false);
 		else if (key.name === "escape") props.onClose();
 		// The picker has the arrows and Enter until it closes.
@@ -186,7 +208,7 @@ export function PlanningView(props: {
 		else if (key.ctrl && key.name === "r") retryResponse();
 		else if (key.name === "tab") {
 			setFocus(focus() === "chat" ? "preview" : "chat");
-		}
+		} else if (key.name === "?" && focus() === "preview") setHelpShown(true);
 		// One acceptance at a time, and no new choice meanwhile or after. Until
 		// the chat is read, whether the item was accepted isn't known.
 		else if (accepting() || chat() === undefined || accepted()) return;
@@ -215,7 +237,7 @@ export function PlanningView(props: {
 				>
 					<PaneTitle
 						title={props.name}
-						aside={accepted() ? "accepted" : "planning"}
+						aside={titleAside()}
 						focused={focus() === "chat"}
 						width={inner()}
 					/>
@@ -336,8 +358,43 @@ export function PlanningView(props: {
 					}
 				/>
 			</box>
+			<Show when={helpShown()}>
+				<KeyHelp keys={helpKeys(symbol.upDown)} />
+			</Show>
 		</box>
 	);
+}
+
+// `upDown` names the arrow keys.
+const helpKeys = (upDown: string): HelpKey[] => [
+	{ keys: "Enter", meaning: "send a message, or ask for changes" },
+	{ keys: "Ctrl-R", meaning: "retry an interrupted response" },
+	{ keys: "Tab", meaning: "move between the chat and the Preview" },
+	{ keys: `${upDown} PgUp PgDn`, meaning: "scroll the Preview" },
+	{ keys: "a", meaning: "accept the Proposal as a ready Goal" },
+	{ keys: "w", meaning: "choose the Goal's Workflow" },
+	{ keys: "Esc", meaning: "back to the Goals" },
+	{ keys: "?", meaning: "show, hide these keys, from the Preview" },
+	{ keys: "q Ctrl-C", meaning: "quit; in the field only Ctrl-C" },
+];
+
+// How long the agent spent on `turns` and what they cost: each response
+// that ended, and one being written up to `now`. An interrupted attempt
+// counts no time, since nobody recorded when it stopped, and no cost, since
+// its session never reported one.
+function agentTotals(
+	turns: PlanningTurn[],
+	now: Date,
+): { agentMs: number; costUsd: number } {
+	let agentMs = 0;
+	let costUsd = 0;
+	for (const turn of turns) {
+		costUsd += turn.costUsd ?? 0;
+		if (turn.outcome === "interrupted") continue;
+		const end = turn.endedAt ?? now;
+		agentMs += end.getTime() - turn.startedAt.getTime();
+	}
+	return { agentMs, costUsd };
 }
 
 // "1 Ticket", "2 Tickets".
@@ -375,17 +432,19 @@ function footerKeys(
 					{ keys: "w", label: "Workflow", use: 2 },
 				]
 			: []),
-		{ keys: "q", label: "Quit", use: 2 },
 		{ keys: "Esc", label: "Back", use: 1 },
+		{ keys: "?", label: "Help", use: 3 },
+		{ keys: "q", label: "Quit", use: 2 },
 	];
 }
 
 // The chat and the Proposal of planning item `item` of the Project at
 // `root`, and the names of its Workflows, undefined (none) until the first
 // read ends, then read again every `refreshMs`, and on `reread`, for as long
-// as the calling component lives. A read that fails keeps what the last one
-// gave and its reason in `failure`, until a read succeeds; a bad Proposal
-// stops no chat from showing.
+// as the calling component lives. `readAt` is when the last read started, so
+// time that runs to now moves on with each read. A read that fails keeps what
+// the last one gave and its reason in `failure`, until a read succeeds; a bad
+// Proposal stops no chat from showing.
 function livePlanning(
 	root: string,
 	item: string,
@@ -394,18 +453,21 @@ function livePlanning(
 	proposal: () => PlanningProposal | undefined;
 	workflows: () => string[];
 	failure: () => string | undefined;
+	readAt: () => Date;
 	reread: () => void;
 } {
 	const [chat, setChat] = createSignal<PlanningChat>();
 	const [proposal, setProposal] = createSignal<PlanningProposal>();
 	const [workflows, setWorkflows] = createSignal<string[]>([]);
 	const [failure, setFailure] = createSignal<string>();
+	const [readAt, setReadAt] = createSignal(new Date());
 	let lastChat = "";
 	let lastProposal = "";
 	let reading = false;
 	const read = async () => {
 		if (reading) return;
 		reading = true;
+		setReadAt(new Date());
 		try {
 			const fresh = await readPlanningChat(root, item);
 			// Each kept when unchanged, so it isn't drawn again.
@@ -432,7 +494,7 @@ function livePlanning(
 	read();
 	const timer = setInterval(read, refreshMs);
 	onCleanup(() => clearInterval(timer));
-	return { chat, proposal, workflows, failure, reread: read };
+	return { chat, proposal, workflows, failure, readAt, reread: read };
 }
 
 // One turn of a chat on Harness `harness`, `width` columns wide: its

@@ -14,7 +14,7 @@ import {
 	runVago,
 	startVago,
 } from "./project.ts";
-import { frameWith, renderView } from "./view-render.tsx";
+import { frameWith, frameWithout, renderView } from "./view-render.tsx";
 
 // The files of planning item `name` whose chat holds `turns`, each with its
 // log, as `vago plan say` leaves them.
@@ -26,6 +26,7 @@ async function chatFiles(
 		reason?: string;
 		log?: string;
 		sessionId?: string;
+		costUsd?: number;
 	}[],
 ): Promise<Record<string, string>> {
 	const files: Record<string, string> = {};
@@ -48,6 +49,7 @@ async function chatFiles(
 		if (turn.reason !== undefined) {
 			lines.push(`reason = ${JSON.stringify(turn.reason)}`);
 		}
+		if (turn.costUsd !== undefined) lines.push(`cost_usd = ${turn.costUsd}`);
 		if (turn.sessionId !== undefined) {
 			lines.push(`session_id = "${turn.sessionId}"`);
 		}
@@ -83,6 +85,51 @@ test("a reopened planning item shows its earlier turns and the message field", a
 	expect(frame).toContain("you");
 	expect(frame).toContain("What should search rank by?");
 	expect(frame).toContain("Enter Send");
+});
+
+test("the planning view shows its agent time and cost, apart from the Project's spend", async () => {
+	const root = await makeProject(
+		await chatFiles("search", [
+			{ message: "What should search rank by?", outcome: "ok", costUsd: 0.1 },
+			{ message: "And ties?", outcome: "ok", costUsd: 0.2 },
+		]),
+	);
+	const view = await renderView(root, { width: 120, height: 24 });
+
+	const list = await frameWith(view, " 1/1 ");
+	expect(list).toContain("$0.00 spent");
+	expect(list).not.toContain("$0.30");
+	view.mockInput.pressEnter();
+
+	const opened = await frameWith(view, "And ties?");
+	const title = opened.split("\n").find((line) => line.includes(" search "));
+	expect(title).toContain("planning · 2m 0s · $0.30");
+});
+
+test("? in the Preview shows the planning keys, and Esc hides them", async () => {
+	const root = await makeProject(
+		await chatFiles("search", [{ message: "Plan search", outcome: "ok" }]),
+	);
+	const view = await renderView(root, { width: 120, height: 30 });
+	await openOnlyItem(view);
+	await frameWith(view, "Plan search");
+
+	view.mockInput.pressTab();
+	await frameWith(view, "? Help");
+	view.mockInput.pressKey("?");
+
+	const help = await frameWith(view, " Keys ");
+	for (const meaning of [
+		"send a message, or ask for changes",
+		"retry an interrupted response",
+		"accept the Proposal as a ready Goal",
+		"choose the Goal's Workflow",
+	]) {
+		expect(help).toContain(meaning);
+	}
+	view.mockInput.pressEscape();
+	const back = await frameWithout(view, " Keys ");
+	expect(back).toContain("Plan search");
 });
 
 test("a message sent in the view shows at once, then the agent's response", async () => {

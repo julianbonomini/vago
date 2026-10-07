@@ -3,9 +3,9 @@
 // Takes the item's `planning/` folder, so it never imports `tickets.ts`.
 
 import { join } from "node:path";
-import { parse, stringify } from "smol-toml";
+import { stringify } from "smol-toml";
 import { z } from "zod";
-import { writeFileAtomically } from "./header.ts";
+import { readTomlFile, writeFileAtomically } from "./header.ts";
 
 // Loose objects, so fields Vago doesn't know survive a rewrite.
 const TurnTable = z.looseObject({
@@ -14,6 +14,7 @@ const TurnTable = z.looseObject({
 	ended: z.date().optional(),
 	outcome: z.string().optional(),
 	reason: z.string().optional(),
+	cost_usd: z.number().optional(),
 	proposal_error: z.string().optional(),
 	log: z.string(),
 	session_id: z.string().optional(),
@@ -40,21 +41,7 @@ export type PlanningChatFile = z.infer<typeof ChatFile>;
 export async function readPlanningChatFile(
 	folder: string,
 ): Promise<PlanningChatFile> {
-	const file = chatFile(folder);
-	const text = Bun.file(file);
-	if (!(await text.exists())) return {};
-	let toml: unknown;
-	try {
-		// smol-toml, not Bun.TOML, so the datetimes round-trip as in header.ts.
-		toml = parse(await text.text());
-	} catch (error) {
-		throw new Error(`${file} isn't valid TOML: ${error}`);
-	}
-	const checked = ChatFile.safeParse(toml);
-	if (!checked.success) {
-		throw new Error(`${file}: ${z.prettifyError(checked.error)}`);
-	}
-	return checked.data;
+	return (await readTomlFile(chatFile(folder), ChatFile)) ?? {};
 }
 
 /**

@@ -10,7 +10,8 @@ const wide = { width: 140, height: 40 };
 
 const item = ".vago-goals/search";
 
-// A chat whose turns sent `messages`, each ended `ok`, with no logs.
+// A chat whose turns sent `messages`, each ended `ok` after a minute and
+// costing $0.25, with no logs.
 function chatToml(messages: string[]): string {
 	const lines = ['harness = "claude-code"'];
 	for (const [index, message] of messages.entries()) {
@@ -21,6 +22,7 @@ function chatToml(messages: string[]): string {
 			"started = 2026-10-06T10:00:00.000Z",
 			"ended = 2026-10-06T10:01:00.000Z",
 			'outcome = "ok"',
+			"cost_usd = 0.25",
 			`log = "logs/turn-0${index + 1}.jsonl"`,
 		);
 	}
@@ -237,7 +239,9 @@ test("p opens an accepted Goal's planning chat, read-only", async () => {
 	expect(chat).not.toContain("Message the planning agent");
 	const preview = await frameWith(view, "02 Rank results by score");
 	const titles = preview.split("\n").find((line) => line.includes("Preview"));
-	expect(titles).toContain("accepted");
+	expect(titles).toContain("accepted · 1m 0s · $0.25");
+	// The Goal's build spend leaves its planning out.
+	expect(preview).toContain("$0.00 spent");
 	const chatBefore = await Bun.file(
 		join(root, item, "planning/chat.toml"),
 	).text();

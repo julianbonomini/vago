@@ -1,8 +1,9 @@
 // The entry to the TUI that a bare `vago` opens on a terminal: how the
 // terminal is held while it is open and given back on every way out. It
 // reads, and writes only to start Goals, to make, rename and discard
-// planning items, and to send a planning item's agent a message (ADR 0005),
-// and is drawn with OpenTUI and Solid (ADR 0006). Only `cli.ts` imports this
+// planning items, to send a planning item's agent a message or retry its
+// response, to record a Proposal's Workflow and to accept it (ADR 0005), and
+// is drawn with OpenTUI and Solid (ADR 0006). Only `cli.ts` imports this
 // file, and only lazily, so no command loads OpenTUI.
 
 import { format } from "node:util";

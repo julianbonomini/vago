@@ -100,10 +100,11 @@ function liveGoalRows(root: string): {
  * The Project view of the Project at `root`: a header line with the
  * Project's counts and spend, which stays on every screen, the Goal view's
  * included, and a Goals box with one row per Goal showing
- * its standing, Tickets, time, cost, what it is doing and its title, the
+ * its standing, Tickets, time, cost, what it is doing and its title (a
+ * planning item's time and cost blank, since it has no Runs), the
  * selected one in the selection colours, moved by ↑↓ and j k, g and G, or a
- * click, with `n/N` on the box's bottom border, or a line naming
- * `vago goal new` while there are none. The box scrolls, by wheel or to
+ * click, with `n/N` on the box's bottom border, or a line naming the
+ * New Goal key while there are none. The box scrolls, by wheel or to
  * follow the selection, once the Goals outgrow its share of the screen.
  * Below it, the selected Goal's preview fills the rest of the screen, then
  * a footer names the keys, and `?` shows them all until `?` or Esc. Space
@@ -513,9 +514,9 @@ const footerKeys = (
 
 const helpKeys = (upDown: string): HelpKey[] => [
 	{ keys: `${upDown} j k`, meaning: "select the Goal above, below" },
-	{ keys: "Enter", meaning: "open the selected Goal" },
+	{ keys: "Enter", meaning: "open the selected Goal, or its chat" },
 	{ keys: "s", meaning: "start the selected Goal in vago run" },
-	{ keys: "n", meaning: "plan a New Goal, named first" },
+	{ keys: "n", meaning: "plan a New Goal in a chat, named first" },
 	{ keys: "r", meaning: "rename the selected planning item" },
 	{ keys: "d", meaning: "discard the selected planning item" },
 	{ keys: "g G", meaning: "select the first, the last Goal" },
@@ -602,6 +603,13 @@ const barWidth = 10;
 // The bar, a space, and room for `99/99` and a space.
 const ticketsWidth = barWidth + 7;
 
+// The RUN TIME and COST of `row`, blank for a planning item, which has no
+// Runs: its agent's time and cost are the planning view's to show.
+function runTotals(row: GoalRow): string {
+	if (row.standing === "planning") return "";
+	return `${duration(row.runMs).padEnd(timesWidth)}${money(row.costUsd)}`;
+}
+
 function GoalRowLine(props: {
 	row: GoalRow;
 	selected: boolean;
@@ -641,9 +649,7 @@ function GoalRowLine(props: {
 			/>
 			<span style={dim()}>
 				{` ${`${props.row.ticketCounts.done}/${ticketTotal(props.row.ticketCounts)}`.padEnd(ticketsWidth - barWidth - 1)}`}
-				{props.wide
-					? `${duration(props.row.runMs).padEnd(timesWidth)}${money(props.row.costUsd).padEnd(timesWidth)}`
-					: ""}
+				{props.wide ? runTotals(props.row).padEnd(2 * timesWidth) : ""}
 				{fitText(props.row.now, props.widths.now)}
 			</span>
 			<span style={dim()}>{fitText(props.row.title, props.widths.title)}</span>
