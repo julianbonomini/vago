@@ -74,25 +74,20 @@ test("a planning item is a planning row in the Goals list, beside the Goals", as
 	expect(rowOf(frame, "ready")).toMatch(/ready +ready /);
 });
 
-// The `chat.toml` of a planning item whose one turn ended with `outcome`, or
-// is still open without one.
-function oneTurnChat(outcome?: string): string {
-	const ended =
-		outcome === undefined
-			? ""
-			: `ended = 2026-10-06T10:01:00.000Z\noutcome = "${outcome}"\n`;
+// The `chat.toml` of a planning item whose one session started and, when
+// `ended`, ended.
+function oneSessionChat(ended: boolean): string {
 	return `harness = "claude-code"
+session_id = "4f0c1e1a-7b2d-4c55-9a51-2f7d8e6b3c90"
 
-[[turns]]
-message = "Plan search"
+[[sessions]]
 started = 2026-10-06T10:00:00.000Z
-log = "logs/turn-01.jsonl"
-${ended}`;
+session_id = "4f0c1e1a-7b2d-4c55-9a51-2f7d8e6b3c90"
+${ended ? "ended = 2026-10-06T10:05:00.000Z\ncost_usd = 0.8\n" : ""}`;
 }
 
 // A `proposal.toml` of one Ticket recommending Workflow `small`.
-const readyProposal = `turn = 1
-workflow = "small"
+const readyProposal = `workflow = "small"
 goal = """
 # Search
 """
@@ -104,7 +99,7 @@ body = """
 """
 `;
 
-test("each planning row says what its chat is doing or waiting for", async () => {
+test("each planning row says whether its session is open, waits for the human, or has a proposal ready", async () => {
 	const chat = (name: string, files: Record<string, string>) =>
 		Object.fromEntries(
 			Object.entries(files).map(([path, text]) => [
@@ -115,27 +110,27 @@ test("each planning row says what its chat is doing or waiting for", async () =>
 	const root = await makeProject({
 		".vago/workflows/small.toml": oneStep("true"),
 		...planningItem("fresh"),
-		...chat("working", { "chat.toml": oneTurnChat() }),
-		...chat("cut-off", { "chat.toml": oneTurnChat() }),
-		...chat("asked", { "chat.toml": oneTurnChat("ok") }),
-		...chat("failed", { "chat.toml": oneTurnChat("exit 1") }),
+		...chat("open", { "chat.toml": oneSessionChat(false) }),
+		...chat("killed", { "chat.toml": oneSessionChat(false) }),
+		...chat("asked", { "chat.toml": oneSessionChat(true) }),
 		...chat("proposed", {
-			"chat.toml": oneTurnChat("ok"),
+			"chat.toml": oneSessionChat(true),
 			"proposal.toml": readyProposal,
 		}),
 	});
-	await heldLock(root, "working");
+	await heldLock(root, "open");
 	const view = await renderView(root, { width: 120, height: 40 });
 
 	const frame = await frameWith(view, "proposal ready");
 
-	expect(rowOf(frame, "fresh")).toContain("no chat yet");
-	expect(rowOf(frame, "working")).toContain("agent working");
-	expect(rowOf(frame, "cut-off")).toContain("response interrupted");
+	expect(rowOf(frame, "fresh")).toContain("no session yet");
+	expect(rowOf(frame, "open")).toContain("session open");
+	expect(rowOf(frame, "killed")).toContain("waiting for your reply");
 	expect(rowOf(frame, "asked")).toContain("waiting for your reply");
-	expect(rowOf(frame, "failed")).toContain("response failed");
 	expect(rowOf(frame, "proposed")).toContain("proposal ready");
-	// The build Runs' columns: a planning item has none.
+	// The build Runs' columns: a planning item has none, and its planning
+	// cost shows in the planning view.
+	expect(rowOf(frame, "asked")).not.toContain("$0.80");
 	expect(rowOf(frame, "asked")).not.toContain("$0.00");
 });
 
@@ -356,16 +351,10 @@ test("a Goal is offered Start and neither Rename nor Discard", async () => {
 	expect(view.captureCharFrame()).not.toContain("Discard");
 });
 
-test("discarding an item whose response is being written stops it, and the row stays gone", async () => {
+test("discarding an item whose session is open stops it, and the row stays gone", async () => {
 	const root = await makeProject({
 		...readyGoal,
-		".vago-goals/search/planning/chat.toml": `harness = "claude-code"
-
-[[turns]]
-message = "What should search rank by?"
-started = 2026-10-06T10:00:00.000Z
-log = "logs/turn-01.jsonl"
-`,
+		".vago-goals/search/planning/chat.toml": oneSessionChat(false),
 	});
 	await heldLock(root, "search");
 	const view = await renderView(root);

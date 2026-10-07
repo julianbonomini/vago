@@ -1,8 +1,8 @@
 # A session's Proposal is read from its transcript
 
-In a planning session (ADR 0015) the agent writes the same `<vago-plan>` block as before (ADR 0012), in its messages. An interactive `claude` streams nothing to Vago, so `vago plan session` reads Claude Code's own transcript of the session: `$CLAUDE_CONFIG_DIR/projects/<folder>/<sessionId>.jsonl`, or `~/.claude/projects/…` without `CLAUDE_CONFIG_DIR`, where `<folder>` is the real path of the session's working directory with every character other than a letter or a digit replaced by `-`. It reads the file every second while the session runs and once more after it ends, however it ended, before the item's lock is released. Of the agent's messages, subagents' left out, the latest one holding a closed block gives its last closed block. When that block is valid TOML and fits the format, it becomes `planning/proposal.toml`, with no `turn`.
+In a planning session (ADR 0015) the agent writes the same `<vago-plan>` block as before (ADR 0012), in its messages. An interactive `claude` streams nothing to Vago, so `vago plan session` reads Claude Code's own transcript of the session: `$CLAUDE_CONFIG_DIR/projects/<folder>/<sessionId>.jsonl`, or `~/.claude/projects/…` without `CLAUDE_CONFIG_DIR`, where `<folder>` is the real path of the session's working directory with every character other than a letter or a digit replaced by `-`. It reads the file every second while the session runs and once more after it ends, however it ended, before the item's lock is released. Of the agent's messages, subagents' left out, the latest one holding a closed block gives its last closed block. When that block is valid TOML and fits the format, it becomes `planning/proposal.toml`.
 
-This supersedes ADR 0012 for planning sessions. ADR 0012 still holds for `vago plan say` until Ticket 04 removes it.
+This supersedes ADR 0012.
 
 Codex's transcript is its rollout files, which ADR 0017 describes. Only the Harness module knows its transcript's path and line shapes; `step-runner.ts` reads the files, and `tickets/` picks the block.
 

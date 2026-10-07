@@ -13,8 +13,8 @@ import { frameWith, frameWithout, renderView } from "./view-render.tsx";
 // Each test runs a vago plan session and its fake Harness.
 setDefaultTimeout(20_000);
 
-// A ready Proposal of one Ticket, from turn 1, on Workflow `small`.
-const proposalToml = `turn = 1
+// A ready Proposal of one Ticket on Workflow `small`.
+const proposalToml = `
 workflow = "small"
 goal = """
 # Search ranks by relevance
@@ -127,6 +127,41 @@ test("a Codex item shows Codex's session beside the Preview", async () => {
 		"Preview",
 	);
 	expect(frame).toContain("Score each result");
+});
+
+// The row of `frame` with the planning pane titles: the item's name and
+// the Preview's.
+function titleRow(frame: string): string {
+	return frame.split("\n").find((row) => row.includes(" search ")) ?? "";
+}
+
+test("the session's title gives the planning's time and cost on Claude Code and Codex", async () => {
+	for (const [harness, cost] of [
+		["claude-code", "$0.80"],
+		["codex", "$0.40"],
+	] as const) {
+		const fake =
+			harness === "codex"
+				? await makeFakeInteractiveCodex({ answers: ["A question?"] })
+				: await makeFakeInteractiveClaude({ answers: ["A question?"] });
+		const root = await makeProject({
+			".vago/prompts/planning.md": "You help plan a Goal.\n",
+			".vago/workflows/small.toml": oneStep("true"),
+			".vago-goals/search/planning/chat.toml": `harness = "${harness}"\n`,
+		});
+		const view = await sessionView(root, fake);
+		await frameWith(view, " 1/1 ");
+		view.mockInput.pressEnter();
+		const opened = await frameWith(view, "fresh ");
+		expect(titleRow(opened)).toMatch(/planning · \d+s · \$0\.00/);
+
+		view.mockInput.pressEnter();
+
+		const answered = await frameWith(view, `· ${cost}`);
+		expect(titleRow(answered)).toContain(`· ${cost}`);
+		view.renderer.destroy();
+		await fake.allEnded();
+	}
 });
 
 test("q, Esc, Ctrl-C and Shift+Enter all reach the session, and the view stays", async () => {

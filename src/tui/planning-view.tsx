@@ -2,8 +2,8 @@
 // accepted Goal's from the Goal view, holding the item's planning session,
 // the Preview of the agent's Proposal beside it, and Accept. Hides its
 // layout, its keys, how the focus moves between the session and the
-// Preview, when the Proposal is read again, and how an acceptance ends the
-// session first and is asked for and waited on.
+// Preview, when the chat and the Proposal are read again, and how an
+// acceptance ends the session first and is asked for and waited on.
 
 import { type JSX, useKeyboard, useTerminalDimensions } from "@opentui/solid";
 import { createSignal, onCleanup, Show } from "solid-js";
@@ -15,8 +15,7 @@ import {
 } from "../tickets/tickets.ts";
 import { listWorkflows } from "../workflow.ts";
 import { projectMessage } from "./goal-rows.ts";
-import { sharedLine, usePane } from "./pane-grid.ts";
-import { PaneTitle } from "./pane-title.tsx";
+import { sharedLine } from "./pane-grid.ts";
 import { PlanningPreview } from "./planning-preview.tsx";
 import { PlanningSessionPane } from "./planning-session-pane.tsx";
 import {
@@ -25,8 +24,8 @@ import {
 	KeyFooter,
 	KeyHelp,
 } from "./screen-keys.tsx";
-import { fitText } from "./text-fit.ts";
 import { theme } from "./theme.ts";
+import { duration, money } from "./time-and-money.ts";
 import { runPlanAccept } from "./vago-commands.ts";
 
 // How often the chat and the Proposal are read again: a Proposal saved
@@ -47,19 +46,22 @@ type PlanningViewPane = "session" | "preview";
  * Planning item `name` of the Project at `root` filling the screen under
  * the header: a pane titled with its name holding its planning session,
  * which starts as the view opens, through the command `vago`, and ends when
- * it closes. Beside it, or in its place below 100 columns while it has the
- * focus, the Preview shows the agent's Proposal. The session has the focus
- * first, and while it has it every key is the session's but Ctrl-], which
- * moves the focus to the Preview; there Ctrl-] or Tab moves it back. With
- * the Preview focused `q` quits and `?` shows every key until `?` or Esc.
+ * it closes. The title's right side says whether the item is planning or
+ * accepted, and gives the time its sessions were open and what they cost,
+ * which stay the item's own, never added to a Goal's Runs. Beside it, or
+ * in its place below 100 columns while it has the focus, the Preview shows
+ * the agent's Proposal. The session has the focus first, and while it has
+ * it every key is the session's but Ctrl-], which moves the focus to the
+ * Preview; there Ctrl-] or Tab moves it back. With the Preview focused `q`
+ * quits and `?` shows every key until `?` or Esc.
  * There `a` asks whether to accept a Proposal that is ready, or says why it
  * isn't, and `y` ends the session and accepts the Proposal in a
  * `vago plan accept` (`runPlanAccept`) that the view waits on, any other
  * key cancelling. A refusal shows in the footer and starts the session
  * again, resuming it; an acceptance calls `onClose` with the notice to
- * show. Once the item was accepted it has no session, and no `a` or `w`.
- * Esc from the Preview calls `onClose` with no notice. Reads the chat and
- * the Proposal itself, and again every second.
+ * show. Once the item was accepted its session still opens, to read, but
+ * there is no `a` or `w`. Esc from the Preview calls `onClose` with no
+ * notice. Reads the chat and the Proposal itself, and again every second.
  */
 export function PlanningView(props: {
 	root: string;
@@ -73,6 +75,16 @@ export function PlanningView(props: {
 		props.root,
 		props.name,
 	);
+	// Whether the item is planning or accepted, its planning time and cost.
+	const titleAside = () => {
+		const read = chat();
+		if (read === undefined) return "";
+		return [
+			read.accepted ? "accepted" : "planning",
+			duration(read.planningMs),
+			money(read.costUsd),
+		].join(` ${symbol.sep} `);
+	};
 	const [focus, setFocus] = createSignal<PlanningViewPane>("session");
 	const [picking, setPicking] = createSignal(false);
 	const [helpShown, setHelpShown] = createSignal(false);
@@ -83,10 +95,6 @@ export function PlanningView(props: {
 	// Bumped to start the session again after a refused acceptance ended it.
 	const [sessionStart, setSessionStart] = createSignal(1);
 	const accepted = () => chat()?.accepted === true;
-	// The pane with the focus: the one `focus` names, but the Preview for an
-	// accepted item, which has no session to focus.
-	const focusedPane = (): PlanningViewPane =>
-		accepted() ? "preview" : focus();
 	let endSession: (() => Promise<void>) | undefined;
 	// Asks whether to accept the Proposal, or says why it can't be.
 	const askAccept = () => {
@@ -125,7 +133,7 @@ export function PlanningView(props: {
 		// The handlers of the focused session run after this one, and skip a
 		// key whose default is prevented.
 		const switching = key.ctrl && key.name === "]";
-		if (focusedPane() === "session") {
+		if (focus() === "session") {
 			if (!switching) return;
 			key.preventDefault();
 			setFocus("preview");
@@ -156,13 +164,13 @@ export function PlanningView(props: {
 		else if (key.name === "w" && proposal() !== undefined) setPicking(true);
 		else if (key.name === "a") askAccept();
 	});
+	// Started once the chat is read, after the key that opened the view, which
+	// the session would otherwise get too, and again for each `sessionStart`.
+	const sessionToStart = () =>
+		chat() === undefined ? undefined : sessionStart();
 	const split = () => terminal().width >= splitWidth;
 	const sessionWidth = () =>
 		split() ? Math.floor(terminal().width * sessionShare) : terminal().width;
-	// Started once the chat is read, so an accepted item starts no session
-	// bound to be refused, and again for each `sessionStart`.
-	const sessionToStart = () =>
-		chat() !== undefined && !accepted() ? sessionStart() : undefined;
 	return (
 		<box flexDirection="column" flexGrow={1}>
 			<box flexDirection="row" flexGrow={1}>
@@ -172,18 +180,16 @@ export function PlanningView(props: {
 						root={props.root}
 						item={props.name}
 						title={props.name}
-						focused={focusedPane() === "session"}
-						visible={split() || focusedPane() === "session"}
+						aside={titleAside()}
+						focused={focus() === "session"}
+						visible={split() || focus() === "session"}
 						width={sessionWidth()}
 						onOpen={(end) => {
 							endSession = end;
 						}}
 					/>
 				</Show>
-				<Show when={accepted() && split()}>
-					<AcceptedPane name={props.name} width={sessionWidth()} />
-				</Show>
-				<Show when={split() || focusedPane() === "preview"}>
+				<Show when={split() || focus() === "preview"}>
 					<PlanningPreview
 						root={props.root}
 						item={props.name}
@@ -195,7 +201,7 @@ export function PlanningView(props: {
 								: terminal().width
 						}
 						besideSession={split()}
-						focused={focusedPane() === "preview"}
+						focused={focus() === "preview"}
 						accepted={accepted()}
 						picking={picking()}
 						onPicked={(refusal) => {
@@ -208,7 +214,7 @@ export function PlanningView(props: {
 			</box>
 			<box flexShrink={0} paddingLeft={1} paddingRight={1}>
 				<KeyFooter
-					keys={footerKeys(focusedPane(), {
+					keys={footerKeys(focus(), {
 						shown: proposal() !== undefined,
 						accepted: accepted(),
 					})}
@@ -243,35 +249,6 @@ const helpKeys = (upDown: string): HelpKey[] => [
 	},
 ];
 
-// An accepted item's pane in place of its session, `width` columns wide.
-function AcceptedPane(props: { name: string; width: number }): JSX.Element {
-	const { dimText } = theme();
-	const pane = usePane();
-	// The pane's border and padding, on both sides.
-	const inner = () => props.width - 4;
-	return (
-		<box
-			ref={pane}
-			border
-			width={props.width}
-			flexShrink={0}
-			paddingLeft={1}
-			paddingRight={1}
-			flexDirection="column"
-		>
-			<PaneTitle
-				title={props.name}
-				aside="accepted"
-				focused={false}
-				width={inner()}
-			/>
-			<text {...dimText} flexShrink={0} wrapMode="none">
-				{fitText("Accepted as a Goal.", inner())}
-			</text>
-		</box>
-	);
-}
-
 // "1 Ticket", "2 Tickets".
 function ticketCount(count: number): string {
 	return `${count} ${count === 1 ? "Ticket" : "Tickets"}`;
@@ -288,7 +265,7 @@ function footerKeys(
 		return [{ keys: "Ctrl-]", label: "Preview", use: 3 }];
 	const { shown, accepted } = item;
 	return [
-		...(accepted ? [] : [{ keys: "Ctrl-]", label: "Session", use: 3 }]),
+		{ keys: "Ctrl-]", label: "Session", use: 3 },
 		...(shown && !accepted
 			? [
 					{ keys: "a", label: "Accept", use: 2 },

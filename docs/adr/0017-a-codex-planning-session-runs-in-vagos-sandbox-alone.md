@@ -20,4 +20,4 @@ The planning prompt goes in as `-c developer_instructions=<prompt as a TOML stri
 - The Codex agent can write outside the Project root: to `/tmp`, the home folder, and the worktrees of Goals under `VAGO_HOME`. Claude Code's agent can't, since it has only reading tools. Its planning prompt is the only thing that asks it not to.
 - Vago depends on Codex's rollout layout and `session_meta` line, which Codex doesn't document. A release that changes them stops ids and Proposals from arriving, with no error. Only `harness/codex.ts` changes when they do.
 - A second Codex session the human starts in the Project root while the item's session waits for its first message can be taken for the item's.
-- The headless read-only command (`codex exec --sandbox read-only`) of `vago plan say` hits the same nested-sandbox failure. It is removed with `vago plan say` in Ticket 04.
+- The headless read-only command (`codex exec --sandbox read-only`) of `vago plan say` hit the same nested-sandbox failure. It was removed with `vago plan say` (ADR 0018).

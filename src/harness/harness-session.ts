@@ -36,10 +36,6 @@ export type HarnessCli = {
 		model: string,
 		args: readonly string[],
 	): string[];
-	/** As `Harness.readOnlyCommand`. */
-	readOnlyCommand(model: string): string[];
-	/** As `Harness.readOnlyResumeCommand`. */
-	readOnlyResumeCommand(sessionId: string, model: string): string[];
 	/** As `Harness.interactiveReadOnlyCommand`. */
 	interactiveReadOnlyCommand(session: {
 		model: string;
@@ -63,8 +59,13 @@ export type HarnessCli = {
 	): HarnessTranscriptFiles | undefined;
 	/** As `Harness.transcriptSession`. */
 	transcriptSession(firstLine: string): HarnessTranscriptSession | undefined;
-	/** As `Harness.transcriptAnswers`. */
+	/** As `HarnessTranscript.answers`, from the lines `readTranscript` takes. */
 	transcriptAnswers(lines: readonly string[]): string[];
+	/**
+	 * What the session whose transcript has `lines` used, by model message,
+	 * or its total for a CLI that records only that.
+	 */
+	transcriptUsage(lines: readonly string[]): HarnessModelUsage[];
 	/** As `Harness.resumeHint`. */
 	resumeHint(sessionId: string): string;
 };
@@ -219,8 +220,6 @@ export function harnessFromCli(cli: HarnessCli): Harness {
 		program: cli.program,
 		command: cli.command,
 		resumeCommand: cli.resumeCommand,
-		readOnlyCommand: cli.readOnlyCommand,
-		readOnlyResumeCommand: cli.readOnlyResumeCommand,
 		interactiveReadOnlyCommand: cli.interactiveReadOnlyCommand,
 		readLine: (line, command) =>
 			sessionReport(cli.events(line, command), cli.prices),
@@ -232,7 +231,13 @@ export function harnessFromCli(cli: HarnessCli): Harness {
 			),
 		interactiveTranscript: cli.interactiveTranscript,
 		transcriptSession: cli.transcriptSession,
-		transcriptAnswers: cli.transcriptAnswers,
+		readTranscript: (lines) => {
+			const { costUsd } = spentSoFar(cli.transcriptUsage(lines), cli.prices);
+			return {
+				answers: cli.transcriptAnswers(lines),
+				...(costUsd === undefined ? {} : { costUsd }),
+			};
+		},
 		resumeHint: cli.resumeHint,
 	};
 }

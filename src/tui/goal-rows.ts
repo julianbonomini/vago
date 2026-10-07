@@ -283,10 +283,10 @@ function brokenRow(goal: string, message: string): GoalRow {
 }
 
 // The row of planning item `item` of the Project at `root`, whose
-// Workflows are named `workflows`: its "now" says what its chat is doing or
-// waiting for, or why it can't be read, and `last` when its last response
-// started or ended. Its agent's time and cost stay out of the row, which
-// counts build Runs only.
+// Workflows are named `workflows`: its "now" says how its planning stands,
+// or why it can't be read, and `last` when its last session started or
+// ended. Its agent's time and cost stay out of the row, which counts build
+// Runs only.
 async function readPlanningRow(
 	root: string,
 	item: string,
@@ -295,10 +295,9 @@ async function readPlanningRow(
 	try {
 		const chat = await readPlanningChat(root, item);
 		const proposal = await readPlanningProposal(root, item, workflows);
-		const turn = chat.turns.at(-1);
 		return {
 			row: planningRow(item, planningNow(chat, proposal)),
-			last: turn?.endedAt ?? turn?.startedAt,
+			last: chat.lastActive,
 		};
 	} catch (error) {
 		const message = projectMessage(error, root).replace(/\s+/g, " ");
@@ -306,23 +305,19 @@ async function readPlanningRow(
 	}
 }
 
-// What the chat of a planning item with `proposal` is doing or waiting for:
-// its agent writing a response, or the human, to send the first message,
-// retry a response that stopped, answer after one that failed, reply, or
-// accept a Proposal that is ready.
+// How the planning of an item with `chat` and `proposal` stands: its
+// session open, never started, or closed and waiting for the human to
+// accept a Proposal that is ready or to reply.
 function planningNow(
 	chat: PlanningChat,
 	proposal: PlanningProposal | undefined,
 ): string {
-	const last = chat.turns.at(-1);
-	if (last === undefined) return "no chat yet";
-	const { outcome } = last;
-	if (outcome === undefined) return "agent working";
-	if (outcome === "interrupted") return "response interrupted";
-	if (outcome !== "ok") return "response failed";
-	return proposal?.problems.length === 0
-		? "proposal ready"
-		: "waiting for your reply";
+	if (chat.sessionOpen) return "session open";
+	if (proposal?.problems.length === 0) return "proposal ready";
+	if (chat.sessionId === undefined && proposal === undefined) {
+		return "no session yet";
+	}
+	return "waiting for your reply";
 }
 
 // The row of planning item `item`, which has no Workflow, Tickets or Runs

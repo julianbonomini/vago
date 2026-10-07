@@ -1,8 +1,8 @@
-// Runs one Step for a Ticket or for the Goal as one Run, a read-only Harness
-// session such as a planning turn's, and a Harness's own interactive session:
-// the only module that spawns a Step's or an agent's process. Hides how the
-// Run is recorded and announced, how a command is spawned, how a Harness's
-// stream is read, how an interactive session's messages are read from its
+// Runs one Step for a Ticket or for the Goal as one Run, and a Harness's own
+// interactive session, read-only, such as a planning session: the only
+// module that spawns a Step's or an agent's process. Hides how the Run is
+// recorded and announced, how a command is spawned, how a Harness's stream
+// is read, how an interactive session's messages and cost are read from its
 // transcript, and how output reaches the log.
 
 import { closeSync, openSync, writeSync } from "node:fs";
@@ -13,6 +13,7 @@ import {
 	findHarness,
 	type Harness,
 	type HarnessSessionReport,
+	type HarnessTranscript,
 	type HarnessTranscriptFiles,
 } from "./harness/registry.ts";
 import { printStepEnded, printStepStarted } from "./progress.ts";
@@ -201,71 +202,6 @@ export async function readRunOutput(
 	return resultText ?? "";
 }
 
-/** A read-only Harness session to run. */
-export type ReadOnlySession = {
-	harness: string;
-	model: string;
-	/** The session to resume; a fresh one when absent. */
-	resume?: string;
-	/** What the session reads on stdin. */
-	input: string;
-	/** The working directory, which nothing the session starts can write under. */
-	folder: string;
-	/** Absolute path of the log that gets the stream and stderr. */
-	log: string;
-};
-
-/**
- * Runs `session` and waits for it to end. `onSessionId` gets the session's
- * id as soon as the Harness reports it. A tool call the Harness refuses
- * doesn't fail it. SIGINT or SIGTERM stops every process it started and
- * ends it `interrupted`. No idle timeout, and no fallback when a resume
- * fails to start: that ends it `exit N`. Throws, naming what to install,
- * when the Harness's program isn't on `PATH`, and as `withoutWritesUnder`
- * does.
- */
-export async function runReadOnlySession(
-	session: ReadOnlySession,
-	onSessionId: (sessionId: string) => Promise<void>,
-): Promise<{ outcome: RunOutcome; report: HarnessSessionReport }> {
-	const harness = findHarness(session.harness);
-	const command =
-		session.resume === undefined
-			? harness.readOnlyCommand(session.model)
-			: harness.readOnlyResumeCommand(session.resume, session.model);
-	const spawned = await spawnableReadOnly(harness, session.folder, command);
-	await mkdir(dirname(session.log), { recursive: true });
-	const fd = openSync(session.log, "w");
-	const interrupt = interruptOnSignal(["SIGINT", "SIGTERM"]);
-	let ran: HarnessSessionRun;
-	try {
-		ran = await runSession({
-			harness,
-			command,
-			spawned,
-			stdin: session.input,
-			cwd: session.folder,
-			fd,
-			interrupt: interrupt.signal,
-			idleTimeoutMs: undefined,
-			onSessionId,
-		});
-	} finally {
-		interrupt.release();
-		closeSync(fd);
-	}
-	const { session: report, code } = ran;
-	let outcome: RunOutcome;
-	if (interrupt.signal.aborted) {
-		outcome = { kind: "interrupted" };
-	} else if (report.permissionModeFallback !== undefined) {
-		outcome = { kind: "permission-mode", mode: report.permissionModeFallback };
-	} else {
-		outcome = outcomeOf(code);
-	}
-	return { outcome, report };
-}
-
 /** A Harness's own interactive session to run, read-only. */
 export type InteractiveReadOnlySession = {
 	harness: string;
@@ -286,9 +222,9 @@ export type InteractiveReadOnlySession = {
  * the Harness names it up front, as it does a resumed session's, or else
  * once its transcript tells, which may be only after the human's first
  * message. While it runs, and once more after it ends however it ended,
- * `onAnswers` gets every message the agent has written in the session so
- * far, a resumed session's earlier ones included, whenever there are more
- * than `onAnswers` last took without throwing. Calls never overlap. An error
+ * `onTranscript` gets what the session's transcript tells so far, a resumed
+ * session's earlier runs included, whenever it differs from what
+ * `onTranscript` last took without throwing. Calls never overlap. An error
  * from either callback after the session has started never ends it; the
  * same call comes again a second later. A Harness whose transcript Vago
  * can't find gives no call after the start.
@@ -300,7 +236,7 @@ export type InteractiveReadOnlySession = {
 export async function runInteractiveReadOnlySession(
 	session: InteractiveReadOnlySession,
 	onSessionId: (sessionId: string) => Promise<void>,
-	onAnswers: (answers: string[]) => Promise<void>,
+	onTranscript: (transcript: HarnessTranscript) => Promise<void>,
 ): Promise<RunOutcome> {
 	const harness = findHarness(session.harness);
 	const command = harness.interactiveReadOnlyCommand(session);
@@ -320,7 +256,7 @@ export async function runInteractiveReadOnlySession(
 			startedAt: new Date(),
 		},
 		onSessionId,
-		onAnswers,
+		onTranscript,
 	);
 	let reading: Promise<void> | undefined;
 	const timer = setInterval(() => {
@@ -354,18 +290,18 @@ export async function runInteractiveReadOnlySession(
 // One read of the transcript of the interactive session started at
 // `startedAt` in `folder`: until its id is known and taken by `onSessionId`,
 // the search for it among every transcript started there since, and then the
-// agent's messages handed to `onAnswers` when there are more than it last
+// transcript handed to `onTranscript` when it differs from what it last
 // took. A callback that throws is called again on the next read.
 function transcriptReader(
 	harness: Harness,
 	session: { sessionId?: string; folder: string; startedAt: Date },
 	onSessionId: (sessionId: string) => Promise<void>,
-	onAnswers: (answers: string[]) => Promise<void>,
+	onTranscript: (transcript: HarnessTranscript) => Promise<void>,
 ): () => Promise<void> {
 	const { folder, startedAt } = session;
 	let sessionId = session.sessionId;
 	let sessionIdTaken = sessionId !== undefined;
-	let taken = 0;
+	let taken = "";
 	return async () => {
 		if (sessionId === undefined) {
 			const anyTranscript = harness.interactiveTranscript(
@@ -392,21 +328,22 @@ function transcriptReader(
 			);
 			if (!sessionIdTaken) return;
 		}
-		const transcript = harness.interactiveTranscript(
+		const files = harness.interactiveTranscript(
 			{ sessionId, folder },
 			homedir(),
 			process.env,
 		);
 		const lines: string[] = [];
-		for (const file of await transcriptFiles(transcript)) {
+		for (const file of await transcriptFiles(files)) {
 			lines.push(...(await readTranscriptFile(file)).split("\n"));
 		}
-		const answers = harness.transcriptAnswers(lines);
-		if (answers.length <= taken) return;
-		// Left as it was when `onAnswers` fails, so the next read retries.
-		await onAnswers(answers)
+		const transcript = harness.readTranscript(lines);
+		const text = JSON.stringify(transcript);
+		if (text === taken) return;
+		// Left as it was when `onTranscript` fails, so the next read retries.
+		await onTranscript(transcript)
 			.then(() => {
-				taken = answers.length;
+				taken = text;
 			})
 			.catch(() => {});
 	};

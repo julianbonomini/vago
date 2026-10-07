@@ -16,20 +16,22 @@ import {
 } from "./vago-commands.ts";
 
 /**
- * A pane `width` columns wide, titled `title`, with planning item `item`'s
- * session, in the Project at `root`, drawn below the title. The session
- * starts when the pane mounts, through the command `vago`, and stops when
- * it unmounts or the TUI quits; hiding the pane with `visible` keeps it
- * running. While `focused`, every key and paste goes to the session. Once
- * the session has exited, a line under the title says so, until the pane is
- * mounted again. `onOpen` gets, as the session starts, a function that ends
- * it and resolves once it has exited.
+ * A pane `width` columns wide, titled `title` with `aside` on the title
+ * row's right, with planning item `item`'s session, in the Project at
+ * `root`, drawn below the title. The session starts when the pane mounts,
+ * through the command `vago`, and stops when it unmounts or the TUI quits;
+ * hiding the pane with `visible` keeps it running. While `focused`, every
+ * key and paste goes to the session. Once the session has exited, a line
+ * under the title says so, until the pane is mounted again. `onOpen` gets,
+ * as the session starts, a function that ends it and resolves once it has
+ * exited.
  */
 export function PlanningSessionPane(props: {
 	vago: string[];
 	root: string;
 	item: string;
 	title: string;
+	aside: string;
 	focused: boolean;
 	visible: boolean;
 	width: number;
@@ -90,7 +92,7 @@ export function PlanningSessionPane(props: {
 		>
 			<PaneTitle
 				title={props.title}
-				aside="planning"
+				aside={props.aside}
 				focused={props.focused}
 				width={inner()}
 			/>

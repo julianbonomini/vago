@@ -12,6 +12,6 @@ Everything planning saves goes under `planning/`. Accepting its Proposal writes 
 ## Consequences
 
 - A planning item's name is the Goal's folder name, so it takes only letters, digits, `-` and `_`.
-- Renaming moves the folder. Anything that later keeps a planning item's path while it works, such as an agent's response in progress, has to refuse a rename or follow the move. A response holds the item, so a rename is refused during it, and a discard stops it first (ADR 0014). Neither leaves a folder behind.
-- Accepting writes `tickets/` and then `goal.md`, last (ADR 0013). From then on the planning chat is read-only: `vago plan say`, `retry`, `workflow`, `rename` and `discard` refuse the Goal.
+- Renaming moves the folder. Anything that later keeps a planning item's path while it works, such as its planning session, has to refuse a rename or follow the move. A session holds the item, so a rename is refused while it is open, and a discard stops it first (ADR 0014, 0015). Neither leaves a folder behind.
+- Accepting writes `tickets/` and then `goal.md`, last (ADR 0013). From then on the planning chat is read-only: `vago plan workflow`, `rename` and `discard` refuse the Goal, and its planning session reopens only to read (ADR 0018).
 - `vago goal new` on a planning item's name writes `goal.md` into its folder, which turns it into a Goal with its planning kept.

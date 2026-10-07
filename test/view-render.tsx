@@ -29,7 +29,7 @@ const vago = [process.execPath, join(import.meta.dir, "..", "src", "cli.ts")];
 
 /**
  * The Project view of the Project at `root` in a test terminal of `size`,
- * destroyed after the test. It starts Goals and planning turns with this
+ * destroyed after the test. It starts Goals and planning sessions with this
  * checkout's `vago`, which gets `env` added to its environment, such as a
  * fake Harness's `PATH`. `setEnv` can't do that: Bun starts a child with
  * the environment this process started with. New Goal offers `harnesses`

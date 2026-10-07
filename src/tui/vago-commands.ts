@@ -2,9 +2,9 @@
 // run`, which it lets go of, `vago plan accept` and `vago plan discard`,
 // which it waits for, and a planning item's `vago plan session`, which it
 // owns while the planning view is open and stops when the view closes
-// (ADR 0015). It stops nothing else: `vago plan discard` stops a session or
-// a response (ADR 0005). Hides how each is cut loose from the TUI and its
-// terminal, the session's pseudo-terminal, and how a refusal is read back.
+// (ADR 0015). It stops nothing else: `vago plan discard` stops a session
+// (ADR 0005). Hides how each is cut loose from the TUI and its terminal,
+// the session's pseudo-terminal, and how a refusal is read back.
 
 import type { GoalRow } from "./goal-rows.ts";
 
@@ -53,9 +53,9 @@ export type PlanDiscardEnd =
 	| { outcome: "refused"; reason: string };
 
 /**
- * Runs `vago plan discard <item>` in the Project at `root`, which stops a
- * response to the item in progress first, as `runPlanAccept` runs
- * `vago plan accept`, and waits for it.
+ * Runs `vago plan discard <item>` in the Project at `root`, which stops the
+ * item's open session first, as `runPlanAccept` runs `vago plan accept`,
+ * and waits for it.
  */
 export async function runPlanDiscard(
 	vago: string[],

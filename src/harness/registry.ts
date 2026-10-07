@@ -146,14 +146,6 @@ export type Harness = {
 		args: readonly string[],
 	): string[];
 	/**
-	 * The argv that starts a fresh session on `model` whose tools can read
-	 * files and load Skills but never change a file, reading its prompt on
-	 * stdin and streaming as `command()`'s does.
-	 */
-	readOnlyCommand(model: string): string[];
-	/** As `readOnlyCommand`, resuming session `sessionId` with the message on stdin. */
-	readOnlyResumeCommand(sessionId: string, model: string): string[];
-	/**
 	 * The Harness's own interactive UI, for a terminal, on `model`. Its tools
 	 * can read files and load Skills but never change a file. It resumes
 	 * session `resume`, or starts a fresh one when `resume` is absent, with
@@ -184,8 +176,8 @@ export type Harness = {
 	 */
 	transcriptSession(firstLine: string): HarnessTranscriptSession | undefined;
 	/**
-	 * What one stream line of the session started with `command`,
-	 * `resumeCommand` or a read-only command, the argv it gave, carries.
+	 * What one stream line of the session started with `command` or
+	 * `resumeCommand`, the argv it gave, carries.
 	 * Fields the line doesn't carry are left out, so the kernel spreads each
 	 * result over the last; a line that isn't an event it knows gives `{}`.
 	 */
@@ -198,12 +190,11 @@ export type Harness = {
 	 */
 	runActivity(lines: readonly string[], root: string): RunActivity;
 	/**
-	 * The text of each message the agent wrote in a transcript whose lines are
-	 * `lines`, its files' lines in name order, oldest first. The human's
-	 * messages, tool calls and results, subagents' messages and a line that
-	 * isn't a whole event are left out.
+	 * What a transcript whose lines are `lines`, its files' lines in name
+	 * order, tells of its session so far. A line that isn't a whole event is
+	 * left out.
 	 */
-	transcriptAnswers(lines: readonly string[]): string[];
+	readTranscript(lines: readonly string[]): HarnessTranscript;
 	/** The shell command the human runs to resume session `sessionId`. */
 	resumeHint(sessionId: string): string;
 };
@@ -215,6 +206,15 @@ export type Harness = {
  * itself, which only its transcript then tells.
  */
 export type HarnessInteractiveCommand = { argv: string[]; sessionId?: string };
+
+/**
+ * What an interactive session's transcript tells. `answers` is the text of
+ * each message the agent wrote, oldest first, leaving out the human's
+ * messages, tool calls and results, and subagents' messages. `costUsd` is
+ * what the whole session has cost, a resumed one's earlier runs and its
+ * subagents included; absent when the Harness can't price a model it used.
+ */
+export type HarnessTranscript = { answers: string[]; costUsd?: number };
 
 /**
  * A session's transcript: every file under `folder` that the glob `pattern`

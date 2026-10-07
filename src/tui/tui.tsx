@@ -25,11 +25,11 @@ import { theme } from "./theme.ts";
  * outside a field being typed in, or Ctrl-C, outside a planning session, or
  * a signal ends it. Always leaves the terminal as it found it: out of the
  * alternate screen, cursor shown, raw mode off. Holds what is written to
- * stderr and `console` meanwhile and prints it afterwards. Throws, after restoring the terminal,
- * any error the view hit. Needs stdin and stdout to be terminals. `vago` is
- * the command that runs this same `vago`, which the TUI starts Goals and
- * planning sessions with. New Goal offers the Harnesses whose program is on
- * `PATH` as the TUI opens.
+ * stderr and `console` meanwhile and prints it afterwards. Throws, after
+ * restoring the terminal, any error the view hit. Needs stdin and stdout to
+ * be terminals. `vago` is the command that runs this same `vago`, which the
+ * TUI starts Goals and planning sessions with. New Goal offers the
+ * Harnesses whose program is on `PATH` as the TUI opens.
  */
 export async function openTui(root: string, vago: string[]): Promise<void> {
 	const harnesses = planningHarnesses();

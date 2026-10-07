@@ -4,11 +4,10 @@ import { chmod } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "smol-toml";
 import {
+	answerInSession,
 	fakeTranscriptLine,
-	makeFakeClaude,
 	makeFakeInteractiveClaude,
 	makeFakeInteractiveCodex,
-	planningFixtureAnswering,
 } from "./fake-harness.ts";
 import {
 	gitIdentity,
@@ -174,7 +173,7 @@ test("a resume Claude Code refuses is followed by one fresh start, whose id is s
 });
 
 // Gives planning item `search` of the Project at `root` a ready Proposal of
-// one Ticket, through a planning turn.
+// one Ticket, through a session of its own whose agent proposes at once.
 async function propose(root: string): Promise<void> {
 	const answer = `<vago-plan>
 workflow = "small"
@@ -188,17 +187,8 @@ body = '''
 # Score each result
 '''
 </vago-plan>`;
-	const fake = await makeFakeClaude(
-		"exit 0",
-		await planningFixtureAnswering(answer),
-	);
-	const said = await runVago(
-		root,
-		["plan", "say", "search", "--body-file", "-"],
-		fake.env,
-		"Plan search",
-	);
-	expect(said.stderr).toBe("");
+	const { exit } = await answerInSession(root, [answer]);
+	expect(exit.stderr).toBe("");
 }
 
 test("rename and accept are refused while the session is open, and work once it ends", async () => {
@@ -206,7 +196,7 @@ test("rename and accept are refused while the session is open, and work once it 
 	const root = await planningProject(fake.env);
 	await propose(root);
 	const session = openSession(root, fake.env);
-	// Resumed, since the turn saved its session.
+	// Resumed, since the first session saved its id.
 	await lineStarting(session.screen, "fake claude resumed ");
 
 	const renamed = await runVago(root, ["plan", "rename", "search", "ranked"]);
@@ -284,24 +274,99 @@ test("the session can't change a tracked or untracked file, or add one", async (
 	expect(session.screen.printed()).toContain("untracked notes");
 });
 
-test("a Goal accepted from planning, or no item, is refused with nothing recorded", async () => {
-	const fake = await makeFakeInteractiveClaude();
+// Every file under the folder of item `search`, by its path there, with its
+// text.
+async function itemFiles(root: string): Promise<Record<string, string>> {
+	const folder = join(root, ".vago-goals/search");
+	const texts: Record<string, string> = {};
+	for (const path of new Bun.Glob("**").scanSync({ cwd: folder })) {
+		texts[path] = await Bun.file(join(folder, path)).text();
+	}
+	return texts;
+}
+
+test("an accepted Goal's session resumes, and nothing the agent writes changes the Goal", async () => {
+	const fake = await makeFakeInteractiveClaude({ answers: [sessionAnswer] });
 	const root = await planningProject(fake.env);
 	await propose(root);
 	await runVago(root, ["plan", "accept", "search"]);
-	const chat = join(root, ".vago-goals/search/planning/chat.toml");
-	const before = await Bun.file(chat).text();
+	const id = await savedSessionId(root);
+	const before = await itemFiles(root);
+
+	const session = openSession(root, fake.env);
+	await lineStarting(session.screen, `fake claude resumed ${id}`);
+	session.press("\r");
+	await lineStarting(session.screen, "answered 1");
+	session.press("exit");
+
+	expect(await session.exited).toBe(3);
+	expect(await itemFiles(root)).toEqual(before);
+	expect(before["tickets/01-score.md"]).toBeDefined();
+	expect(before["tickets/02-sort.md"]).toBeUndefined();
+});
+
+test("an accepted Goal with no saved session, or no item, is refused with nothing recorded", async () => {
+	const fake = await makeFakeInteractiveClaude();
+	const root = await planningProject(fake.env);
+	await Bun.write(
+		join(root, ".vago-goals/search/planning/proposal.toml"),
+		'workflow = "small"\ngoal = "# Search"\n\n[[tickets]]\nslug = "score"\nbody = "# Score"\n',
+	);
+	await runVago(root, ["plan", "accept", "search"]);
+	const before = await itemFiles(root);
 
 	const accepted = await runVago(root, ["plan", "session", "search"], fake.env);
 	const unknown = await runVago(root, ["plan", "session", "nope"], fake.env);
 
 	expect(accepted.exitCode).toBe(1);
-	expect(accepted.stderr).toContain("was accepted as a Goal");
+	expect(accepted.stderr).toContain("has no planning session to open");
 	expect(unknown.exitCode).toBe(1);
 	expect(unknown.stderr).toContain("nope");
-	expect(await Bun.file(chat).text()).toBe(before);
+	expect(await itemFiles(root)).toEqual(before);
 	expect(existsSync(join(root, ".vago-goals/nope"))).toBe(false);
 	expect(await fake.calls()).toEqual([]);
+});
+
+test("discarding an item whose session is open ends the session and leaves no folder", async () => {
+	const fake = await makeFakeInteractiveClaude({ answers: [sessionAnswer] });
+	const root = await planningProject(fake.env);
+	const session = openSession(root, fake.env);
+	await lineStarting(session.screen, "fake claude fresh ");
+	session.press("\r");
+	await lineStarting(session.screen, "answered 1");
+
+	const discarded = await runVago(root, ["plan", "discard", "search"]);
+
+	expect(discarded.stderr).toBe("");
+	expect(discarded.exitCode).toBe(0);
+	await session.exited;
+	const [call] = await fake.calls();
+	expect(call?.ended).toBe(true);
+	expect(isAlive(call?.pid ?? 0)).toBe(false);
+	await Bun.sleep(1200);
+	expect(existsSync(join(root, ".vago-goals/search"))).toBe(false);
+});
+
+test("each run of a session records when it started and ended and what its session cost", async () => {
+	const fake = await makeFakeInteractiveClaude({ answers: [sessionAnswer] });
+	const root = await planningProject(fake.env);
+	const startedAfter = new Date();
+
+	const session = openSession(root, fake.env);
+	await lineStarting(session.screen, "fake claude fresh ");
+	session.press("\r");
+	await lineStarting(session.screen, "answered 1");
+	session.press("exit");
+	await session.exited;
+
+	const chat = parse(
+		await Bun.file(join(root, ".vago-goals/search/planning/chat.toml")).text(),
+	);
+	const [run] = chat.sessions as Record<string, unknown>[];
+	expect(run?.session_id).toBe(chat.session_id);
+	expect(run?.cost_usd).toBe(0.8);
+	expect((run?.started as Date) >= startedAfter).toBe(true);
+	expect((run?.ended as Date) >= (run?.started as Date)).toBe(true);
 });
 
 // An answer ending in a proposal of two Tickets on Workflow `small`, the

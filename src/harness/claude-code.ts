@@ -9,6 +9,7 @@ import { z } from "zod";
 import type {
 	HarnessCli,
 	HarnessEvent,
+	HarnessModelUsage,
 	HarnessTokenUsage,
 	HarnessToolCall,
 	HarnessToolOutcome,
@@ -163,11 +164,17 @@ const ToolUseBlock = z.object({
 });
 
 // A line of the interactive transcript holding one content block of the
-// agent's message. A subagent's lines are marked as a sidechain.
+// agent's message, with the message's id and usage, as a stream's assistant
+// event has them. A subagent's lines are marked as a sidechain.
 const TranscriptAssistantLine = z.object({
 	type: z.literal("assistant"),
 	isSidechain: z.boolean().optional(),
-	message: z.object({ content: z.array(z.unknown()) }),
+	message: z.object({
+		id: z.string().optional(),
+		model: z.string().optional(),
+		usage: MessageUsage.optional().catch(undefined),
+		content: z.array(z.unknown()),
+	}),
 });
 
 const program = "claude";
@@ -185,12 +192,6 @@ export const claudeCode: HarnessCli = {
 	},
 	resumeCommand(sessionId, model, args) {
 		return [program, "-p", "--resume", sessionId, ...sessionFlags(model, args)];
-	},
-	readOnlyCommand(model) {
-		return [program, "-p", ...readOnlyFlags(model)];
-	},
-	readOnlyResumeCommand(sessionId, model) {
-		return [program, "-p", "--resume", sessionId, ...readOnlyFlags(model)];
 	},
 	// An interactive `claude` reports no session id, so a fresh session runs
 	// under one Vago names.
@@ -293,6 +294,19 @@ export const claudeCode: HarnessCli = {
 		}
 		return answers;
 	},
+	// Each content block of a message is a line of its own, every one with
+	// the message's usage, so a message counts once. A subagent's count too.
+	transcriptUsage(lines) {
+		const messages = new Map<string, HarnessModelUsage>();
+		for (const line of lines) {
+			const parsed = TranscriptAssistantLine.safeParse(parseJson(line));
+			if (!parsed.success) continue;
+			const { id, model, usage } = parsed.data.message;
+			if (id === undefined || usage === undefined) continue;
+			messages.set(id, { model: model ?? "", tokens: messageTokens(usage) });
+		}
+		return [...messages.values()];
+	},
 	prices: anthropicPrices(),
 	resumeHint(sessionId) {
 		return `claude --resume ${sessionId}`;
@@ -324,18 +338,6 @@ const readOnlyPermissions = [
 	"--tools",
 	"Read,Grep,Glob,Skill",
 ];
-
-// What a headless read-only session runs with.
-function readOnlyFlags(model: string): string[] {
-	return [
-		"--output-format",
-		"stream-json",
-		"--verbose",
-		...readOnlyPermissions,
-		"--model",
-		model,
-	];
-}
 
 // A subagent's messages count only for their tokens.
 function assistantEvents(

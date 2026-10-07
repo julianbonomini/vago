@@ -113,12 +113,12 @@ function liveGoalRows(root: string): {
  * all this; its `[` and `]` open the Goal before and after, passing over
  * broken ones and stopping at the ends, and its Esc leaves the selection on
  * the Goal last open. Enter on a planning item opens it in the planning
- * view, which sends its messages and accepts it through the command `vago`;
+ * view, which runs its session and accepts it through the command `vago`;
  * once it accepts, the Goals show again with its notice in the footer. `s`
  * starts the selected Goal in a `vago run` of its own, through the command
  * `vago` (`startGoal`), and the footer says what came of it until the next
  * key. `d` then `y` discards the selected planning item in a
- * `vago plan discard` (`runPlanDiscard`), which stops a response to it
+ * `vago plan discard` (`runPlanDiscard`), which stops its open session
  * first; the footer says so while the view waits, and shows a refusal. `n`
  * asks a new planning item's name and, when `harnesses` holds more than
  * one, which of them it plans on, the first unless Tab picks another.
@@ -211,7 +211,7 @@ export function ProjectView(props: {
 		refresh();
 	};
 	// The planning item a `vago plan discard` is removing, which may first
-	// stop a response to it.
+	// stop its open session.
 	const [discarding, setDiscarding] = createSignal<string>();
 	const discard = async (item: string) => {
 		setDiscarding(item);

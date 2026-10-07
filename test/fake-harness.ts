@@ -5,6 +5,7 @@
 import { chmod, mkdir, mkdtemp, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { runVago, type VagoExit } from "./project.ts";
 
 // Each fixture was recorded from `claude -p --output-format stream-json
 // --verbose --permission-mode auto`, with the recording's paths replaced.
@@ -33,13 +34,6 @@ export const permissionDeniedFixture = fixture(
  * `args = ["--permission-mode", "acceptEdits"]`.
  */
 export const acceptEditsFixture = fixture("claude-code-accept-edits.jsonl");
-
-/**
- * An Opus session as a planning turn starts one: read-only tools in
- * `dontAsk` mode, run under the sandbox in a Project with `notes.txt`. It
- * reads the file and answers in one sentence.
- */
-export const planningFixture = fixture("claude-code-planning.jsonl");
 
 // Each Codex fixture was recorded from `codex exec --json --approve-for-me
 // --model <model> -` in a Goal's worktree, with the recording's paths
@@ -162,78 +156,25 @@ ${afterFixture}
 	};
 }
 
-/**
- * Writes a temp fixture equal to `planningFixture` but whose final answer,
- * the last assistant text and the `result`, is `answer`, and returns its
- * path.
- */
-export async function planningFixtureAnswering(
-	answer: string,
-): Promise<string> {
-	const lines = (await Bun.file(planningFixture).text()).trimEnd().split("\n");
-	const events: PlanningFixtureEvent[] = lines.map((line) => JSON.parse(line));
-	const lastText = events.findLast(
-		(event) =>
-			event.type === "assistant" &&
-			event.message?.content?.some((block) => block.type === "text"),
-	);
-	for (const block of lastText?.message?.content ?? []) {
-		if (block.type === "text") block.text = answer;
-	}
-	for (const event of events) {
-		if (event.type === "result") event.result = answer;
-	}
-	const dir = await mkdtemp(join(tmpdir(), "vago-fixture-"));
-	const path = join(dir, "planning-answer.jsonl");
-	await Bun.write(
-		path,
-		`${events.map((event) => JSON.stringify(event)).join("\n")}\n`,
-	);
-	return path;
-}
-
-// The fields of a Claude Code stream line `planningFixtureAnswering` edits.
-type PlanningFixtureEvent = {
-	type: string;
-	result?: string;
-	message?: { content?: { type: string; text?: string }[] };
-};
-
-/**
- * Writes a temp fixture equal to `codexSessionFixture` but whose agent
- * message, its final answer, is `answer`, and returns its path.
- */
-export async function codexFixtureAnswering(answer: string): Promise<string> {
-	const lines = (await Bun.file(codexSessionFixture).text())
-		.trimEnd()
-		.split("\n");
-	const events: CodexFixtureEvent[] = lines.map((line) => JSON.parse(line));
-	for (const event of events) {
-		if (event.item?.type === "agent_message") event.item.text = answer;
-	}
-	const dir = await mkdtemp(join(tmpdir(), "vago-fixture-"));
-	const path = join(dir, "codex-answer.jsonl");
-	await Bun.write(
-		path,
-		`${events.map((event) => JSON.stringify(event)).join("\n")}\n`,
-	);
-	return path;
-}
-
-// The fields of a Codex stream line `codexFixtureAnswering` edits.
-type CodexFixtureEvent = { item?: { type: string; text?: string } };
-
 // A line of Claude Code's interactive transcript holding the agent's text,
 // as `claude-code-transcript.jsonl` records it, with the fields Vago doesn't
-// read left out.
+// read left out. Its message used 100K input and 20K output tokens of
+// claude-opus-5-5, which cost $0.80.
 const transcriptLineShape = {
 	parentUuid: null,
 	isSidechain: false,
 	message: {
 		model: "claude-opus-5-5",
+		id: "msg_0001",
 		type: "message",
 		role: "assistant",
 		content: [{ type: "text", text: "" }],
+		usage: {
+			input_tokens: 100_000,
+			cache_creation_input_tokens: 0,
+			cache_read_input_tokens: 0,
+			output_tokens: 20_000,
+		},
 	},
 	type: "assistant",
 };
@@ -261,6 +202,8 @@ export type FakeInteractiveCall = {
 export type FakeInteractiveHarness = {
 	/** Environment for `runVago` that puts the fake first on `PATH`. */
 	env: Record<string, string>;
+	/** The folder the fake is in, to put before another fake's `PATH`. */
+	folder: string;
 	/** Every call so far, first call first. */
 	calls(): Promise<FakeInteractiveCall[]>;
 	/** Waits until there was a call and every call so far has ended. */
@@ -272,6 +215,8 @@ export type FakeInteractiveOptions = {
 	resume?: "accepted" | "refused";
 	afterStart?: string;
 	answers?: string[];
+	/** Writes every answer as it starts and ends, with no key read. */
+	answerAtOnce?: true;
 };
 
 /**
@@ -283,7 +228,10 @@ export type FakeInteractiveOptions = {
  * `key <name>` for each key: `key q`, `key escape`, `key ctrl+c`,
  * `key enter`, `key shift+enter`. On each Enter it appends the next of
  * `answers` to its transcript as one line of the agent's text, shaped as
- * `fakeTranscriptLine` makes it, and prints `answered N`. The transcript is
+ * `fakeTranscriptLine` makes it, a message of its own costing $0.80, and
+ * prints `answered N`. With `answerAtOnce`, it writes every answer right
+ * after `afterStart` and ends with exit 0, needing no terminal. The
+ * transcript is
  * where Claude Code keeps it: under `$CLAUDE_CONFIG_DIR/projects/`, in a
  * folder named for its working directory, as `<id>.jsonl`, and `env` sets
  * `CLAUDE_CONFIG_DIR` to a folder of the fake's own. Typing `exit` ends it
@@ -305,6 +253,7 @@ const transcript = transcripts + "/" + id + ".jsonl";
 const lineOf = (text) => {
 	const line = ${JSON.stringify(transcriptLineShape)};
 	line.message.content[0].text = text;
+	line.message.id = "msg_" + id + "_" + answered;
 	return JSON.stringify(line);
 };`,
 	});
@@ -317,8 +266,10 @@ const lineOf = (text) => {
  * keeps it: under `$CODEX_HOME/sessions/`, in a folder by date, named
  * `rollout-<time>-<id>.jsonl`. It writes no transcript until the session's
  * first answer, which it opens with the session's id, working directory and
- * start, and `env` sets `CODEX_HOME` to a folder of the fake's own. A
- * refused resume fails as `codex` does when it finds no session.
+ * start, and `env` sets `CODEX_HOME` to a folder of the fake's own. Each
+ * answer is a turn on gpt-6-sol of 100K input and 20K output tokens, $0.40,
+ * and the session's token count after it. A refused resume fails as `codex`
+ * does when it finds no session.
  */
 export function makeFakeInteractiveCodex(
 	options: FakeInteractiveOptions = {},
@@ -335,7 +286,9 @@ mkdirSync(folder, { recursive: true });
 const transcript = found[0] ?? folder + "/rollout-" + startedAt.slice(0, 19).replaceAll(":", "-") + "-" + id + ".jsonl";
 const lineOf = (text) => {
 	const message = { type: "response_item", payload: { type: "message", role: "assistant", content: [{ type: "output_text", text }], phase: "final_answer" } };
-	const lines = [JSON.stringify(message)];
+	const context = { type: "turn_context", payload: { cwd: process.cwd(), model: "gpt-6-sol" } };
+	const tokens = { type: "event_msg", payload: { type: "token_count", info: { total_token_usage: { input_tokens: 100000 * answered, cached_input_tokens: 0, output_tokens: 20000 * answered, reasoning_output_tokens: 0, total_tokens: 120000 * answered } } } };
+	const lines = [JSON.stringify(context), JSON.stringify(message), JSON.stringify(tokens)];
 	if (!existsSync(transcript)) {
 		lines.unshift(JSON.stringify({ timestamp: startedAt, type: "session_meta", payload: { id, timestamp: startedAt, cwd: process.cwd(), originator: "codex-tui" } }));
 	}
@@ -402,6 +355,10 @@ Bun.spawnSync(["sh", "-c", ${JSON.stringify(options.afterStart ?? "true")}], {
 	stdio: ["ignore", "inherit", "inherit"],
 	env: { ...process.env, TRANSCRIPT: transcript },
 });
+if (${JSON.stringify(options.answerAtOnce === true)}) {
+	while (answered < answers.length) answer();
+	process.exit(0);
+}
 process.stdout.write("\\x1b[>1u");
 process.stdin.setRawMode(true);
 // A closed terminal reads as the end of stdin, often before its SIGHUP.
@@ -434,6 +391,7 @@ process.stdin.on("data", (chunk) => {
 	await chmod(path, 0o755);
 	const fake: FakeInteractiveHarness = {
 		env: { PATH: `${dir}:${process.env.PATH}`, [homeVariable]: home },
+		folder: dir,
 		async calls() {
 			const names = await readdir(callsDir);
 			names.sort((a, b) => Number(a) - Number(b));
@@ -458,4 +416,24 @@ process.stdin.on("data", (chunk) => {
 		},
 	};
 	return fake;
+}
+
+/**
+ * Runs `vago plan session <item>` in the Project at `root` with a fake
+ * interactive Harness for `harness` that writes `answers` as it starts and
+ * ends, and gives back the fake and how `vago plan session` exited.
+ */
+export async function answerInSession(
+	root: string,
+	answers: string[],
+	harness: "claude-code" | "codex" = "claude-code",
+	item = "search",
+): Promise<{ fake: FakeInteractiveHarness; exit: VagoExit }> {
+	const options = { answers, answerAtOnce: true } as const;
+	const fake =
+		harness === "codex"
+			? await makeFakeInteractiveCodex(options)
+			: await makeFakeInteractiveClaude(options);
+	const exit = await runVago(root, ["plan", "session", item], fake.env);
+	return { fake, exit };
 }

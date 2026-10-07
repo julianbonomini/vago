@@ -6,30 +6,15 @@ import { frameWith, frameWithout, renderView } from "./view-render.tsx";
 
 const wide = { width: 120, height: 40 };
 
-// A chat whose turns sent `messages`, each ended `ok`, with no logs.
-function chatToml(messages: string[]): string {
-	const lines = ['harness = "claude-code"'];
-	for (const [index, message] of messages.entries()) {
-		lines.push(
-			"",
-			"[[turns]]",
-			`message = ${JSON.stringify(message)}`,
-			"started = 2026-10-06T10:00:00.000Z",
-			"ended = 2026-10-06T10:01:00.000Z",
-			'outcome = "ok"',
-			`log = "logs/turn-0${index + 1}.jsonl"`,
-		);
-	}
-	return `${lines.join("\n")}\n`;
-}
+// The chat of an item planned on Claude Code.
+const chatToml = 'harness = "claude-code"\n';
 
-// A `proposal.toml` from turn `turn`, recommending Workflow `workflow`,
-// whose second Ticket is blocked by `blocker`.
+// A `proposal.toml` recommending Workflow `workflow`, whose second Ticket
+// is blocked by `blocker`.
 function proposalToml(
-	options: { turn?: number; workflow?: string; blocker?: number } = {},
+	options: { workflow?: string; blocker?: number } = {},
 ): string {
-	return `turn = ${options.turn ?? 1}
-workflow = "${options.workflow ?? "small"}"
+	return `workflow = "${options.workflow ?? "small"}"
 workflow_reason = "One module and its tests."
 open_decisions = [ "Should ties break by name?" ]
 goal = """
@@ -94,7 +79,7 @@ function focusPreview(view: TestRendererSetup): void {
 
 test("the Preview beside the session shows the Goal, its Tickets in order, blockers and the Workflow", async () => {
 	const root = await planningProject({
-		"chat.toml": chatToml(["Plan search"]),
+		"chat.toml": chatToml,
 		"proposal.toml": proposalToml(),
 	});
 	const view = await previewView(root);
@@ -124,7 +109,7 @@ test("a Proposal with a later blocker or an unknown Workflow is not ready and sa
 		[proposalToml({ workflow: "huge" }), 'Workflow "huge" isn\'t one of'],
 	] as const) {
 		const root = await planningProject({
-			"chat.toml": chatToml(["Plan search"]),
+			"chat.toml": chatToml,
 			"proposal.toml": proposal,
 		});
 		const view = await previewView(root);
@@ -139,7 +124,7 @@ test("a Proposal with a later blocker or an unknown Workflow is not ready and sa
 
 test("w in the Preview picks another Workflow, which stays after a fresh render", async () => {
 	const root = await planningProject({
-		"chat.toml": chatToml(["Plan search"]),
+		"chat.toml": chatToml,
 		"proposal.toml": proposalToml(),
 	});
 	const view = await previewView(root);
@@ -163,9 +148,9 @@ test("w in the Preview picks another Workflow, which stays after a fresh render"
 
 test("a revision recommending another Workflow keeps the human's choice", async () => {
 	const root = await planningProject({
-		"chat.toml": chatToml(["Plan search", "Revise it"]),
+		"chat.toml": chatToml,
 		"workflow.toml": 'workflow = "try-hard"\n',
-		"proposal.toml": proposalToml({ turn: 2, workflow: "small" }),
+		"proposal.toml": proposalToml({ workflow: "small" }),
 	});
 	const view = await previewView(root);
 
@@ -176,7 +161,7 @@ test("a revision recommending another Workflow keeps the human's choice", async 
 
 test("a revision saved while the view is open replaces the Preview", async () => {
 	const root = await planningProject({
-		"chat.toml": chatToml(["Plan search"]),
+		"chat.toml": chatToml,
 		"proposal.toml": proposalToml(),
 	});
 	const view = await previewView(root);
@@ -184,13 +169,10 @@ test("a revision saved while the view is open replaces the Preview", async () =>
 	await frameWith(view, "02 Rank results by score");
 
 	const planning = `${root}/.vago-goals/search/planning`;
-	await Bun.write(
-		`${planning}/chat.toml`,
-		chatToml(["Plan search", "Merge them"]),
-	);
+	await Bun.write(`${planning}/chat.toml`, chatToml);
 	await Bun.write(
 		`${planning}/proposal.toml`,
-		proposalToml({ turn: 2 }).replace(
+		proposalToml().replace(
 			/\[\[tickets\]\]\nslug = "rank-by-score"[\s\S]*$/,
 			"",
 		),
@@ -202,7 +184,7 @@ test("a revision saved while the view is open replaces the Preview", async () =>
 
 test("a reopened item shows its saved Proposal, and one with none says so", async () => {
 	const saved = await planningProject({
-		"chat.toml": chatToml(["Plan search"]),
+		"chat.toml": chatToml,
 		"proposal.toml": proposalToml(),
 	});
 	const first = await previewView(saved);
@@ -215,7 +197,7 @@ test("a reopened item shows its saved Proposal, and one with none says so", asyn
 
 	await frameWith(reopened, "02 Rank results by score");
 	const empty = await previewView(
-		await planningProject({ "chat.toml": chatToml(["Plan search"]) }),
+		await planningProject({ "chat.toml": chatToml }),
 	);
 	await openOnlyItem(empty);
 	await frameWith(empty, "No proposal yet.");
@@ -225,8 +207,8 @@ test("a reopened item shows its saved Proposal, and one with none says so", asyn
 
 test("a bad proposal.toml says why", async () => {
 	const root = await planningProject({
-		"chat.toml": chatToml(["Plan search"]),
-		"proposal.toml": "turn = ",
+		"chat.toml": chatToml,
+		"proposal.toml": "workflow = ",
 	});
 	const view = await previewView(root);
 

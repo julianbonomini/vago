@@ -9,6 +9,7 @@ import { z } from "zod";
 import type {
 	HarnessCli,
 	HarnessEvent,
+	HarnessTokenUsage,
 	ModelPrice,
 } from "./harness-session.ts";
 
@@ -27,14 +28,16 @@ const ThreadStartedEvent = z.object({
 
 // Input tokens include the cached ones, as OpenAI counts them, and output
 // tokens include the reasoning ones.
+const Usage = z.object({
+	input_tokens: z.number(),
+	cached_input_tokens: z.number().default(0),
+	cache_write_input_tokens: z.number().default(0),
+	output_tokens: z.number(),
+});
+
 const TurnCompletedEvent = z.object({
 	type: z.literal("turn.completed"),
-	usage: z.object({
-		input_tokens: z.number(),
-		cached_input_tokens: z.number().default(0),
-		cache_write_input_tokens: z.number().default(0),
-		output_tokens: z.number(),
-	}),
+	usage: Usage,
 });
 
 const TurnFailedEvent = z.object({
@@ -94,6 +97,21 @@ const MessageLine = z.object({
 	}),
 });
 
+// A line of the transcript naming the model a turn runs on.
+const TurnContextLine = z.object({
+	type: z.literal("turn_context"),
+	payload: z.object({ model: z.string() }),
+});
+
+// A line of the transcript with what the whole session has used so far.
+const TokenCountLine = z.object({
+	type: z.literal("event_msg"),
+	payload: z.object({
+		type: z.literal("token_count"),
+		info: z.object({ total_token_usage: Usage }),
+	}),
+});
+
 const OutputText = z.object({
 	type: z.literal("output_text"),
 	text: z.string(),
@@ -118,13 +136,6 @@ export const codex: HarnessCli = {
 		// `resume` takes no --approve-for-me of its own, so every flag goes
 		// before it, to `exec`.
 		return [...execCommand(model, args), "resume", sessionId, "-"];
-	},
-	// Codex's own read-only sandbox lets its commands read but not write.
-	readOnlyCommand(model) {
-		return [...readOnlyExecCommand(model), "-"];
-	},
-	readOnlyResumeCommand(sessionId, model) {
-		return [...readOnlyExecCommand(model), "resume", sessionId, "-"];
 	},
 	// Codex picks a fresh session's id itself, and only its transcript tells.
 	interactiveReadOnlyCommand({ model, instructions, resume }) {
@@ -163,16 +174,7 @@ export const codex: HarnessCli = {
 		if (completed.success) {
 			const { usage } = completed.data;
 			const model = askedModel(command);
-			const tokens = {
-				input:
-					usage.input_tokens -
-					usage.cached_input_tokens -
-					usage.cache_write_input_tokens,
-				output: usage.output_tokens,
-				cacheRead: usage.cached_input_tokens,
-				cacheWrite: usage.cache_write_input_tokens,
-				cacheWriteHour: 0,
-			};
+			const tokens = tokenUsage(usage);
 			return [
 				{
 					kind: "session-end",
@@ -226,6 +228,21 @@ export const codex: HarnessCli = {
 		}
 		return answers;
 	},
+	// Codex records the session's running total, priced here by the model of
+	// its latest turn, since it records no total per model.
+	transcriptUsage(lines) {
+		let model: string | undefined;
+		let total: z.infer<typeof Usage> | undefined;
+		for (const line of lines) {
+			const event = parseJson(line);
+			const context = TurnContextLine.safeParse(event);
+			if (context.success) model = context.data.payload.model;
+			const count = TokenCountLine.safeParse(event);
+			if (count.success) total = count.data.payload.info.total_token_usage;
+		}
+		if (total === undefined) return [];
+		return [{ model: model ?? "", tokens: tokenUsage(total) }];
+	},
 	prices: openAiPrices(),
 	resumeHint(sessionId) {
 		return `codex resume ${sessionId}`;
@@ -235,18 +252,6 @@ export const codex: HarnessCli = {
 // What a fresh session and a resumed one both run with.
 function execCommand(model: string, args: readonly string[]): string[] {
 	return [program, "exec", "--json", guardedMode, "--model", model, ...args];
-}
-
-function readOnlyExecCommand(model: string): string[] {
-	return [
-		program,
-		"exec",
-		"--json",
-		"--sandbox",
-		"read-only",
-		"--model",
-		model,
-	];
 }
 
 // A command shows from its start; a file change, which Codex applies at
@@ -370,6 +375,20 @@ function askedModel(command: readonly string[]): string | undefined {
 		else if (arg.startsWith("--model=")) model = arg.slice("--model=".length);
 	}
 	return model;
+}
+
+// `usage` split by how the cache priced it.
+function tokenUsage(usage: z.infer<typeof Usage>): HarnessTokenUsage {
+	return {
+		input:
+			usage.input_tokens -
+			usage.cached_input_tokens -
+			usage.cache_write_input_tokens,
+		output: usage.output_tokens,
+		cacheRead: usage.cached_input_tokens,
+		cacheWrite: usage.cache_write_input_tokens,
+		cacheWriteHour: 0,
+	};
 }
 
 // Dollars per million tokens of each model Codex runs, as OpenAI lists them

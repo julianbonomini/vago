@@ -638,11 +638,15 @@ test("a Codex command still running keeps the agent waiting on it", async () => 
 	expect(working).toBe(false);
 });
 
-test("Claude Code's interactive transcript gives only the main agent's text", async () => {
+test("Claude Code's interactive transcript gives only the main agent's text, and every message's cost", async () => {
 	const lines = await fixtureLines("claude-code-transcript.jsonl");
 
-	const answers = findHarness("claude-code").transcriptAnswers(lines);
+	const { answers, costUsd } = findHarness("claude-code").readTranscript(lines);
 
+	// Four messages, a subagent's included, each of 2 input tokens at $4 a
+	// million, 700 written to a 5-minute cache at $5, 8000 read from it at
+	// $0.20, and 120 output tokens at $20.
+	expect(costUsd).toBeCloseTo(0.030032, 6);
 	expect(answers).toHaveLength(1);
 	expect(answers[0]).toStartWith("Here is the plan.\n\n<vago-plan>\n");
 	expect(answers[0]).toContain("# Search ranks by relevance");

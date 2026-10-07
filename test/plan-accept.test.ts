@@ -3,17 +3,14 @@ import { existsSync } from "node:fs";
 import { chmod, readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import {
-	type FakeHarness,
-	makeFakeClaude,
-	planningFixture,
-	planningFixtureAnswering,
+	answerInSession,
+	type FakeInteractiveHarness,
 } from "./fake-harness.ts";
 import {
 	makeProject,
 	oneStep,
 	readTicketFile,
 	runVago,
-	startVago,
 	type VagoExit,
 } from "./project.ts";
 
@@ -67,25 +64,22 @@ ${tickets}
 </vago-plan>`;
 }
 
-// Sends a message to planning item `search` of the Project at `root`, with
-// an agent that answers `answer`, and gives back the fake Harness it ran.
-async function say(root: string, answer: string): Promise<FakeHarness> {
-	const fake = await makeFakeClaude(
-		"exit 0",
-		await planningFixtureAnswering(answer),
-	);
-	const said = await runVago(
-		root,
-		["plan", "say", "search", "--body-file", "-"],
-		fake.env,
-		"Plan search",
-	);
-	expect(said.stderr).toBe("");
+// Runs a session of planning item `search` of the Project at `root` in
+// which the agent answers `answer`, and gives back the fake Harness it ran.
+async function say(
+	root: string,
+	answer: string,
+): Promise<FakeInteractiveHarness> {
+	const { fake, exit } = await answerInSession(root, [answer]);
+	expect(exit.stderr).toBe("");
 	return fake;
 }
 
 // A Project whose item `search` has a ready two-Ticket Proposal.
-async function readyProject(): Promise<{ root: string; fake: FakeHarness }> {
+async function readyProject(): Promise<{
+	root: string;
+	fake: FakeInteractiveHarness;
+}> {
 	const root = await planningProject();
 	const fake = await say(root, answerProposing(twoTickets));
 	return { root, fake };
@@ -121,11 +115,7 @@ test("plan accept turns a ready Proposal into a ready Goal and its Tickets", asy
 	expect(rank.header.status).toBe("ready");
 	expect(rank.header.blocked_by).toEqual([1]);
 	expect(rank.body).toBe(rankBody);
-	for (const kept of [
-		"planning/chat.toml",
-		"planning/proposal.toml",
-		"planning/logs/turn-01.jsonl",
-	]) {
+	for (const kept of ["planning/chat.toml", "planning/proposal.toml"]) {
 		expect(existsSync(join(root, item, kept))).toBe(true);
 	}
 	expect(existsSync(join(root, item, "planning/accepting"))).toBe(false);
@@ -141,15 +131,6 @@ test("plan accept uses the Workflow the human chose over the recommended one", a
 	const goal = await readTicketFile(root, `${item}/goal.md`);
 	expect(goal.header.workflow).toBe("try-hard");
 });
-
-// An open turn appended to the chat of `search`, as a `vago plan say` leaves
-// it while answering. With no live vago holding the item, it is interrupted.
-const openTurn = `
-[[turns]]
-message = "One more thing"
-started = 2026-10-06T10:00:00.000Z
-log = "logs/turn-02.jsonl"
-`;
 
 const refusals: {
 	name: string;
@@ -190,24 +171,6 @@ const refusals: {
 		change: (root) =>
 			Bun.write(join(root, ".vago/workflows/small.toml"), "steps = ["),
 		reason: "small.toml",
-	},
-	{
-		name: "an open last response whose vago died",
-		change: async (root) =>
-			Bun.write(
-				join(root, item, "planning/chat.toml"),
-				`${await file(root, "planning/chat.toml")}${openTurn}`,
-			),
-		reason: "search: its last response was interrupted",
-	},
-	{
-		name: "a last response recorded interrupted",
-		change: async (root) =>
-			Bun.write(
-				join(root, item, "planning/chat.toml"),
-				`${await file(root, "planning/chat.toml")}${openTurn}ended = 2026-10-06T10:01:00.000Z\noutcome = "interrupted"\n`,
-			),
-		reason: "search: its last response was interrupted",
 	},
 ];
 
@@ -358,39 +321,24 @@ test("the accepted Goal's report counts its build Runs, not its planning", async
 
 	expect(report.exitCode).toBe(0);
 	expect(report.stdout).toContain("| **Total** | **0** | **0.0s** | **** |");
-	// What `planningFixture`'s session cost.
-	expect(report.stdout).not.toContain("$0.11");
+	// What the planning session's one answer cost.
+	expect(report.stdout).not.toContain("$0.80");
 	const chat = Bun.TOML.parse(await file(root, "planning/chat.toml")) as {
-		turns: { cost_usd?: number }[];
+		sessions: { cost_usd?: number }[];
 	};
-	expect(chat.turns[0]?.cost_usd).toBeGreaterThan(0);
+	expect(chat.sessions[0]?.cost_usd).toBe(0.8);
 });
 
-test("an accepted Goal's planning chat is read-only", async () => {
+test("an accepted Goal's planning item can't be renamed, discarded or given a Workflow", async () => {
 	const { root } = await readyProject();
 	await accept(root);
-	const chatBefore = await file(root, "planning/chat.toml");
-	const fake = await makeFakeClaude(
-		"exit 0",
-		await planningFixtureAnswering("More"),
-	);
 
-	const said = await runVago(
-		root,
-		["plan", "say", "search", "--body-file", "-"],
-		fake.env,
-		"Change the Goal",
-	);
 	const changes = await Promise.all([
 		runVago(root, ["plan", "workflow", "search", "try-hard"]),
 		runVago(root, ["plan", "rename", "search", "other"]),
 		runVago(root, ["plan", "discard", "search"]),
 	]);
 
-	expect(said.stderr).toContain("its planning chat is read-only");
-	expect(said.exitCode).toBe(1);
-	expect(await fake.calls()).toEqual([]);
-	expect(await file(root, "planning/chat.toml")).toBe(chatBefore);
 	for (const changed of changes) {
 		expect(changed.stderr).toContain("its planning chat is read-only");
 		expect(changed.exitCode).toBe(1);
@@ -422,33 +370,4 @@ test("an accepted Goal takes Tickets from the CLI and Goals are still made there
 	expect(added.stdout).toEndWith(`${item}/tickets/03-extra.md\n`);
 	expect(made.stderr).toBe("");
 	expect(made.exitCode).toBe(0);
-});
-
-test("plan accept is refused while a response is being written", async () => {
-	const { root } = await readyProject();
-	const sleeps = await makeFakeClaude("sleep 30", planningFixture);
-	const worker = startVago(
-		root,
-		["plan", "say", "search", "--body-file", "-"],
-		sleeps.env,
-		"One more thing",
-	);
-	for (
-		let tries = 0;
-		!(await file(root, "planning/chat.toml")).includes("One more thing");
-		tries++
-	) {
-		if (tries === 300) throw new Error("The turn was never recorded");
-		await Bun.sleep(20);
-	}
-
-	const refused = await accept(root);
-
-	expect(refused.exitCode).toBe(1);
-	expect(refused.stderr).toContain(
-		"search: its planning session is open, a response is still being written, or another vago is changing the item",
-	);
-	expect(existsSync(join(root, item, "goal.md"))).toBe(false);
-	worker.kill("SIGTERM");
-	await worker.exited;
 });

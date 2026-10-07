@@ -1,6 +1,6 @@
-// Reading a growing Run or planning turn log for a view: the whole log at
-// first, then only what it adds, every second. Hides the re-read and how a
-// log switched to mid-read is handled.
+// Reading a growing Run log for a view: the whole log at first, then only
+// what it adds, every second. Hides the re-read and how a log switched to
+// mid-read is handled.
 
 import { createEffect, createSignal, on, onCleanup } from "solid-js";
 import { readRunLog } from "../tickets/tickets.ts";

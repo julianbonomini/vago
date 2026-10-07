@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { realpath, rm } from "node:fs/promises";
+import { readdir, realpath, rm } from "node:fs/promises";
 import { join } from "node:path";
 import type { TestRendererSetup } from "@opentui/core/testing";
 import {
@@ -14,30 +14,34 @@ const wide = { width: 140, height: 40 };
 
 const item = ".vago-goals/search";
 
-// A chat whose turns sent `messages`, each ended `ok` after a minute and
-// costing $0.25, with no logs.
-function chatToml(messages: string[]): string {
-	const lines = ['harness = "claude-code"'];
-	for (const [index, message] of messages.entries()) {
-		lines.push(
-			"",
-			"[[turns]]",
-			`message = ${JSON.stringify(message)}`,
-			"started = 2026-10-06T10:00:00.000Z",
-			"ended = 2026-10-06T10:01:00.000Z",
-			'outcome = "ok"',
-			"cost_usd = 0.25",
-			`log = "logs/turn-0${index + 1}.jsonl"`,
-		);
-	}
-	return `${lines.join("\n")}\n`;
-}
+// The chat of an item planned on Claude Code that hasn't run a session.
+const chatToml = 'harness = "claude-code"\n';
+
+// The id of the session `plannedChatToml` ran.
+const plannedSessionId = "4f0c1e1a-7b2d-4c55-9a51-2f7d8e6b3c90";
+
+// The chat of an item planned on Claude Code in two runs of one session, 1m
+// and then 2m 30s long, which cost $0.25 in all.
+const plannedChatToml = `harness = "claude-code"
+session_id = "${plannedSessionId}"
+
+[[sessions]]
+started = 2026-10-06T10:00:00.000Z
+ended = 2026-10-06T10:01:00.000Z
+session_id = "${plannedSessionId}"
+cost_usd = 0.1
+
+[[sessions]]
+started = 2026-10-06T11:00:00.000Z
+ended = 2026-10-06T11:02:30.000Z
+session_id = "${plannedSessionId}"
+cost_usd = 0.25
+`;
 
 // A `proposal.toml` recommending Workflow `small`, whose second Ticket is
 // blocked by `blocker`.
 function proposalToml(blocker = 1): string {
-	return `turn = 1
-workflow = "small"
+	return `workflow = "small"
 open_decisions = []
 goal = """
 # Search ranks by relevance
@@ -60,14 +64,14 @@ body = """
 }
 
 // A Project with Workflows `small` and `try-hard` and planning item `search`
-// holding `files` under its `planning/` folder, a chat of one turn and a
+// holding `files` under its `planning/` folder, a chat with no session yet and a
 // ready Proposal unless `files` says otherwise. Its root is a real path, as
 // the TUI's is, so the paths in a refusal show relative to it.
 async function planningProject(
 	files: Record<string, string> = {},
 ): Promise<string> {
 	const planning = {
-		"chat.toml": chatToml(["Plan search"]),
+		"chat.toml": chatToml,
 		"proposal.toml": proposalToml(),
 		...files,
 	};
@@ -230,9 +234,10 @@ test("accepting from the view starts nothing", async () => {
 const wider = { width: 180, height: 40 };
 
 // A Project whose Goal `search` was accepted from its planning item, its
-// chat and Proposal kept in `planning/`, unless `planned` is false.
+// chat, `plannedChatToml`, and Proposal kept in `planning/`, unless
+// `planned` is false.
 async function acceptedProject(planned = true): Promise<string> {
-	const root = await planningProject();
+	const root = await planningProject({ "chat.toml": plannedChatToml });
 	await Bun.write(join(root, item, "goal.md"), goalText("small"));
 	await Bun.write(join(root, item, "tickets/01-score.md"), ticketText("ready"));
 	if (!planned) await rm(join(root, item, "planning"), { recursive: true });
@@ -246,43 +251,53 @@ async function openGoal(view: TestRendererSetup): Promise<string> {
 	return frameWith(view, "Tab Pane");
 }
 
-test("p opens an accepted Goal's planning item, with no session", async () => {
+test("p opens an accepted Goal's planning session, resumed, and changes nothing", async () => {
 	const root = await acceptedProject();
-	const fake = await makeFakeInteractiveClaude();
+	const fake = await makeFakeInteractiveClaude({
+		answers: ["Changed my mind.\n\n<vago-plan>\ngoal = 'x'\n</vago-plan>"],
+	});
 	const view = await acceptView(root, wider, fake);
 	expect(await openGoal(view)).toContain("p Planning");
+	const planningBefore = await planningFiles(root);
+	const goalBefore = await Bun.file(join(root, item, "goal.md")).text();
 
 	await view.mockInput.typeText("p");
 
-	await frameWith(view, "Accepted as a Goal.");
+	await frameWith(view, `fake claude resumed ${plannedSessionId}`);
+	view.mockInput.pressEnter();
+	await frameWith(view, "answered 1");
 	const preview = await frameWith(view, "02 Rank results by score");
 	const titles = preview.split("\n").find((line) => line.includes("Preview"));
-	expect(titles).toContain("accepted");
-	// The Goal's build spend leaves its planning out.
+	// The planning's own time and cost, apart from the Goal's build spend.
+	expect(titles).toContain("accepted · 3m 30s · $0.25");
 	expect(preview).toContain("$0.00 spent");
-	const chatBefore = await Bun.file(
-		join(root, item, "planning/chat.toml"),
-	).text();
-	const footer = await frameWith(view, "Esc Back");
-	expect(footer).not.toContain("Ctrl-] Session");
+	view.mockInput.pressKey("]", { ctrl: true });
+	const footer = await frameWith(view, "Ctrl-] Session");
 	expect(footer).not.toContain("a Accept");
 	expect(footer).not.toContain("w Workflow");
 	await view.mockInput.typeText("a");
 	await view.mockInput.typeText("y");
-	await Bun.sleep(300);
-	expect(await frameWith(view, "Esc Back")).not.toContain("y accepts");
-	expect(await Bun.file(join(root, item, "planning/chat.toml")).text()).toBe(
-		chatBefore,
-	);
+	view.mockInput.pressEscape();
+	await frameWith(view, "p Planning");
+	await fake.allEnded();
+	expect(await planningFiles(root)).toEqual(planningBefore);
+	expect(await Bun.file(join(root, item, "goal.md")).text()).toBe(goalBefore);
 	expect(existsSync(join(root, item, "tickets/02-rank-by-score.md"))).toBe(
 		false,
 	);
-	expect(await fake.calls()).toEqual([]);
-	view.mockInput.pressEscape();
-	await frameWith(view, "p Planning");
+	expect(existsSync(join(root, item, "running.lock"))).toBe(false);
 });
 
-test("a Goal made without planning offers no planning chat", async () => {
+// Every file in the `planning/` of `search`, by name, with its text.
+async function planningFiles(root: string): Promise<Record<string, string>> {
+	const texts: Record<string, string> = {};
+	for (const name of await readdir(join(root, item, "planning"))) {
+		texts[name] = await Bun.file(join(root, item, "planning", name)).text();
+	}
+	return texts;
+}
+
+test("a Goal made without planning offers no planning session", async () => {
 	const view = await acceptView(await acceptedProject(false), wider);
 
 	expect(await openGoal(view)).not.toContain("p Planning");
@@ -303,7 +318,7 @@ test("in the session a types and asks nothing", async () => {
 
 test("a accepts the proposal the agent wrote in the session", async () => {
 	const root = await planningProject();
-	const proposal = proposalToml().replace(/^turn = 1\n/, "");
+	const proposal = proposalToml();
 	await rm(join(root, item, "planning/proposal.toml"));
 	const fake = await makeFakeInteractiveClaude({
 		answers: [`Here is the plan.\n\n<vago-plan>\n${proposal}</vago-plan>`],

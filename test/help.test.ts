@@ -329,8 +329,6 @@ test("vago nope prints every command's usage, lined up, then points at --help", 
        vago plan new <name> [--harness <name>]
        vago plan rename <name> <new-name>
        vago plan session <name>
-       vago plan say <name> --body-file <path>
-       vago plan retry <name>
        vago plan workflow <name> <workflow>
        vago plan accept <name>
        vago plan discard <name>
@@ -338,4 +336,15 @@ test("vago nope prints every command's usage, lined up, then points at --help", 
        vago ticket reset <goal> <NN>
 Run \`vago --help\` for what each command does.
 `);
+});
+
+test("the headless planning chat's plan say and plan retry are gone", async () => {
+	const root = await makeProject({});
+
+	for (const command of ["say", "retry"]) {
+		const result = await runVago(root, ["plan", command, "search"]);
+
+		expect(result.exitCode).toBe(1);
+		expect(result.stderr).toStartWith("usage: vago init\n");
+	}
 });
