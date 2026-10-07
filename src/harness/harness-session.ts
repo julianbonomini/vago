@@ -1,7 +1,8 @@
 // What every Harness shares: a session's events, in words common to every
 // Harness's CLI, and how they add up to the session's report and its Run
-// activity. Hides folding calls by verb, which tools work on files, prose
-// cleaning, relative paths, diffs, background tasks and pricing.
+// activity, and what an interactive session's transcript tells. Hides
+// folding calls by verb, which tools work on files, prose cleaning, relative
+// paths, diffs, background tasks and pricing.
 
 import type {
 	Harness,

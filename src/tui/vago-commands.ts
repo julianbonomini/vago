@@ -6,6 +6,7 @@
 // (ADR 0005). Hides how each is cut loose from the TUI and its terminal,
 // the session's pseudo-terminal, and how a refusal is read back.
 
+import { stopProcesses } from "../process-stop.ts";
 import type { GoalRow } from "./goal-rows.ts";
 
 /**
@@ -159,14 +160,7 @@ export function startPlanningSession(
 			if (stopped) return;
 			stopped = true;
 			// Its whole group, since it leads the session of its own terminal.
-			// A group already gone answers ESRCH, or EPERM on macOS while its
-			// last processes wait to be reaped.
-			try {
-				process.kill(-child.pid, "SIGTERM");
-			} catch (error) {
-				const code = (error as NodeJS.ErrnoException).code;
-				if (code !== "ESRCH" && code !== "EPERM") throw error;
-			}
+			void stopProcesses(child.pid, "group");
 			child.terminal?.close();
 		},
 		exited: child.exited,

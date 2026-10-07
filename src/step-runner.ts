@@ -16,6 +16,7 @@ import {
 	type HarnessTranscript,
 	type HarnessTranscriptFiles,
 } from "./harness/registry.ts";
+import { stopProcesses } from "./process-stop.ts";
 import { printStepEnded, printStepStarted } from "./progress.ts";
 import { withoutWritesUnder } from "./sandbox.ts";
 import {
@@ -228,9 +229,9 @@ export type InteractiveReadOnlySession = {
  * from either callback after the session has started never ends it; the
  * same call comes again a second later. A Harness whose transcript Vago
  * can't find gives no call after the start.
- * SIGHUP, SIGTERM or SIGINT stops it within 5 seconds and ends it
- * `interrupted`; otherwise it ends `ok` or `exit N`. Throws, naming what to
- * install, when the Harness's program isn't on `PATH`, as
+ * SIGHUP, SIGTERM or SIGINT stops it, with SIGKILL after a grace period,
+ * and ends it `interrupted`; otherwise it ends `ok` or `exit N`. Throws,
+ * naming what to install, when the Harness's program isn't on `PATH`, as
  * `withoutWritesUnder` does, and as `onSessionId` does before the start.
  */
 export async function runInteractiveReadOnlySession(
@@ -612,7 +613,11 @@ async function exitCodeOf(
 ): Promise<number> {
 	let stopping: Promise<void> | undefined;
 	const startStopping = () => {
-		stopping = stopProcesses(scope === "group" ? -child.pid : child.pid);
+		// The whole group of a detached child, since a process the Step
+		// started would otherwise live on and could hold the Harness's stdout
+		// open, so its stream would never end. The grace period before SIGKILL
+		// lets a Harness stop the tool commands it ran in groups of their own.
+		stopping = stopProcesses(child.pid, scope);
 	};
 	if (stop.aborted) startStopping();
 	else stop.addEventListener("abort", startStopping, { once: true });
@@ -620,44 +625,6 @@ async function exitCodeOf(
 	stop.removeEventListener("abort", startStopping);
 	await stopping;
 	return code;
-}
-
-// Long enough for a Harness to stop the tool commands it started.
-const stopGraceMs = 5_000;
-
-// `target` as `process.kill` takes it: a pid, or a group leader's pid negated
-// for the whole group. The whole group of a detached child, since a process
-// the Step started would otherwise live on and could hold the Harness's
-// stdout open, so its stream would never end. SIGTERM first, because a
-// Harness can run its tool commands in process groups of their own, which no
-// signal to this group reaches, and only the Harness can stop them. SIGKILL
-// after the grace period, because a Step that ignores SIGTERM must still end.
-// Resolves once the target is gone or has been sent SIGKILL.
-async function stopProcesses(target: number): Promise<void> {
-	const deadline = Date.now() + stopGraceMs;
-	signalTarget(target, "SIGTERM");
-	while (signalTarget(target, 0)) {
-		if (Date.now() >= deadline) {
-			signalTarget(target, "SIGKILL");
-			return;
-		}
-		await Bun.sleep(50);
-	}
-}
-
-// False when the target is gone, as it is already when the signal comes just
-// after the Step ended. Signal 0 only asks whether it is alive. macOS answers
-// EPERM, not ESRCH, while every process left in a group is a zombie waiting
-// to be reaped, and no signal can reach such a group either.
-function signalTarget(target: number, signal: NodeJS.Signals | 0): boolean {
-	try {
-		process.kill(target, signal);
-		return true;
-	} catch (error) {
-		const code = (error as NodeJS.ErrnoException).code;
-		if (code !== "ESRCH" && code !== "EPERM") throw error;
-		return false;
-	}
 }
 
 function outcomeOf(code: number): RunOutcome {
