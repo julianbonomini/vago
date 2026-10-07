@@ -73,6 +73,12 @@ type = "shell"
 run  = "sh .vago/scripts/merge.sh"
 
 [[after_all]]
+id     = "describe"
+name   = "PR description"
+type   = "agent"
+prompt = "prompts/describe.md"
+
+[[after_all]]
 id   = "ready"
 name = "Ready for review"
 type = "shell"

@@ -25,8 +25,10 @@
 # of its own group. This Workflow has no before_all.
 #
 # An agent Step with goal_report = true puts its output in the Goal report,
-# which `vago goal report` prints and merge.sh makes the PR's body, collapsed
-# under the Ticket.
+# which `vago goal report` prints, collapsed under the Ticket. merge.sh makes
+# the report the PR's body after each Ticket, and the describe Step, once
+# every Ticket is done, writes the body with the vago-pr skill and keeps the
+# report's Runs at its end.
 
 # The Harness is the coding agent that performs each agent Step: "claude-code"
 # or "codex". A Step can set its own harness and model, such as review on
@@ -99,6 +101,12 @@ id   = "merge"
 name = "Squash merge"
 type = "shell"
 run  = "sh .vago/scripts/merge.sh"
+
+[[after_all]]
+id     = "describe"
+name   = "PR description"
+type   = "agent"
+prompt = "prompts/describe.md"
 
 [[after_all]]
 id   = "ready"
