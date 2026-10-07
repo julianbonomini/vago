@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { TestRendererSetup } from "@opentui/core/testing";
-import { goalText, makeProject, ticketText } from "./project.ts";
+import { goalText, heldLock, makeProject, ticketText } from "./project.ts";
 import { frameWith, frameWithout, renderView } from "./view-render.tsx";
 
 // The files of planning item `name`, as `vago plan new` makes it.
@@ -211,4 +211,33 @@ test("a Goal is offered Start and neither Rename nor Discard", async () => {
 	view.mockInput.pressKey("d");
 	await view.renderOnce();
 	expect(view.captureCharFrame()).not.toContain("Discard");
+});
+
+test("discarding an item whose response is being written stops it, and the row stays gone", async () => {
+	const root = await makeProject({
+		...readyGoal,
+		".vago-goals/search/planning/chat.toml": `harness = "claude-code"
+
+[[turns]]
+message = "What should search rank by?"
+started = 2026-10-06T10:00:00.000Z
+log = "logs/turn-01.jsonl"
+`,
+	});
+	await heldLock(root, "search");
+	const view = await renderView(root);
+	await frameWith(view, " 1/2 ");
+	await selectRow(view, "search");
+
+	view.mockInput.pressKey("d");
+	await frameWith(view, "Discard search and everything saved with it? y/n");
+	view.mockInput.pressKey("y");
+
+	await frameWith(view, "Discarding search…");
+	const after = await frameWith(view, " 1/1 ");
+	expect(after).not.toContain(" search ");
+	await Bun.sleep(1200);
+	await view.renderOnce();
+	expect(view.captureCharFrame()).not.toContain(" search ");
+	expect(existsSync(join(root, ".vago-goals/search"))).toBe(false);
 });

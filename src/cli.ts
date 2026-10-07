@@ -13,7 +13,10 @@ import {
 	runGoal,
 } from "./goal-runner.ts";
 import { initProject, updateProject } from "./init.ts";
-import { sendPlanningMessage } from "./planning-runner.ts";
+import {
+	retryPlanningResponse,
+	sendPlanningMessage,
+} from "./planning-runner.ts";
 import { printGoalReport } from "./progress.ts";
 import { readRunOutput } from "./step-runner.ts";
 import {
@@ -304,7 +307,8 @@ vago run doesn't find it. It refuses a name a Goal or planning item has.`,
 		name: "plan rename",
 		summary: "Rename a planning item",
 		description: `Gives a planning item a new name, keeping everything it holds. It refuses a
-Goal, and a name a Goal or planning item has.`,
+Goal, a name a Goal or planning item has, and an item while a response to it
+is being written.`,
 		operands: [planningName, planningNewName],
 		flags: [],
 		example: "vago plan rename search ranked-search",
@@ -327,7 +331,9 @@ repo but not change a file in it. The answer may end with the agent's
 proposal, a <vago-plan> block, which Vago saves in the item's planning/
 folder; no Goal or Ticket file is written before the proposal is accepted.
 Exits 1 with the reason when the response fails. It refuses a Goal, an empty
-message, and an item whose last response is still being written.`,
+message, and an item while another response to it is being written. After an
+interrupted response, the message starts a new turn; vago plan retry answers
+the interrupted one instead.`,
 		operands: [planningName],
 		flags: [messageFileFlag],
 		example: "vago plan say search --body-file -",
@@ -337,6 +343,31 @@ message, and an item whose last response is still being written.`,
 				root,
 				given.operand(planningName),
 				message ?? "",
+			);
+			if (response.outcome === "failed") {
+				console.error(`vago: ${response.reason}`);
+				return 1;
+			}
+			console.log(response.answer);
+			return 0;
+		},
+	},
+	{
+		name: "plan retry",
+		summary: "Answer a planning item's interrupted response again",
+		description: `Answers the planning item's last response again when it was interrupted, such
+as by its vago being stopped or the machine restarting, and prints the answer.
+The response stays in the same turn: the message isn't sent as a new one.
+Exits 1 with the reason when the response fails. It refuses an item whose last
+response wasn't interrupted, or while another response to the item is being
+written.`,
+		operands: [planningName],
+		flags: [],
+		example: "vago plan retry search",
+		run: async (root, given) => {
+			const response = await retryPlanningResponse(
+				root,
+				given.operand(planningName),
 			);
 			if (response.outcome === "failed") {
 				console.error(`vago: ${response.reason}`);
@@ -372,8 +403,8 @@ revision of the proposal. It refuses a Workflow that isn't in
 		description: `Turns the planning item into a ready Goal with its proposed Tickets, all at
 once, and prints the path of its goal.md. It refuses, creating nothing, when
 the proposal isn't ready to accept, vago run would refuse its Workflow, a
-response is still being written, or the item was already accepted. It starts
-nothing: vago run does.`,
+response is still being written or the last one was interrupted, or the item
+was already accepted. It starts nothing: vago run does.`,
 		operands: [planningName],
 		flags: [],
 		example: "vago plan accept search",
@@ -385,8 +416,9 @@ nothing: vago run does.`,
 	{
 		name: "plan discard",
 		summary: "Remove a planning item and everything it holds",
-		description: `Removes a planning item and everything saved with it. It refuses a Goal,
-which it never removes.`,
+		description: `Removes a planning item and everything saved with it. A response to the item
+still being written is stopped first. It refuses a Goal, which it never
+removes.`,
 		operands: [planningName],
 		flags: [],
 		example: "vago plan discard search",

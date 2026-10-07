@@ -17,11 +17,7 @@ import {
 	Show,
 } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
-import {
-	createPlanningItem,
-	discardPlanningItem,
-	renamePlanningItem,
-} from "../tickets/tickets.ts";
+import { createPlanningItem, renamePlanningItem } from "../tickets/tickets.ts";
 import { GoalPreview } from "./goal-preview.tsx";
 import {
 	type GoalRow,
@@ -50,7 +46,7 @@ import { fitText } from "./text-fit.ts";
 import { goalColor, theme } from "./theme.ts";
 import { TicketBar } from "./ticket-bar.tsx";
 import { duration, money } from "./time-and-money.ts";
-import { startGoal } from "./vago-commands.ts";
+import { runPlanDiscard, startGoal } from "./vago-commands.ts";
 
 // How often the Goals are read again: a change on disk shows within this.
 const refreshMs = 1000;
@@ -119,7 +115,9 @@ function liveGoalRows(root: string): {
  * once it accepts, the Goals show again with its notice in the footer. `s`
  * starts the selected Goal in a `vago run` of its own, through the command
  * `vago` (`startGoal`), and the footer says what came of it until the next
- * key.
+ * key. `d` then `y` discards the selected planning item in a
+ * `vago plan discard` (`runPlanDiscard`), which stops a response to it
+ * first; the footer says so while the view waits, and shows a refusal.
  * Reads the Goals itself, and again every second, so changes on disk show
  * without a key; the selection stays on its Goal when the rows reorder.
  * Throws what the first read throws.
@@ -203,11 +201,15 @@ export function ProjectView(props: {
 		if (question.kind === "new") setOpened(name);
 		refresh();
 	};
+	// The planning item a `vago plan discard` is removing, which may first
+	// stop a response to it.
+	const [discarding, setDiscarding] = createSignal<string>();
 	const discard = async (item: string) => {
-		try {
-			await discardPlanningItem(props.root, item);
-		} catch (error) {
-			setNotice(projectMessage(error, props.root));
+		setDiscarding(item);
+		const end = await runPlanDiscard(props.vago, props.root, item);
+		setDiscarding(undefined);
+		if (end.outcome === "refused") {
+			setNotice(projectMessage(end.reason, props.root));
 		}
 		refresh();
 	};
@@ -248,7 +250,11 @@ export function ProjectView(props: {
 			key.preventDefault();
 			setAsking({ kind: "new" });
 		}
-		if (row?.standing === "planning" && !helpShown()) {
+		if (
+			row?.standing === "planning" &&
+			row.goal !== discarding() &&
+			!helpShown()
+		) {
 			if (key.name === "r") {
 				key.preventDefault();
 				setAsking({ kind: "rename", item: row.goal });
@@ -448,7 +454,11 @@ export function ProjectView(props: {
 							rows()?.[selectedIndex()]?.standing,
 						)}
 						width={terminal().width - 2}
-						notice={notice()}
+						notice={
+							discarding() === undefined
+								? notice()
+								: `Discarding ${discarding()}…`
+						}
 					/>
 				</box>
 				<Show when={helpShown()}>

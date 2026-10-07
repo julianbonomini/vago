@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
 	type FakeHarness,
 	makeFakeClaude,
+	planningFixture,
 	planningFixtureAnswering,
 } from "./fake-harness.ts";
 import {
@@ -12,6 +13,7 @@ import {
 	oneStep,
 	readTicketFile,
 	runVago,
+	startVago,
 	type VagoExit,
 } from "./project.ts";
 
@@ -140,8 +142,8 @@ test("plan accept uses the Workflow the human chose over the recommended one", a
 	expect(goal.header.workflow).toBe("try-hard");
 });
 
-// An open turn appended to the chat of `search`, as a `vago plan say` still
-// answering leaves it.
+// An open turn appended to the chat of `search`, as a `vago plan say` leaves
+// it while answering. With no live vago holding the item, it is interrupted.
 const openTurn = `
 [[turns]]
 message = "One more thing"
@@ -190,13 +192,22 @@ const refusals: {
 		reason: "small.toml",
 	},
 	{
-		name: "a response still being written",
+		name: "an open last response whose vago died",
 		change: async (root) =>
 			Bun.write(
 				join(root, item, "planning/chat.toml"),
 				`${await file(root, "planning/chat.toml")}${openTurn}`,
 			),
-		reason: "a response is still being written",
+		reason: "search: its last response was interrupted",
+	},
+	{
+		name: "a last response recorded interrupted",
+		change: async (root) =>
+			Bun.write(
+				join(root, item, "planning/chat.toml"),
+				`${await file(root, "planning/chat.toml")}${openTurn}ended = 2026-10-06T10:01:00.000Z\noutcome = "interrupted"\n`,
+			),
+		reason: "search: its last response was interrupted",
 	},
 ];
 
@@ -259,7 +270,7 @@ test("of two plan accepts at once, one creates the Goal and the other is refused
 		expect(refused).toHaveLength(1);
 		expect(refused[0]?.exitCode).toBe(1);
 		expect(refused[0]?.stderr).toMatch(
-			/was accepted as a Goal|already being run or accepted/,
+			/was accepted as a Goal|another vago is changing the item/,
 		);
 		expect(Object.keys(await ticketFiles(root))).toEqual([
 			"01-score.md",
@@ -395,4 +406,33 @@ test("an accepted Goal takes Tickets from the CLI and Goals are still made there
 	expect(added.stdout).toEndWith(`${item}/tickets/03-extra.md\n`);
 	expect(made.stderr).toBe("");
 	expect(made.exitCode).toBe(0);
+});
+
+test("plan accept is refused while a response is being written", async () => {
+	const { root } = await readyProject();
+	const sleeps = await makeFakeClaude("sleep 30", planningFixture);
+	const worker = startVago(
+		root,
+		["plan", "say", "search", "--body-file", "-"],
+		sleeps.env,
+		"One more thing",
+	);
+	for (
+		let tries = 0;
+		!(await file(root, "planning/chat.toml")).includes("One more thing");
+		tries++
+	) {
+		if (tries === 300) throw new Error("The turn was never recorded");
+		await Bun.sleep(20);
+	}
+
+	const refused = await accept(root);
+
+	expect(refused.exitCode).toBe(1);
+	expect(refused.stderr).toContain(
+		"search: a response is still being written, or another vago is changing the item",
+	);
+	expect(existsSync(join(root, item, "goal.md"))).toBe(false);
+	worker.kill("SIGTERM");
+	await worker.exited;
 });

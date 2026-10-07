@@ -32,7 +32,11 @@ import { RunActivityLines } from "./run-activity.tsx";
 import { type FooterKey, KeyFooter } from "./screen-keys.tsx";
 import { fitText, joinParagraphs, wrapText } from "./text-fit.ts";
 import { theme } from "./theme.ts";
-import { runPlanAccept, startPlanningTurn } from "./vago-commands.ts";
+import {
+	runPlanAccept,
+	startPlanningRetry,
+	startPlanningTurn,
+} from "./vago-commands.ts";
 
 // How often the chat and the Proposal are read again: a turn `vago plan
 // say` records shows within this.
@@ -57,10 +61,14 @@ type PlanningViewPane = "chat" | "preview";
  * blank in a `vago plan say` of its own, through the command `vago`
  * (`startPlanningTurn`), and shows it at once; while a response is being
  * written, Enter sends nothing and the footer says so. A turn that failed
- * shows why. Beside the chat, or in its place below 100 columns while it
- * has the focus, the Preview shows the agent's Proposal. Tab moves the
- * focus between the field and the Preview; with the Preview focused no
- * field has the focus, so `q` quits. There `a` asks whether to accept a
+ * shows why. An interrupted last response says so, and Ctrl-R, in either
+ * pane, answers it again in a `vago plan retry` of its own
+ * (`startPlanningRetry`), once: the footer says "Retrying…" until the retry
+ * shows. Earlier attempts at a retried response show above it. Beside the
+ * chat, or in its place below 100 columns while it has the focus, the
+ * Preview shows the agent's Proposal. Tab moves the focus between the field
+ * and the Preview; with the Preview focused no field has the focus, so `q`
+ * quits. There `a` asks whether to accept a
  * Proposal that is ready, or says why it isn't, and `y` accepts it in a
  * `vago plan accept` (`runPlanAccept`) that the view waits on, any other
  * key cancelling. A refusal shows in the footer and the view stays; an
@@ -101,10 +109,23 @@ export function PlanningView(props: {
 			? sent
 			: undefined;
 	};
+	// A retry asked for, and how many earlier attempts the last turn had
+	// then. It is pending until the turn has one more, which a retry that
+	// ends between two reads still leaves behind.
+	const [retry, setRetry] = createSignal<{ attemptsBefore: number }>();
+	const retryPending = () => {
+		const asked = retry();
+		const attempts = turns().at(-1)?.interruptedLogs.length ?? 0;
+		return asked !== undefined && attempts <= asked.attemptsBefore;
+	};
+	// An interrupted last response, which Retry response answers again.
+	const retryable = () =>
+		!accepted() && turns().at(-1)?.outcome === "interrupted";
+	const canRetry = () => retryable() && !retryPending() && !accepting();
 	const answering = () => {
 		const last = turns().at(-1);
 		const open = last !== undefined && last.outcome === undefined;
-		return open || shownPending() !== undefined;
+		return open || shownPending() !== undefined || retryPending();
 	};
 	let field: InputRenderable | undefined;
 	const send = () => {
@@ -114,6 +135,12 @@ export function PlanningView(props: {
 		startPlanningTurn(props.vago, props.root, props.name, message);
 		setPending({ message, turnsBefore: turns().length });
 		if (field !== undefined) field.value = "";
+	};
+	const retryResponse = () => {
+		const last = turns().at(-1);
+		if (last === undefined || !canRetry()) return;
+		startPlanningRetry(props.vago, props.root, props.name);
+		setRetry({ attemptsBefore: last.interruptedLogs.length });
 	};
 	// Asks whether to accept the Proposal, or says why it can't be.
 	const askAccept = () => {
@@ -156,6 +183,7 @@ export function PlanningView(props: {
 		else if (key.name === "escape") props.onClose();
 		// The picker has the arrows and Enter until it closes.
 		else if (picking()) return;
+		else if (key.ctrl && key.name === "r") retryResponse();
 		else if (key.name === "tab") {
 			setFocus(focus() === "chat" ? "preview" : "chat");
 		}
@@ -226,6 +254,7 @@ export function PlanningView(props: {
 									harness={chat()?.harness}
 									turn={turn}
 									proposalTurn={proposal()?.turn}
+									retryable={retryable() && turn.number === turns().length}
 									width={inner()}
 								/>
 							)}
@@ -293,11 +322,13 @@ export function PlanningView(props: {
 					keys={footerKeys(focus(), {
 						shown: proposal() !== undefined,
 						accepted: accepted(),
+						retryable: canRetry(),
 					})}
 					width={terminal().width - 2}
 					notice={
 						question() ??
 						(accepting() ? "Accepting…" : undefined) ??
+						(retryPending() ? "Retrying…" : undefined) ??
 						notice() ??
 						(answering()
 							? "The agent is still answering; press Enter again once it has."
@@ -315,23 +346,29 @@ function ticketCount(count: number): string {
 }
 
 // The keys of the footer while `focus` has the focus, `w` and `a` only
-// while a Proposal is `shown` and not yet `accepted`, which also leaves no
-// field to send from. In the field `q` types, so only Ctrl-C quits there,
-// which `tui.tsx` owns.
+// while a Proposal is `shown` and the item not yet `accepted`, which also
+// leaves no field to send from, and Ctrl-R only while the last response is
+// `retryable`. In the field `q` types, so only Ctrl-C quits there, which
+// `tui.tsx` owns.
 function footerKeys(
 	focus: PlanningViewPane,
-	proposal: { shown: boolean; accepted: boolean },
+	chat: { shown: boolean; accepted: boolean; retryable: boolean },
 ): FooterKey[] {
-	const { shown, accepted } = proposal;
+	const { shown, accepted, retryable } = chat;
+	const retry = retryable
+		? [{ keys: "Ctrl-R", label: "Retry response", use: 3 }]
+		: [];
 	if (focus === "chat") {
 		return [
 			...(accepted ? [] : [{ keys: "Enter", label: "Send", use: 3 }]),
+			...retry,
 			{ keys: "Tab", label: "Preview", use: 2 },
 			{ keys: "Esc", label: "Back", use: 1 },
 		];
 	}
 	return [
 		{ keys: "Tab", label: "Chat", use: 3 },
+		...retry,
 		...(shown && !accepted
 			? [
 					{ keys: "a", label: "Accept", use: 2 },
@@ -402,30 +439,19 @@ function livePlanning(
 // message, then the response read from its log as it grows, live while the
 // turn is open, each proposal block in it one dim line that says whether it
 // is the Proposal from turn `proposalTurn` in the Preview, an earlier one or
-// one never saved, then for a turn
-// that didn't end `ok` the reason, and why its block couldn't be read.
+// one never saved, then for a turn that didn't end `ok` the reason, and why
+// its block couldn't be read. A `retryable` turn says Ctrl-R answers it again
+// in place of its reason. Each earlier, interrupted attempt at the response
+// shows between the message and the response.
 function TurnLines(props: {
 	root: string;
 	harness: string | undefined;
 	turn: PlanningTurn;
 	proposalTurn: number | undefined;
+	retryable: boolean;
 	width: number;
 }): JSX.Element {
-	const { color, dimText } = theme();
-	const log = liveRunLog(() => props.turn.log);
-	// A log whose Harness this build doesn't know shows nothing.
-	const activity = createMemo(() => {
-		const text = log()?.text;
-		const harness = props.harness;
-		if (harness === undefined || !knownHarness(harness)) return undefined;
-		if (text === undefined) return undefined;
-		return findHarness(harness).runActivity(text.split("\n"), props.root);
-	});
-	const parts = createMemo(() => {
-		const shown = activity();
-		if (shown === undefined) return [];
-		return withoutProposalBlocks(shown);
-	});
+	const { color } = theme();
 	// What a block's line says: whether its turn's Proposal is the one the
 	// Preview shows, was replaced since, or was never saved.
 	const blockWords = (closed: boolean) => {
@@ -439,28 +465,32 @@ function TurnLines(props: {
 	};
 	const failure = () => {
 		const { outcome, reason } = props.turn;
-		if (outcome === undefined || outcome === "ok") return undefined;
+		if (outcome === undefined || outcome === "ok" || props.retryable) {
+			return undefined;
+		}
 		return outcome === "error" ? (reason ?? outcome) : `ended ${outcome}`;
 	};
 	return (
 		<>
 			<MessageLines message={props.turn.message} width={props.width} />
-			<For each={parts()}>
-				{(part) =>
-					part.kind === "activity" ? (
-						<RunActivityLines
-							activity={part.activity}
-							live={props.turn.outcome === undefined}
-							filled={false}
-							width={props.width}
-						/>
-					) : (
-						<text {...dimText} flexShrink={0} wrapMode="none">
-							{fitText(`${blockIndent}${blockWords(part.closed)}`, props.width)}
-						</text>
-					)
-				}
+			<For each={props.turn.interruptedLogs}>
+				{(log) => (
+					<AttemptLines
+						root={props.root}
+						harness={props.harness}
+						log={log}
+						width={props.width}
+					/>
+				)}
 			</For>
+			<ResponseLines
+				root={props.root}
+				harness={props.harness}
+				log={props.turn.log}
+				live={props.turn.outcome === undefined}
+				blockWords={blockWords}
+				width={props.width}
+			/>
 			<Show when={props.turn.proposalError}>
 				{(reason: () => string) => (
 					<For
@@ -488,8 +518,97 @@ function TurnLines(props: {
 					</For>
 				)}
 			</Show>
+			<Show when={props.retryable}>
+				<For
+					each={wrapText(
+						"The response was interrupted; Ctrl-R retries it.",
+						props.width,
+					)}
+				>
+					{(line) => (
+						<text fg={color.warn} flexShrink={0} wrapMode="none">
+							{line}
+						</text>
+					)}
+				</For>
+			</Show>
 			<box height={1} flexShrink={0} />
 		</>
+	);
+}
+
+// An earlier attempt at a turn's response on Harness `harness`, read from
+// `log`, `width` columns wide, then a dim line saying it was interrupted and
+// retried. A proposal block in it was never saved.
+function AttemptLines(props: {
+	root: string;
+	harness: string | undefined;
+	log: string;
+	width: number;
+}): JSX.Element {
+	const { dimText } = theme();
+	return (
+		<>
+			<ResponseLines
+				root={props.root}
+				harness={props.harness}
+				log={props.log}
+				live={false}
+				blockWords={() => "Proposal not saved"}
+				width={props.width}
+			/>
+			<text {...dimText} flexShrink={0} wrapMode="none">
+				{fitText(`${blockIndent}Response interrupted; retried`, props.width)}
+			</text>
+		</>
+	);
+}
+
+// A response of a chat on Harness `harness`, read from `log` as it grows and
+// drawn as Run activity `width` columns wide, `live` while it is being
+// written, each proposal block in it one dim line of what `blockWords` says
+// of a block closed or not. Nothing while the log can't be read, or when
+// this build doesn't know the Harness.
+function ResponseLines(props: {
+	root: string;
+	harness: string | undefined;
+	log: string;
+	live: boolean;
+	blockWords: (closed: boolean) => string;
+	width: number;
+}): JSX.Element {
+	const { dimText } = theme();
+	const read = liveRunLog(() => props.log);
+	const parts = createMemo(() => {
+		const text = read()?.text;
+		const harness = props.harness;
+		if (harness === undefined || !knownHarness(harness) || text === undefined) {
+			return [];
+		}
+		return withoutProposalBlocks(
+			findHarness(harness).runActivity(text.split("\n"), props.root),
+		);
+	});
+	return (
+		<For each={parts()}>
+			{(part) =>
+				part.kind === "activity" ? (
+					<RunActivityLines
+						activity={part.activity}
+						live={props.live}
+						filled={false}
+						width={props.width}
+					/>
+				) : (
+					<text {...dimText} flexShrink={0} wrapMode="none">
+						{fitText(
+							`${blockIndent}${props.blockWords(part.closed)}`,
+							props.width,
+						)}
+					</text>
+				)
+			}
+		</For>
 	);
 }
 

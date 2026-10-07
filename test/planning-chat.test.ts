@@ -10,6 +10,7 @@ import {
 import {
 	gitIdentity,
 	goalText,
+	heldLock,
 	makeProject,
 	runVago,
 	type VagoExit,
@@ -154,7 +155,8 @@ test("the agent reads the Project's files and skills with read-only tools", asyn
 	expect(tools.split(",").sort()).toEqual(["Glob", "Grep", "Read", "Skill"]);
 });
 
-// A `chat.toml` whose one turn, sent `message`, is still being answered.
+// A `chat.toml` whose one turn is open: still being answered while a live
+// vago holds the item (`heldLock`), and interrupted otherwise.
 const openTurnChat = `harness = "claude-code"
 
 [[turns]]
@@ -168,6 +170,7 @@ test("plan say refuses a Goal, no item, a blank message and an open turn", async
 		".vago-goals/ready/goal.md": goalText("w"),
 		".vago-goals/busy/planning/chat.toml": openTurnChat,
 	});
+	await heldLock(root, "busy");
 	const fake = await makeFakeClaude("exit 0", planningFixture);
 
 	for (const [item, message, refusal] of [
@@ -188,6 +191,7 @@ test("plan rename refuses an item whose response is still being written", async 
 	const root = await planningProject({
 		".vago-goals/busy/planning/chat.toml": openTurnChat,
 	});
+	await heldLock(root, "busy");
 
 	const refused = await runVago(root, ["plan", "rename", "busy", "other"]);
 

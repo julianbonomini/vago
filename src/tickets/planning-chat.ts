@@ -16,6 +16,8 @@ const TurnTable = z.looseObject({
 	reason: z.string().optional(),
 	proposal_error: z.string().optional(),
 	log: z.string(),
+	session_id: z.string().optional(),
+	interrupted_logs: z.array(z.string()).optional(),
 });
 
 const ChatFile = z.looseObject({

@@ -61,8 +61,12 @@ Turns a planning item whose Proposal is ready to accept into a ready Goal with r
 _Avoid_: approve, commit, publish
 
 **Planning turn**:
-One message the human sends a planning item's agent and the agent's response to it. It is not a Run: it belongs to no Step, Ticket or Goal.
+One message the human sends a planning item's agent and the agent's response to it. It is not a Run: it belongs to no Step, Ticket or Goal. Its response is _interrupted_ when the `vago` writing it stops before it ends; the turn keeps the conversation.
 _Avoid_: Run, exchange
+
+**Retry response**:
+The human asking a planning item's agent to answer an interrupted Planning turn again, in the same turn. It is not a Retry, which `vago run` starts by itself for an agent Step.
+_Avoid_: resend, rerun
 
 **Run**:
 One Harness session performing one agent Step on one Ticket, or for the Goal in a Goal Step, such as implement, review or discuss; a Ticket usually takes several.

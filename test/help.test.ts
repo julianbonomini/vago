@@ -329,6 +329,7 @@ test("vago nope prints every command's usage, lined up, then points at --help", 
        vago plan new <name>
        vago plan rename <name> <new-name>
        vago plan say <name> --body-file <path>
+       vago plan retry <name>
        vago plan workflow <name> <workflow>
        vago plan accept <name>
        vago plan discard <name>

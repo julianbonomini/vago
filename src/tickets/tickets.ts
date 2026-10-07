@@ -6,17 +6,23 @@
 // Ticket number is spelled, the lock that marks a Goal as taken by a
 // `vago run`, and the planning items that share `.vago-goals/` with the
 // Goals, with each item's planning chat, its turns' logs and the rule that
-// one turn is open at a time, and each item's Proposal: the block in an
-// answer it is read from, the human's Workflow choice and whether it is
-// ready to accept, and accepting an item's Proposal as a ready Goal, after
-// which its chat is read-only. Only this file is imported from outside
-// `tickets/`.
+// one response is written at a time, held by the item's lock, and each
+// item's Proposal: the block in an answer it is read from, the human's
+// Workflow choice and whether it is ready to accept, and accepting an item's
+// Proposal as a ready Goal, after which its chat is read-only. Only this
+// file is imported from outside `tickets/`.
 
 import { link, mkdir, readdir, rename, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { HarnessSessionReport } from "../harness/registry.ts";
 import type { GoalStepGroup, Step } from "../workflow.ts";
-import { claimLock, isLockHeld, releaseLock } from "./goal-lock.ts";
+import {
+	claimLock,
+	isLockHeld,
+	isLockMine,
+	releaseLock,
+	stopLockHolder,
+} from "./goal-lock.ts";
 import {
 	headedText,
 	readGoalFile,
@@ -402,9 +408,9 @@ export async function createPlanningItem(
  * Gives planning item `name` of the Project at `root` the name `newName`,
  * with everything it holds. Throws an Error naming the problem, and changes
  * nothing, when there is no such item, `name` is a Goal, a Goal or planning
- * item already has `newName`, `newName` isn't a valid name, or a response
- * to the item's chat is still being written. Refuses a Goal accepted from a
- * planning item: its planning chat is read-only.
+ * item already has `newName`, `newName` isn't a valid name, or another vago
+ * holds the item, such as one writing a response. Refuses a Goal accepted
+ * from a planning item: its planning chat is read-only.
  */
 export async function renamePlanningItem(
 	root: string,
@@ -412,37 +418,50 @@ export async function renamePlanningItem(
 	newName: string,
 ): Promise<void> {
 	const folder = await planningItemToChange(root, name);
-	// The `vago plan say` writing it records its end under the old name.
-	const chat = await readPlanningChatFile(planningFolder(folder));
-	if (isOpen(chat.turns?.at(-1))) throw new Error(stillAnswering(name));
 	const newFolder = goalFolder(root, newName);
 	if (await exists(newFolder)) {
 		throw new Error(alreadyExists(newName, newFolder));
 	}
-	await rename(folder, newFolder);
+	// Held, so no `vago plan say` writes under the old name meanwhile.
+	await withPlanningItemClaimed(root, name, async () => {
+		if (await exists(newFolder)) {
+			throw new Error(alreadyExists(newName, newFolder));
+		}
+		await rename(folder, newFolder);
+		// The lock moved with the folder, so it is released where it is now.
+		await releaseLock(goalLockPath(root, newName));
+	});
 }
 
 /**
- * Removes planning item `name` of the Project at `root` and everything it
- * holds. Throws an Error naming the problem, and removes nothing, when
- * there is no such item or `name` is a Goal. Refuses a Goal accepted from a
- * planning item: its planning chat is read-only.
+ * Stops a response to planning item `name` of the Project at `root` that is
+ * in progress, then removes the item and everything it holds. Throws an
+ * Error naming the problem, and removes nothing, when there is no such item,
+ * `name` is a Goal, or another vago takes the item first. Refuses a Goal
+ * accepted from a planning item: its planning chat is read-only.
  */
 export async function discardPlanningItem(
 	root: string,
 	name: string,
 ): Promise<void> {
-	await rm(await planningItemToChange(root, name), { recursive: true });
+	const folder = await planningItemToChange(root, name);
+	await stopLockHolder(goalLockPath(root, name));
+	await withPlanningItemClaimed(root, name, () =>
+		rm(folder, { recursive: true }),
+	);
 }
 
 /**
  * One message the human sent a planning item's agent and the agent's
  * response to it. `log` is the absolute path of the response's stream.
- * `outcome` is absent while the response is being written; otherwise it is
- * spelled like a Run's (`ok`, `exit 1`, `permission-mode default`,
+ * `outcome` is absent while a live vago is writing the response; otherwise
+ * it is spelled like a Run's (`ok`, `exit 1`, `permission-mode default`,
  * `interrupted`), or `error` for a turn that stopped before or around its
- * session, with `reason` saying why. `proposalError` says why the proposal
- * block in the turn's answer couldn't be read.
+ * session, with `reason` saying why. A response whose vago died before it
+ * ended reads `interrupted`. `proposalError` says why the proposal block in
+ * the turn's answer couldn't be read. `interruptedLogs` are the absolute
+ * paths of the logs of earlier attempts at the response, each interrupted
+ * and retried, oldest first.
  */
 export type PlanningTurn = {
 	number: number;
@@ -453,6 +472,7 @@ export type PlanningTurn = {
 	reason?: string;
 	proposalError?: string;
 	log: string;
+	interruptedLogs: string[];
 };
 
 /**
@@ -492,31 +512,78 @@ export async function readPlanningChat(
 	);
 	const folder = planningFolder(itemFolder);
 	const chat = await readPlanningChatFile(folder);
+	const turns = chat.turns ?? [];
+	// Read rather than written, as a lost Run is: nobody is left to write it.
+	const last = turns.at(-1);
+	const dead =
+		last !== undefined &&
+		last.ended === undefined &&
+		!(await isLockHeld(goalLockPath(root, item)));
 	return {
 		item,
 		harness: chat.harness,
 		sessionId: chat.session_id,
-		turns: (chat.turns ?? []).map((turn, index) => ({
-			number: index + 1,
-			message: turn.message,
-			startedAt: turn.started,
-			endedAt: turn.ended,
-			outcome: turn.outcome,
-			reason: turn.reason,
-			proposalError: turn.proposal_error,
-			log: join(folder, turn.log),
-		})),
+		turns: turns.map((turn, index) => {
+			const stopped = dead && index === turns.length - 1;
+			return {
+				number: index + 1,
+				message: turn.message,
+				startedAt: turn.started,
+				endedAt: turn.ended,
+				outcome: stopped ? "interrupted" : turn.outcome,
+				reason: stopped ? stoppedEarly : turn.reason,
+				proposalError: turn.proposal_error,
+				log: join(folder, turn.log),
+				interruptedLogs: (turn.interrupted_logs ?? []).map((log) =>
+					join(folder, log),
+				),
+			};
+		}),
 		accepted,
 	};
+}
+
+// Why a response whose vago died shows as interrupted.
+const stoppedEarly = "the response stopped before it ended";
+
+/**
+ * Runs `run` while this process holds planning item `item` of the Project
+ * at `root`, and returns what `run` returns. Releases the item however `run`
+ * ends, and takes over a hold whose vago died. Throws, without calling
+ * `run`, when another live vago holds the item, such as one writing a
+ * response, and when `item` is no planning item or was accepted as a Goal.
+ */
+export async function withPlanningItemClaimed<T>(
+	root: string,
+	item: string,
+	run: () => Promise<T>,
+): Promise<T> {
+	// Checked first, so a Goal's refusal says it is a Goal.
+	await planningItemToChange(root, item);
+	const lock = goalLockPath(root, item);
+	await claimLock(
+		lock,
+		(pid) =>
+			`${item}: a response is still being written, or another vago is changing the item (pid ${pid})`,
+	);
+	try {
+		// Checked again under the lock: another vago may have accepted it
+		// between the first check and taking the lock.
+		await planningItemToChange(root, item);
+		return await run();
+	} finally {
+		await releaseLock(lock);
+	}
 }
 
 /**
  * Appends an open turn holding `message` to `item`'s chat, recording
  * `harness` as the chat's when it has none, and gives back where the turn
- * is recorded and its log goes. Throws "a response is still being written"
- * when the last turn is open, and as `readPlanningChat` does. Refuses a
- * Goal accepted from a planning item: its planning chat is read-only.
- * Survives a crash (temp file and rename).
+ * is recorded and its log goes. An interrupted last turn is closed as
+ * `interrupted` first. Must run inside `withPlanningItemClaimed`, and
+ * throws otherwise. Throws as `readPlanningChat` does, and refuses a Goal
+ * accepted from a planning item: its planning chat is read-only. Survives a
+ * crash (temp file and rename).
  */
 export async function recordPlanningTurnStart(
 	root: string,
@@ -524,10 +591,17 @@ export async function recordPlanningTurnStart(
 	message: string,
 	harness: string,
 ): Promise<PlanningTurnEntry> {
+	await mustHold(root, item);
 	const folder = planningFolder(await planningItemToChange(root, item));
 	const { number, log } = await rewritePlanningChatFile(folder, (chat) => {
 		const turns = chat.turns ?? [];
-		if (isOpen(turns.at(-1))) throw new Error(stillAnswering(item));
+		const last = turns.at(-1);
+		// Open under this process's hold, so its vago died.
+		if (last !== undefined && last.ended === undefined) {
+			last.ended = new Date();
+			last.outcome = "interrupted";
+			last.reason = stoppedEarly;
+		}
 		const number = turns.length + 1;
 		const log = `logs/turn-${ticketNumberText(number)}.jsonl`;
 		turns.push({ message, started: new Date(), log });
@@ -538,13 +612,64 @@ export async function recordPlanningTurnStart(
 	return { root, item, number, log: join(folder, log) };
 }
 
-/** Saves the chat's session id as soon as the Harness reports it. */
+/**
+ * Saves the session id as the chat's and the turn's as soon as the Harness
+ * reports it.
+ */
 export async function recordPlanningSession(
 	entry: PlanningTurnEntry,
 	sessionId: string,
 ): Promise<void> {
 	await rewritePlanningChatFile(entryFolder(entry), (chat) => {
 		chat.session_id = sessionId;
+		const turn = chat.turns?.[entry.number - 1];
+		if (turn !== undefined) turn.session_id = sessionId;
+	});
+}
+
+/**
+ * An interrupted turn reopened for Retry response: where it is recorded and
+ * its new log goes, and its `message`. `sessionId` is the session an earlier
+ * attempt reported, absent when the message never reached the agent.
+ */
+export type PlanningRetry = {
+	entry: PlanningTurnEntry;
+	message: string;
+	sessionId?: string;
+};
+
+/**
+ * Reopens `item`'s last turn when its response was interrupted, keeping the
+ * interrupted attempt's log among its earlier ones and giving it a new log,
+ * and gives back what to retry. Must run inside `withPlanningItemClaimed`,
+ * and throws otherwise. Throws "has no interrupted response to retry" when
+ * the last response wasn't interrupted, and as `readPlanningChat` does.
+ * Refuses a Goal accepted from a planning item: its planning chat is
+ * read-only. Survives a crash.
+ */
+export async function recordPlanningTurnRetry(
+	root: string,
+	item: string,
+): Promise<PlanningRetry> {
+	await mustHold(root, item);
+	const folder = planningFolder(await planningItemToChange(root, item));
+	return rewritePlanningChatFile(folder, (chat) => {
+		const turns = chat.turns ?? [];
+		const turn = turns.at(-1);
+		if (turn === undefined || !isInterrupted(turn)) {
+			throw new Error(`${item} has no interrupted response to retry`);
+		}
+		const earlier = turn.interrupted_logs ?? [];
+		turn.interrupted_logs = [...earlier, turn.log];
+		turn.log = `logs/turn-${ticketNumberText(turns.length)}-retry-${earlier.length + 1}.jsonl`;
+		delete turn.ended;
+		delete turn.outcome;
+		delete turn.reason;
+		return {
+			entry: { root, item, number: turns.length, log: join(folder, turn.log) },
+			message: turn.message,
+			sessionId: turn.session_id,
+		};
 	});
 }
 
@@ -803,25 +928,28 @@ export async function recordPlanningWorkflow(
  * blockers. The Goal and its Tickets appear together; its planning chat
  * stays with it, read-only. Returns the path of `goal.md`. Throws an Error
  * naming the problem, and creates no Goal, when `item` is already a Goal or
- * no planning item, another vago holds it, a response is still being
- * written, it has no Proposal, or the Proposal has problems judged against
- * `workflows`, the names of the Project's Workflows.
+ * no planning item, another vago holds it, such as one writing a response,
+ * its last response was interrupted, it has no Proposal, or the Proposal has
+ * problems judged against `workflows`, the names of the Project's
+ * Workflows.
  */
 export async function acceptPlanningItem(
 	root: string,
 	item: string,
 	workflows: readonly string[],
 ): Promise<string> {
-	// Checked first: taking the lock would create a mistyped item's folder.
-	const folder = await planningItemToChange(root, item);
-	const lock = goalLockPath(root, item);
-	await claimLock(lock, item);
-	try {
-		// Checked again under the lock: another vago may have accepted it
-		// between the first check and taking the lock.
-		await planningItemToChange(root, item);
+	return withPlanningItemClaimed(root, item, async () => {
+		const folder = goalFolder(root, item);
 		const chat = await readPlanningChatFile(planningFolder(folder));
-		if (isOpen(chat.turns?.at(-1))) throw new Error(stillAnswering(item));
+		const last = chat.turns?.at(-1);
+		// The human's last message has no answer, and an accepted Goal must
+		// never keep an open turn, which would read as live while vago run
+		// holds the Goal.
+		if (last !== undefined && isInterrupted(last)) {
+			throw new Error(
+				`${item}: its last response was interrupted; retry it or send a message first`,
+			);
+		}
 		const proposal = await readPlanningProposal(root, item, workflows);
 		if (proposal === undefined) {
 			throw new Error(`${item} has no proposal to accept yet`);
@@ -862,18 +990,23 @@ export async function acceptPlanningItem(
 		}
 		await rm(staging, { recursive: true, force: true });
 		return goalFileIn(folder);
-	} finally {
-		await releaseLock(lock);
+	});
+}
+
+// Whether `turn`'s response was interrupted, judged under the item's hold:
+// open there, its vago died.
+function isInterrupted(turn: PlanningTurnTable): boolean {
+	return turn.ended === undefined || turn.outcome === "interrupted";
+}
+
+// Throws unless this process holds planning item `item`: what a turn
+// records is right only while no other vago can write the item.
+async function mustHold(root: string, item: string): Promise<void> {
+	if (!(await isLockMine(goalLockPath(root, item)))) {
+		throw new Error(
+			`${item} must be held with withPlanningItemClaimed to record a turn`,
+		);
 	}
-}
-
-// A turn with no end is one whose response is still being written.
-function isOpen(turn: PlanningTurnTable | undefined): boolean {
-	return turn !== undefined && turn.ended === undefined;
-}
-
-function stillAnswering(item: string): string {
-	return `${item}: a response is still being written`;
 }
 
 // The `planning/` folder of the item `entry` was recorded in.
@@ -1386,7 +1519,11 @@ export async function withGoalClaimed<T>(
 	// Checked first: writing the lock would create a mistyped Goal's folder.
 	await existingGoalFile(root, goal);
 	const lock = goalLockPath(root, goal);
-	await claimLock(lock, goal);
+	await claimLock(
+		lock,
+		(pid) =>
+			`Goal ${goal} is already being run or accepted by vago (pid ${pid}). If no vago is running or accepting it, delete ${lock}`,
+	);
 	try {
 		return await run();
 	} finally {
