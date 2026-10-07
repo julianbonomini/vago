@@ -24,14 +24,17 @@ const ProposalBlock = z.strictObject({
 	open_decisions: z.array(z.string()).default([]),
 });
 
-const ProposalFile = ProposalBlock.extend({ turn: z.int() });
+const ProposalFile = ProposalBlock.extend({ turn: z.int().optional() });
 
 const WorkflowFile = z.strictObject({ workflow: z.string() });
 
 /** What a proposal block holds, with the fields as spelled in it. */
 export type PlanningProposalBlock = z.infer<typeof ProposalBlock>;
 
-/** `proposal.toml`: the block it was saved from and the turn it came in. */
+/**
+ * `proposal.toml`: the block it was saved from and the turn it came in,
+ * absent for a session's.
+ */
 export type PlanningProposalFile = z.infer<typeof ProposalFile>;
 
 /**
@@ -69,14 +72,16 @@ export async function readPlanningProposalFile(
 
 /**
  * Replaces the `proposal.toml` in `folder` with `block`, proposed in turn
- * `turn`. A crash leaves the old file or the new one, never half of each.
+ * `turn`, or in a planning session when `turn` is absent. A crash leaves the
+ * old file or the new one, never half of each.
  */
 export async function writePlanningProposalFile(
 	folder: string,
 	block: PlanningProposalBlock,
-	turn: number,
+	turn?: number,
 ): Promise<void> {
-	const file: PlanningProposalFile = { turn, ...block };
+	const file: PlanningProposalFile =
+		turn === undefined ? block : { turn, ...block };
 	await writeFileAtomically(join(folder, "proposal.toml"), stringify(file));
 }
 

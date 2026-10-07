@@ -53,6 +53,14 @@ export type HarnessCli = {
 	events(line: string, command: readonly string[]): HarnessEvent[];
 	/** Dollars per million tokens of each model the CLI runs. */
 	prices: ModelPrice[];
+	/** As `Harness.interactiveTranscriptPath`. */
+	interactiveTranscriptPath(
+		session: { sessionId: string; folder: string },
+		home: string,
+		env: Readonly<Record<string, string | undefined>>,
+	): string | undefined;
+	/** As `Harness.transcriptAnswers`. */
+	transcriptAnswers(lines: readonly string[]): string[];
 	/** As `Harness.resumeHint`. */
 	resumeHint(sessionId: string): string;
 };
@@ -218,6 +226,8 @@ export function harnessFromCli(cli: HarnessCli): Harness {
 				root,
 				cli.prices,
 			),
+		interactiveTranscriptPath: cli.interactiveTranscriptPath,
+		transcriptAnswers: cli.transcriptAnswers,
 		resumeHint: cli.resumeHint,
 	};
 }

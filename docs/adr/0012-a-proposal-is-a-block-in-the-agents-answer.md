@@ -1,5 +1,7 @@
 # A Proposal is a block in the agent's answer
 
+Superseded by ADR 0016 for planning sessions; holds for `vago plan say` until it is removed.
+
 A planning item's agent ends an answer with a `<vago-plan>` block whenever its Proposal changes: TOML holding the Goal, the ordered Tickets with their blockers, the recommended Workflow with its reason, and the decisions still open. `starter/prompts/planning.md` teaches the format. When the turn ends `ok`, the unsandboxed `vago plan say` reads the last block of the final answer, checks it, and saves it to the item's `planning/proposal.toml` with the number of the turn it came from. The human's Workflow choice lives in `planning/workflow.toml`, written only by `vago plan workflow` and the TUI's picker, so the two writers never share a file. No Goal or Ticket file exists until the Proposal is accepted.
 
 ## Considered options

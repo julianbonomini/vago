@@ -300,3 +300,30 @@ test("in the session a types and asks nothing", async () => {
 	const frame = await frameWith(view, "key a");
 	expect(frame).not.toContain("y accepts");
 });
+
+test("a accepts the proposal the agent wrote in the session", async () => {
+	const root = await planningProject();
+	const proposal = proposalToml().replace(/^turn = 1\n/, "");
+	await rm(join(root, item, "planning/proposal.toml"));
+	const fake = await makeFakeInteractiveClaude({
+		answers: [`Here is the plan.\n\n<vago-plan>\n${proposal}</vago-plan>`],
+	});
+	const view = await acceptView(root, wide, fake);
+	await frameWith(view, " 1/1 ");
+	view.mockInput.pressEnter();
+	await frameWith(view, "fake claude fresh");
+
+	view.mockInput.pressEnter();
+	await frameWith(view, "02 Rank results by score");
+	view.mockInput.pressKey("]", { ctrl: true });
+	await frameWith(view, "a Accept");
+	await view.mockInput.typeText("a");
+	await frameWith(view, "y accepts");
+	await view.mockInput.typeText("y");
+
+	await frameWith(view, "Accepted search as a ready Goal with 2 Tickets");
+	const goals = await frameWith(view, "1 ready · 0 running");
+	const row = goals.split("\n").find((line) => line.includes("search"));
+	expect(row).toContain("ready");
+	expect(exists(root, "tickets/02-rank-by-score.md")).toBe(true);
+});

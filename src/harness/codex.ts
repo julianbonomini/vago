@@ -149,6 +149,14 @@ export const codex: HarnessCli = {
 			},
 		];
 	},
+	interactiveTranscriptPath() {
+		// TODO(planning-real-session 03): Codex's interactive transcript, under $CODEX_HOME/sessions/
+		return undefined;
+	},
+	transcriptAnswers() {
+		// TODO(planning-real-session 03): Codex's interactive transcript, under $CODEX_HOME/sessions/
+		return [];
+	},
 	prices: openAiPrices(),
 	resumeHint(sessionId) {
 		return `codex resume ${sessionId}`;

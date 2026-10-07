@@ -223,6 +223,31 @@ export async function codexFixtureAnswering(answer: string): Promise<string> {
 // The fields of a Codex stream line `codexFixtureAnswering` edits.
 type CodexFixtureEvent = { item?: { type: string; text?: string } };
 
+// A line of Claude Code's interactive transcript holding the agent's text,
+// as `claude-code-transcript.jsonl` records it, with the fields Vago doesn't
+// read left out.
+const transcriptLineShape = {
+	parentUuid: null,
+	isSidechain: false,
+	message: {
+		model: "claude-opus-5-5",
+		type: "message",
+		role: "assistant",
+		content: [{ type: "text", text: "" }],
+	},
+	type: "assistant",
+};
+
+/**
+ * One line of Claude Code's interactive transcript in which the agent wrote
+ * `text`, as the fake interactive `claude` appends it.
+ */
+export function fakeTranscriptLine(text: string): string {
+	const line = structuredClone(transcriptLineShape);
+	line.message.content = [{ type: "text", text }];
+	return JSON.stringify(line);
+}
+
 /** What one call of the fake interactive `claude` left behind. */
 export type FakeInteractiveCall = {
 	/** Its argv without the program name. */
@@ -246,25 +271,37 @@ export type FakeInteractiveHarness = {
  * Writes a fake interactive `claude` into a fresh temp directory. Each call
  * prints `fake claude fresh <id>` for `--session-id <id>`, or
  * `fake claude resumed <id>` for `--resume <id>`, then runs the shell command
- * `afterStart`. It then asks for the kitty keyboard protocol, reads its
- * terminal raw, and prints `key <name>` for each key: `key q`,
- * `key escape`, `key ctrl+c`, `key enter`, `key shift+enter`. Typing `exit`
- * ends it with exit code 3. A SIGHUP, a SIGTERM or its terminal closing
- * ends it, recorded as `ended`. With `resume` set to `refused`, a resume
- * fails as `claude` does when it never saved the session: an error on
- * stderr and exit 1.
+ * `afterStart`, with `TRANSCRIPT` set to the session's transcript. It then
+ * asks for the kitty keyboard protocol, reads its terminal raw, and prints
+ * `key <name>` for each key: `key q`, `key escape`, `key ctrl+c`,
+ * `key enter`, `key shift+enter`. On each Enter it appends the next of
+ * `answers` to its transcript as one line of the agent's text, shaped as
+ * `fakeTranscriptLine` makes it, and prints `answered N`. The transcript is
+ * where Claude Code keeps it: under `$CLAUDE_CONFIG_DIR/projects/`, in a
+ * folder named for its working directory, as `<id>.jsonl`, and `env` sets
+ * `CLAUDE_CONFIG_DIR` to a folder of the fake's own. Typing `exit` ends it
+ * with exit code 3. A SIGHUP, a SIGTERM or its terminal closing ends it,
+ * recorded as `ended`. With `resume` set to `refused`, a resume fails as
+ * `claude` does when it never saved the session: an error on stderr and
+ * exit 1.
  */
 export async function makeFakeInteractiveClaude(
-	options: { resume?: "accepted" | "refused"; afterStart?: string } = {},
+	options: {
+		resume?: "accepted" | "refused";
+		afterStart?: string;
+		answers?: string[];
+	} = {},
 ): Promise<FakeInteractiveHarness> {
 	const dir = await mkdtemp(join(tmpdir(), "vago-fake-interactive-claude-"));
 	const callsDir = join(dir, "calls");
 	await mkdir(callsDir);
+	const configDir = join(dir, "config");
+	await mkdir(configDir);
 	// A Bun program, since sh can't read a raw terminal key by key. Its argv
 	// is JSON because the planning prompt it is handed spans lines. Each call
 	// gets the next numbered folder, as `makeFake`'s do.
 	const script = `#!${process.execPath}
-import { mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 const calls = ${JSON.stringify(callsDir)};
 const call = calls + "/" + readdirSync(calls).length;
 mkdirSync(call);
@@ -283,8 +320,25 @@ if (resumed !== -1 && ${JSON.stringify(options.resume === "refused")}) {
 	process.exit(1);
 }
 const id = resumed === -1 ? args[args.indexOf("--session-id") + 1] : args[resumed + 1];
+const transcripts = process.env.CLAUDE_CONFIG_DIR + "/projects/" + process.cwd().replace(/[^A-Za-z0-9]/g, "-");
+mkdirSync(transcripts, { recursive: true });
+const transcript = transcripts + "/" + id + ".jsonl";
+const answers = ${JSON.stringify(options.answers ?? [])};
+let answered = 0;
+const answer = () => {
+	const text = answers[answered];
+	if (text === undefined) return;
+	answered++;
+	const line = ${JSON.stringify(transcriptLineShape)};
+	line.message.content[0].text = text;
+	appendFileSync(transcript, JSON.stringify(line) + "\\n");
+	process.stdout.write("answered " + answered + "\\r\\n");
+};
 process.stdout.write("fake claude " + (resumed === -1 ? "fresh" : "resumed") + " " + id + "\\r\\n");
-Bun.spawnSync(["sh", "-c", ${JSON.stringify(options.afterStart ?? "true")}], { stdio: ["ignore", "inherit", "inherit"] });
+Bun.spawnSync(["sh", "-c", ${JSON.stringify(options.afterStart ?? "true")}], {
+	stdio: ["ignore", "inherit", "inherit"],
+	env: { ...process.env, TRANSCRIPT: transcript },
+});
 process.stdout.write("\\x1b[>1u");
 process.stdin.setRawMode(true);
 // A closed terminal reads as the end of stdin, often before its SIGHUP.
@@ -302,10 +356,11 @@ process.stdin.on("data", (chunk) => {
 		} else {
 			const char = text[0];
 			text = text.slice(1);
-			name = char === "\\x1b" ? "escape" : char === "\\r" ? "enter" : char === "\\x03" ? "ctrl+c" : char;
+			name = char === "\\x1b" ? "escape" : char === "\\r" || char === "\\n" ? "enter" : char === "\\x03" ? "ctrl+c" : char;
 		}
 		if (name === undefined) continue;
 		process.stdout.write("key " + name + "\\r\\n");
+		if (name === "enter") answer();
 		typed += name.length === 1 ? name : " ";
 		if (typed.endsWith("exit")) process.exit(3);
 	}
@@ -315,7 +370,7 @@ process.stdin.on("data", (chunk) => {
 	await Bun.write(program, script);
 	await chmod(program, 0o755);
 	const fake: FakeInteractiveHarness = {
-		env: { PATH: `${dir}:${process.env.PATH}` },
+		env: { PATH: `${dir}:${process.env.PATH}`, CLAUDE_CONFIG_DIR: configDir },
 		async calls() {
 			const names = await readdir(callsDir);
 			names.sort((a, b) => Number(a) - Number(b));

@@ -1,8 +1,10 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync } from "node:fs";
+import { chmod } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "smol-toml";
 import {
+	fakeTranscriptLine,
 	makeFakeClaude,
 	makeFakeInteractiveClaude,
 	planningFixtureAnswering,
@@ -11,6 +13,8 @@ import {
 	gitIdentity,
 	makeProject,
 	oneStep,
+	readTicketFile,
+	runsOf,
 	runVago,
 	vagoHome,
 } from "./project.ts";
@@ -291,4 +295,99 @@ test("a Goal accepted from planning, or no item, is refused with nothing recorde
 	expect(await Bun.file(chat).text()).toBe(before);
 	expect(existsSync(join(root, ".vago-goals/nope"))).toBe(false);
 	expect(await fake.calls()).toEqual([]);
+});
+
+// An answer ending in a proposal of two Tickets on Workflow `small`, the
+// second blocked by the first. Basic TOML strings only, so a shell can quote
+// it in single quotes.
+const sessionAnswer = `Settled, so here is the plan.
+
+<vago-plan>
+workflow = "small"
+goal = """
+# Search ranks by relevance
+"""
+
+[[tickets]]
+slug = "score"
+body = """
+# Score each result
+"""
+
+[[tickets]]
+slug = "sort"
+blocked_by = [1]
+body = """
+# Sort by score
+"""
+</vago-plan>`;
+
+// Accepts item `search` of the Project at `root`, and checks it became a
+// ready Goal of `sessionAnswer`'s two ready Tickets, with nothing started.
+async function expectAcceptedSessionProposal(root: string): Promise<void> {
+	const accepted = await runVago(root, ["plan", "accept", "search"]);
+	expect(accepted.stderr).toBe("");
+	expect(accepted.exitCode).toBe(0);
+	const goal = await readTicketFile(root, ".vago-goals/search/goal.md");
+	expect(goal.header.workflow).toBe("small");
+	expect(goal.body).toContain("# Search ranks by relevance");
+	const score = await readTicketFile(
+		root,
+		".vago-goals/search/tickets/01-score.md",
+	);
+	const sort = await readTicketFile(
+		root,
+		".vago-goals/search/tickets/02-sort.md",
+	);
+	expect(score.header.status).toBe("ready");
+	expect(sort.header.status).toBe("ready");
+	expect(sort.header.blocked_by).toEqual([1]);
+	expect(runsOf(score.header)).toEqual([]);
+	expect(runsOf(sort.header)).toEqual([]);
+	expect(existsSync(join(root, ".vago-goals/search/running.lock"))).toBe(false);
+}
+
+test("a proposal written in the session is accepted as a ready Goal, with nothing started", async () => {
+	const fake = await makeFakeInteractiveClaude({ answers: [sessionAnswer] });
+	const root = await planningProject(fake.env);
+	const session = openSession(root, fake.env);
+	await lineStarting(session.screen, "fake claude fresh ");
+
+	session.press("\r");
+	await lineStarting(session.screen, "answered 1");
+	session.press("exit");
+
+	expect(await session.exited).toBe(3);
+	await expectAcceptedSessionProposal(root);
+});
+
+test("a proposal written just before the session ends, faster than a read, is still saved", async () => {
+	// The fake's SIGTERM handler ends it with exit code 0.
+	const fake = await makeFakeInteractiveClaude({
+		afterStart: `printf '%s\\n' '${fakeTranscriptLine(sessionAnswer)}' >> "$TRANSCRIPT"; kill $PPID`,
+	});
+	const root = await planningProject(fake.env);
+
+	const session = openSession(root, fake.env);
+
+	expect(await session.exited).toBe(0);
+	await expectAcceptedSessionProposal(root);
+});
+
+test("a proposal that couldn't be saved is saved once it can be, with no new message", async () => {
+	const fake = await makeFakeInteractiveClaude({ answers: [sessionAnswer] });
+	const root = await planningProject(fake.env);
+	const planning = join(root, ".vago-goals/search/planning");
+	const session = openSession(root, fake.env);
+	await lineStarting(session.screen, "fake claude fresh ");
+	await chmod(planning, 0o555);
+
+	session.press("\r");
+	await lineStarting(session.screen, "answered 1");
+	await Bun.sleep(2000);
+	await chmod(planning, 0o755);
+	session.press("exit");
+
+	expect(await session.exited).toBe(3);
+	await expectAcceptedSessionProposal(root);
 });

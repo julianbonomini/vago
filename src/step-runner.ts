@@ -2,10 +2,12 @@
 // session such as a planning turn's, and a Harness's own interactive session:
 // the only module that spawns a Step's or an agent's process. Hides how the
 // Run is recorded and announced, how a command is spawned, how a Harness's
-// stream is read and how output reaches the log.
+// stream is read, how an interactive session's messages are read from its
+// transcript, and how output reaches the log.
 
 import { closeSync, openSync, writeSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { mkdir, realpath } from "node:fs/promises";
+import { homedir } from "node:os";
 import { dirname } from "node:path";
 import {
 	findHarness,
@@ -280,6 +282,12 @@ export type InteractiveReadOnlySession = {
  * Runs `session` on this process's terminal and waits for it to end. Its
  * stdin, stdout and stderr are this process's, and it stays in the
  * terminal's foreground. Nothing it starts can write under its folder.
+ * While it runs, and once more after it ends however it ended, `onAnswers`
+ * gets every message the agent has written in the session so far, a resumed
+ * session's earlier ones included, whenever there are more than `onAnswers`
+ * last took without throwing. Calls never overlap. An error from `onAnswers`
+ * never ends the session; the same messages come again a second later. A
+ * Harness whose transcript Vago can't find gives no call.
  * SIGHUP, SIGTERM or SIGINT stops it within 5 seconds and ends it
  * `interrupted`; otherwise it ends `ok` or `exit N`. Throws, naming what to
  * install, when the Harness's program isn't on `PATH`, and as
@@ -287,6 +295,7 @@ export type InteractiveReadOnlySession = {
  */
 export async function runInteractiveReadOnlySession(
 	session: InteractiveReadOnlySession,
+	onAnswers: (answers: string[]) => Promise<void>,
 ): Promise<RunOutcome> {
 	const harness = findHarness(session.harness);
 	const spawned = await spawnableReadOnly(
@@ -294,6 +303,39 @@ export async function runInteractiveReadOnlySession(
 		session.folder,
 		harness.interactiveReadOnlyCommand(session),
 	);
+	// The Harness names its transcript's folder after the working directory
+	// as the kernel sees it, with symlinks resolved.
+	const transcript = harness.interactiveTranscriptPath(
+		{ sessionId: session.sessionId, folder: await realpath(session.folder) },
+		homedir(),
+		process.env,
+	);
+	let taken = 0;
+	let reading: Promise<void> | undefined;
+	const readAnswers = async () => {
+		if (transcript === undefined) return;
+		// The session writes no transcript until the human's first message.
+		const text = await Bun.file(transcript)
+			.text()
+			.catch(() => "");
+		const answers = harness.transcriptAnswers(text.split("\n"));
+		if (answers.length <= taken) return;
+		// Left as it was when `onAnswers` fails, so the next read retries.
+		await onAnswers(answers)
+			.then(() => {
+				taken = answers.length;
+			})
+			.catch(() => {});
+	};
+	const timer =
+		transcript === undefined
+			? undefined
+			: setInterval(() => {
+					if (reading !== undefined) return;
+					reading = readAnswers().finally(() => {
+						reading = undefined;
+					});
+				}, 1000);
 	// SIGHUP too: it is how this process hears that its terminal closed.
 	const interrupt = interruptOnSignal(["SIGINT", "SIGTERM", "SIGHUP"]);
 	let code: number;
@@ -307,6 +349,11 @@ export async function runInteractiveReadOnlySession(
 		code = await exitCodeOf(child, interrupt.signal, "process");
 	} finally {
 		interrupt.release();
+		// However it ended, so a message written just before, such as the
+		// proposal the human then accepts, is still handed over.
+		clearInterval(timer);
+		await reading;
+		await readAnswers();
 	}
 	return interrupt.signal.aborted ? { kind: "interrupted" } : outcomeOf(code);
 }

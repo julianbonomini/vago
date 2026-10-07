@@ -21,6 +21,7 @@ import {
 	createPlanningItem,
 	type PlanningTurnEntry,
 	readPlanningChat,
+	recordPlanningAnswers,
 	recordPlanningSession,
 	recordPlanningSessionId,
 	recordPlanningTurnEnd,
@@ -104,11 +105,12 @@ function planningModel(harness: string): string {
  * The session resumes the item's saved session id, or starts one under a
  * new id that is saved before it starts. The planning prompt is added on
  * every start. Once, a resume that ends `exit N` is replaced by a fresh
- * session under the same id. Throws, recording nothing, when `item` isn't a
- * planning item, was accepted, or is held by another vago. Throws when the
- * planning prompt is missing, when no sandbox is available, when the
- * Harness's program isn't on `PATH`, or when the item's Harness can't run a
- * session.
+ * session under the same id. Every proposal block the agent writes in the
+ * session is saved as the item's Proposal while it runs. Throws, recording
+ * nothing, when `item` isn't a planning item, was accepted, or is held by
+ * another vago. Throws when the planning prompt is missing, when no sandbox
+ * is available, when the Harness's program isn't on `PATH`, or when the
+ * item's Harness can't run a session.
  */
 export async function runPlanningSession(
 	root: string,
@@ -128,16 +130,21 @@ export async function runPlanningSession(
 			await recordPlanningSessionId(root, item, sessionId);
 		}
 		const session = { harness, model, instructions, sessionId, folder: root };
-		const ran = await runInteractiveReadOnlySession({
-			...session,
-			resume: saved !== undefined,
-		});
+		const onAnswers = (answers: string[]) =>
+			recordPlanningAnswers(root, item, answers);
+		const ran = await runInteractiveReadOnlySession(
+			{ ...session, resume: saved !== undefined },
+			onAnswers,
+		);
 		if (saved === undefined || ran.kind !== "exit") return ran;
 		// A Harness saves a conversation only once the human has sent a
 		// message, so an item opened and left before that has an id with
 		// nothing behind it, and resuming it fails. That is the common case,
 		// so the id is started fresh instead, once.
-		return runInteractiveReadOnlySession({ ...session, resume: false });
+		return runInteractiveReadOnlySession(
+			{ ...session, resume: false },
+			onAnswers,
+		);
 	});
 }
 

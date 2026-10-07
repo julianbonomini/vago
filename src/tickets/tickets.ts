@@ -7,10 +7,10 @@
 // `vago run`, and the planning items that share `.vago-goals/` with the
 // Goals, with each item's planning chat, its turns' logs and the rule that
 // one response is written at a time, held by the item's lock, and each
-// item's Proposal: the block in an answer it is read from, the human's
-// Workflow choice and whether it is ready to accept, and accepting an item's
-// Proposal as a ready Goal, after which its chat is read-only. Only this
-// file is imported from outside `tickets/`.
+// item's Proposal: the block it is read from, in a turn's answer or a
+// session's messages, the human's Workflow choice and whether it is ready to
+// accept, and accepting an item's Proposal as a ready Goal, after which its
+// chat is read-only. Only this file is imported from outside `tickets/`.
 
 import { link, mkdir, readdir, rename, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
@@ -727,7 +727,11 @@ export async function recordPlanningTurnEnd(
 	const proposalError =
 		ended.answer === undefined
 			? undefined
-			: await saveProposal(folder, ended.answer, entry.number);
+			: // Even a failed write is recorded as a reason, so the turn still ends.
+				await saveProposal(folder, ended.answer, entry.number).catch(
+					(error: unknown) =>
+						error instanceof Error ? error.message : String(error),
+				);
 	await rewritePlanningChatFile(folder, (chat) => {
 		const turn = chat.turns?.[entry.number - 1];
 		if (turn === undefined) {
@@ -743,13 +747,38 @@ export async function recordPlanningTurnEnd(
 	});
 }
 
-// Saves the last closed proposal block of `answer`, from turn `turn`, as
-// the Proposal in `folder`, and gives back why it couldn't, if it couldn't.
-// Even a failed write comes back as a reason, so the turn still ends.
+/**
+ * Saves the last proposal block among `answers`, the agent's messages in
+ * planning item `item`'s session, oldest first, as the item's Proposal: the
+ * last closed block of the latest message that holds one. With no closed
+ * block, or when that block isn't valid TOML or doesn't fit the format, the
+ * Proposal stays as it was. Must run inside `withPlanningItemClaimed`, and
+ * throws otherwise. Throws when the Proposal can't be written, but never for
+ * the agent's text. Survives a crash.
+ */
+export async function recordPlanningAnswers(
+	root: string,
+	item: string,
+	answers: readonly string[],
+): Promise<void> {
+	await mustHold(root, item);
+	const folder = planningFolder(await planningItemToChange(root, item));
+	const latest = answers.findLast((answer) =>
+		planningProposalSpans(answer.split(/\r?\n/)).some(({ closed }) => closed),
+	);
+	// Nobody reads why a session's block couldn't be read. A failed write
+	// throws, so the caller tries the same messages again.
+	if (latest !== undefined) await saveProposal(folder, latest, undefined);
+}
+
+// Saves the last closed proposal block of `answer`, from turn `turn` or a
+// planning session when undefined, as the Proposal in `folder`, and gives
+// back why the block couldn't be read, if it couldn't. Throws when the write
+// fails.
 async function saveProposal(
 	folder: string,
 	answer: string,
-	turn: number,
+	turn: number | undefined,
 ): Promise<string | undefined> {
 	const lines = answer.split(/\r?\n/);
 	const span = planningProposalSpans(lines).findLast(({ closed }) => closed);
@@ -758,12 +787,8 @@ async function saveProposal(
 		lines.slice(span.start + 1, span.end - 1).join("\n"),
 	);
 	if (parsed.outcome === "bad") return parsed.reason;
-	try {
-		await writePlanningProposalFile(folder, parsed.block, turn);
-		return undefined;
-	} catch (error) {
-		return error instanceof Error ? error.message : String(error);
-	}
+	await writePlanningProposalFile(folder, parsed.block, turn);
+	return undefined;
 }
 
 // Lines `start` up to `end` of an answer hold one proposal block: `start` is
@@ -775,7 +800,7 @@ type PlanningProposalSpan = {
 	closed: boolean;
 };
 
-// The proposal blocks in `lines`, an answer's lines, from each block's
+// The proposal blocks in `lines`, a message's lines, from each block's
 // opening tag line through its closing one, in order. A block with no
 // closing line yet runs to the end with `closed` false.
 function planningProposalSpans(
@@ -822,12 +847,13 @@ export type ProposedTicket = {
 /**
  * The Goal, ordered Tickets and Workflow a planning item's agent proposed
  * last, with the human's Workflow choice. `turn` is the chat turn that
- * proposed it. `workflow` is the one acceptance uses: the human's choice,
- * else the agent's recommendation. `problems` says why it can't be accepted
- * yet; it is ready to accept when empty.
+ * proposed it, absent for a Proposal from a planning session. `workflow` is
+ * the one acceptance uses: the human's choice, else the agent's
+ * recommendation. `problems` says why it can't be accepted yet; it is ready
+ * to accept when empty.
  */
 export type PlanningProposal = {
-	turn: number;
+	turn?: number;
 	goal: ProposedGoal;
 	tickets: ProposedTicket[];
 	openDecisions: string[];

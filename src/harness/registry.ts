@@ -166,6 +166,17 @@ export type Harness = {
 		resume: boolean;
 	}): string[];
 	/**
+	 * The absolute path of the transcript the Harness's interactive session
+	 * `sessionId`, started in `folder` (a real path, symlinks resolved), writes
+	 * while it runs, given the user's home folder `home` and environment `env`.
+	 * Undefined when Vago can't know where it is.
+	 */
+	interactiveTranscriptPath(
+		session: { sessionId: string; folder: string },
+		home: string,
+		env: Readonly<Record<string, string | undefined>>,
+	): string | undefined;
+	/**
 	 * What one stream line of the session started with `command`,
 	 * `resumeCommand` or a read-only command, the argv it gave, carries.
 	 * Fields the line doesn't carry are left out, so the kernel spreads each
@@ -179,6 +190,12 @@ export type Harness = {
 	 * gives nothing.
 	 */
 	runActivity(lines: readonly string[], root: string): RunActivity;
+	/**
+	 * The text of each message the agent wrote in a transcript whose lines are
+	 * `lines`, oldest first. The human's messages, tool calls and results,
+	 * subagents' messages and a line that isn't a whole event are left out.
+	 */
+	transcriptAnswers(lines: readonly string[]): string[];
 	/** The shell command the human runs to resume session `sessionId`. */
 	resumeHint(sessionId: string): string;
 };

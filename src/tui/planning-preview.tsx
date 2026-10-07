@@ -119,7 +119,7 @@ export function PlanningPreview(props: {
 					fallback={
 						<For
 							each={wrapText(
-								"No proposal yet. The agent proposes one as the chat goes on.",
+								"No proposal yet. The agent writes one once its questions are settled.",
 								inner(),
 							)}
 						>

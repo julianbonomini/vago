@@ -10,7 +10,7 @@ An interactive `claude` doesn't report its session id, so Vago makes one, saves 
 
 Claude Code saves a conversation only once the human sends a message. An item opened and left before that has a saved id with nothing behind it, and resuming it fails. So a resume that ends `exit N` on its own is followed, once, by a fresh start under the same id. That happens every time the human opens an item and leaves before typing.
 
-The session runs read-only under the same guard as a planning turn (ADR 0011): the OS sandbox from `sandbox.ts` denies every write under the Project root, and Claude Code's `dontAsk` mode with only reading tools and no MCP server is the second guard.
+The session runs read-only under the same guard as a planning turn (ADR 0011): the OS sandbox from `sandbox.ts` denies every write under the Project root, and Claude Code's `dontAsk` mode with only reading tools and no MCP server is the second guard. The agent's Proposal reaches Vago through its Harness's own transcript, outside the Project, so neither guard is loosened (ADR 0016).
 
 No terminal-emulator package was added. `@opentui/core` 0.5.14, already pinned by ADR 0006, has `EmbeddedTerminalRenderable`: a native VT emulator with key and paste encoding, focus and resize, drawn into the frame buffer that the view tests read.
 

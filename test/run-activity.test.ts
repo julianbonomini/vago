@@ -637,3 +637,13 @@ test("a Codex command still running keeps the agent waiting on it", async () => 
 
 	expect(working).toBe(false);
 });
+
+test("Claude Code's interactive transcript gives only the main agent's text", async () => {
+	const lines = await fixtureLines("claude-code-transcript.jsonl");
+
+	const answers = findHarness("claude-code").transcriptAnswers(lines);
+
+	expect(answers).toHaveLength(1);
+	expect(answers[0]).toStartWith("Here is the plan.\n\n<vago-plan>\n");
+	expect(answers[0]).toContain("# Search ranks by relevance");
+});

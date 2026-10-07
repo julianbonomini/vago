@@ -1,7 +1,10 @@
 // The Claude Code Harness: the `claude -p` command and how its stream-json
-// events read as a Harness session's events, and the interactive `claude`.
-// Hides Claude Code's flags, event shapes, tool names and its models' prices.
+// events read as a Harness session's events, and the interactive `claude`
+// with its transcript. Hides Claude Code's flags, event shapes, tool names,
+// its models' prices, and where its interactive transcript is and its line
+// shapes.
 
+import { join } from "node:path";
 import { z } from "zod";
 import type {
 	HarnessCli,
@@ -159,6 +162,14 @@ const ToolUseBlock = z.object({
 	input: ToolInput.catch({}),
 });
 
+// A line of the interactive transcript holding one content block of the
+// agent's message. A subagent's lines are marked as a sidechain.
+const TranscriptAssistantLine = z.object({
+	type: z.literal("assistant"),
+	isSidechain: z.boolean().optional(),
+	message: z.object({ content: z.array(z.unknown()) }),
+});
+
 const program = "claude";
 
 /**
@@ -246,6 +257,30 @@ export const claudeCode: HarnessCli = {
 				costUsd: data.total_cost_usd,
 			},
 		];
+	},
+	// Claude Code's own layout, which it doesn't document or promise to keep
+	// (ADR 0016): a folder per working directory, named by replacing each
+	// character that isn't a letter or a digit with `-`.
+	interactiveTranscriptPath({ sessionId, folder }, home, env) {
+		return join(
+			env.CLAUDE_CONFIG_DIR ?? join(home, ".claude"),
+			"projects",
+			folder.replace(/[^A-Za-z0-9]/g, "-"),
+			`${sessionId}.jsonl`,
+		);
+	},
+	transcriptAnswers(lines) {
+		const answers: string[] = [];
+		for (const line of lines) {
+			const parsed = TranscriptAssistantLine.safeParse(parseJson(line));
+			if (!parsed.success || parsed.data.isSidechain === true) continue;
+			const texts = parsed.data.message.content.flatMap((block) => {
+				const text = TextBlock.safeParse(block);
+				return text.success ? [text.data.text] : [];
+			});
+			if (texts.length > 0) answers.push(texts.join("\n"));
+		}
+		return answers;
 	},
 	prices: anthropicPrices(),
 	resumeHint(sessionId) {

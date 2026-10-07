@@ -61,7 +61,7 @@ The Harness's own interactive session a planning item's agent runs in, inside th
 _Avoid_: chat session, terminal
 
 **Proposal**:
-The Goal, ordered Tickets with their blockers, and recommended Workflow that a planning item's agent proposed last, with the human's Workflow choice. A revision replaces it. It is _ready to accept_ when nothing in it would stop acceptance; decisions still open don't.
+The Goal, ordered Tickets with their blockers, and recommended Workflow that a planning item's agent proposed last, in its planning session or a planning turn, with the human's Workflow choice. A revision replaces it. It is _ready to accept_ when nothing in it would stop acceptance; decisions still open don't.
 _Avoid_: plan, draft, preview (the pane that shows it)
 
 **Accept**:

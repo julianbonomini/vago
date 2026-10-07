@@ -1,4 +1,6 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
+import { rm } from "node:fs/promises";
+import { join } from "node:path";
 import type { TestRendererSetup } from "@opentui/core/testing";
 import {
 	type FakeInteractiveHarness,
@@ -34,6 +36,38 @@ function planningProject(): Promise<string> {
 		".vago-goals/search/planning/chat.toml": 'harness = "claude-code"\n',
 		".vago-goals/search/planning/proposal.toml": proposalToml,
 	});
+}
+
+// A Project as `planningProject`'s, whose agent hasn't proposed yet.
+function projectWithoutProposal(): Promise<string> {
+	return makeProject({
+		".vago/prompts/planning.md": "You help plan a Goal.\n",
+		".vago/workflows/small.toml": oneStep("true"),
+		".vago-goals/search/planning/chat.toml": 'harness = "claude-code"\n',
+	});
+}
+
+// An answer ending in a proposal block of Goal `title` on Workflow `small`,
+// with a Ticket per slug in `slugs`, each blocked by the one before it.
+function proposing(title: string, slugs: string[]): string {
+	const tickets = slugs.map(
+		(slug, index) => `
+[[tickets]]
+slug = "${slug}"
+blocked_by = [${index === 0 ? "" : index}]
+body = """
+# ${slug} ticket
+"""
+`,
+	);
+	return `Here is the plan.
+
+<vago-plan>
+workflow = "small"
+goal = """
+# ${title}
+"""
+${tickets.join("")}</vago-plan>`;
 }
 
 // The footer, the frame's last line.
@@ -192,4 +226,105 @@ test("? in the Preview shows the planning keys, and Esc hides them", async () =>
 	view.mockInput.pressEscape();
 	const back = await frameWithout(view, " Keys ");
 	expect(back).toContain("fake claude fresh");
+});
+
+test("while the agent only asks questions, the Preview says no proposal yet", async () => {
+	const fake = await makeFakeInteractiveClaude({
+		answers: ["Should results rank by relevance or by date?"],
+	});
+	const view = await sessionView(await projectWithoutProposal(), fake);
+	await openSession(view);
+
+	view.mockInput.pressEnter();
+	await frameWith(view, "answered 1");
+	await Bun.sleep(2000);
+
+	const frame = await frameWith(view, "No proposal yet.");
+	expect(frame).toContain("questions are settled");
+});
+
+test("a proposal the agent writes shows in the Preview with its order, blockers and Workflow", async () => {
+	const fake = await makeFakeInteractiveClaude({
+		answers: [proposing("Search ranks by relevance", ["score", "sort"])],
+	});
+	const view = await sessionView(await projectWithoutProposal(), fake);
+	await openSession(view);
+
+	view.mockInput.pressEnter();
+
+	const frame = await frameWith(view, "Search ranks by relevance");
+	expect(frame).toContain("small, recommended");
+	expect(frame).toMatch(
+		/01 score ticket[\s\S]*no blockers[\s\S]*02 sort ticket[\s\S]*blocked by 01/,
+	);
+});
+
+test("a revised proposal replaces the earlier one in the Preview", async () => {
+	const fake = await makeFakeInteractiveClaude({
+		answers: [
+			proposing("Search ranks by relevance", ["score", "sort"]),
+			"Should stale results drop out?",
+			proposing("Search ranks fresh results first", ["age", "score", "sort"]),
+		],
+	});
+	const view = await sessionView(await projectWithoutProposal(), fake);
+	await openSession(view);
+	view.mockInput.pressEnter();
+	await frameWith(view, "Search ranks by relevance");
+
+	view.mockInput.pressEnter();
+	view.mockInput.pressEnter();
+
+	const frame = await frameWith(view, "Search ranks fresh results first");
+	expect(frame).not.toContain("Search ranks by relevance");
+	expect(frame).toMatch(/01 age ticket[\s\S]*02 score ticket[\s\S]*03 sort/);
+});
+
+test("an unclosed block before a good one, or a bad block after it, leaves the good proposal in the Preview", async () => {
+	const fake = await makeFakeInteractiveClaude({
+		answers: [
+			'Draft:\n\n<vago-plan>\nworkflow = "small"\ngoal = "# Search ranks by date"',
+			proposing("Search ranks by relevance", ["score", "sort"]),
+			"Revised:\n\n<vago-plan>\ngoal = [unclosed\n</vago-plan>",
+		],
+	});
+	const view = await sessionView(await projectWithoutProposal(), fake);
+	await openSession(view);
+	view.mockInput.pressEnter();
+	await frameWith(view, "answered 1");
+	view.mockInput.pressEnter();
+	await frameWith(view, "Search ranks by relevance");
+
+	view.mockInput.pressEnter();
+	await frameWith(view, "answered 3");
+	await Bun.sleep(2000);
+
+	const frame = await frameWith(view, "Search ranks by relevance");
+	expect(frame).toContain("02 sort ticket");
+	expect(frame).not.toContain("Search ranks by date");
+});
+
+test("a resumed session's earlier proposal is read again", async () => {
+	const fake = await makeFakeInteractiveClaude({
+		answers: [proposing("Search ranks by relevance", ["score", "sort"])],
+	});
+	const root = await projectWithoutProposal();
+	const view = await sessionView(root, fake);
+	await openSession(view);
+	view.mockInput.pressEnter();
+	await frameWith(view, "Search ranks by relevance");
+	view.mockInput.pressKey("]", { ctrl: true });
+	await frameWith(view, "a Accept");
+	view.mockInput.pressEscape();
+	await frameWith(view, " 1/1 ");
+	await fake.allEnded();
+	// The ended session's last read saves the proposal before its lock goes.
+	while (await Bun.file(join(root, ".vago-goals/search/running.lock")).exists())
+		await Bun.sleep(50);
+	await rm(join(root, ".vago-goals/search/planning/proposal.toml"));
+
+	view.mockInput.pressEnter();
+
+	await frameWith(view, "fake claude resumed");
+	await frameWith(view, "Search ranks by relevance");
 });
