@@ -159,29 +159,27 @@ const ToolUseBlock = z.object({
 	input: ToolInput.catch({}),
 });
 
+const program = "claude";
+
 /**
  * Claude Code, run headless in its `auto` permission mode unless the Step's
  * `args` choose another. Its stream reports a fallback from the mode asked
  * for and every tool call Claude Code refused.
  */
 export const claudeCode: HarnessCli = {
+	title: "Claude Code",
+	program,
 	command(model, args) {
-		return ["claude", "-p", ...sessionFlags(model, args)];
+		return [program, "-p", ...sessionFlags(model, args)];
 	},
 	resumeCommand(sessionId, model, args) {
-		return [
-			"claude",
-			"-p",
-			"--resume",
-			sessionId,
-			...sessionFlags(model, args),
-		];
+		return [program, "-p", "--resume", sessionId, ...sessionFlags(model, args)];
 	},
 	readOnlyCommand(model) {
-		return ["claude", "-p", ...readOnlyFlags(model)];
+		return [program, "-p", ...readOnlyFlags(model)];
 	},
 	readOnlyResumeCommand(sessionId, model) {
-		return ["claude", "-p", "--resume", sessionId, ...readOnlyFlags(model)];
+		return [program, "-p", "--resume", sessionId, ...readOnlyFlags(model)];
 	},
 	events(line, command) {
 		const event = parseJson(line);

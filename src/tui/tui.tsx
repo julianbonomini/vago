@@ -15,6 +15,7 @@ import {
 	useTerminalDimensions,
 } from "@opentui/solid";
 import { ErrorBoundary } from "solid-js";
+import { planningHarnesses } from "../planning-runner.ts";
 import { ProjectView } from "./project-view.tsx";
 import { theme } from "./theme.ts";
 
@@ -26,10 +27,14 @@ import { theme } from "./theme.ts";
  * meanwhile and prints it afterwards. Throws, after restoring the terminal,
  * any error the view hit. Needs stdin and stdout to be terminals. `vago` is
  * the command that runs this same `vago`, which the TUI starts Goals and
- * planning turns with.
+ * planning turns with. New Goal offers the Harnesses whose program is on
+ * `PATH` as the TUI opens.
  */
 export async function openTui(root: string, vago: string[]): Promise<void> {
-	return holdTerminal(() => <ProjectView root={root} vago={vago} />);
+	const harnesses = planningHarnesses();
+	return holdTerminal(() => (
+		<ProjectView root={root} vago={vago} harnesses={harnesses} />
+	));
 }
 
 const consoleMethods = ["log", "info", "warn", "error", "debug"] as const;

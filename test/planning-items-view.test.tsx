@@ -100,6 +100,53 @@ test("a name already taken is refused with the reason, and the prompt stays", as
 	expect(existsSync(join(root, ".vago-goals/ready/planning"))).toBe(false);
 });
 
+// The `chat.toml` of planning item `name` of the Project at `root`.
+function chatOf(root: string, name: string): Promise<string> {
+	return Bun.file(join(root, `.vago-goals/${name}/planning/chat.toml`)).text();
+}
+
+test("New Goal picks Claude Code or Codex with Tab, Claude Code by default", async () => {
+	const root = await makeProject(readyGoal);
+	const view = await renderView(root, undefined, {}, ["claude-code", "codex"]);
+	await frameWith(view, " 1/1 ");
+
+	view.mockInput.pressKey("n");
+	const asked = await frameWith(view, "New Goal name:");
+	expect(asked).toContain("[Claude Code] Codex");
+	expect(asked).toContain("Tab Harness");
+	await view.mockInput.typeText("search");
+	view.mockInput.pressEnter();
+	await frameWith(view, "No messages yet.");
+	view.mockInput.pressEscape();
+	await frameWithout(view, "No messages yet.");
+	view.mockInput.pressKey("n");
+	await frameWith(view, "New Goal name:");
+	view.mockInput.pressTab();
+	await frameWith(view, "Claude Code [Codex]");
+	await view.mockInput.typeText("ideas");
+	view.mockInput.pressEnter();
+
+	await frameWith(view, "No messages yet.");
+	expect(await chatOf(root, "search")).toContain('harness = "claude-code"');
+	expect(await chatOf(root, "ideas")).toContain('harness = "codex"');
+});
+
+test("New Goal offers no choice when one Harness can plan", async () => {
+	const root = await makeProject(readyGoal);
+	const view = await renderView(root, undefined, {}, ["codex"]);
+	await frameWith(view, " 1/1 ");
+
+	view.mockInput.pressKey("n");
+	const asked = await frameWith(view, "New Goal name:");
+	await view.mockInput.typeText("search");
+	view.mockInput.pressEnter();
+
+	await frameWith(view, "No messages yet.");
+	expect(asked).not.toContain("Codex");
+	expect(asked).not.toContain("Tab");
+	expect(await chatOf(root, "search")).toContain('harness = "codex"');
+});
+
 test("a Project with no Goals offers the New Goal action", async () => {
 	const root = await makeProject({});
 	const view = await renderView(root);

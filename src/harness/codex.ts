@@ -74,6 +74,8 @@ const FileChange = z.object({
 	status: z.enum(["in_progress", "completed", "failed"]),
 });
 
+const program = "codex";
+
 /**
  * Codex, run by `codex exec` in its sandbox with its automatic review in
  * the human's place. Its stream reports every command the review refused.
@@ -81,6 +83,8 @@ const FileChange = z.object({
  * and the model its command names.
  */
 export const codex: HarnessCli = {
+	title: "Codex",
+	program,
 	command(model, args) {
 		// "-" reads the prompt from stdin, where the kernel writes it.
 		return [...execCommand(model, args), "-"];
@@ -149,12 +153,12 @@ export const codex: HarnessCli = {
 
 // What a fresh session and a resumed one both run with.
 function execCommand(model: string, args: readonly string[]): string[] {
-	return ["codex", "exec", "--json", guardedMode, "--model", model, ...args];
+	return [program, "exec", "--json", guardedMode, "--model", model, ...args];
 }
 
 function readOnlyExecCommand(model: string): string[] {
 	return [
-		"codex",
+		program,
 		"exec",
 		"--json",
 		"--sandbox",

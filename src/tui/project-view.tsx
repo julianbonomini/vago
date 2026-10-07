@@ -17,7 +17,8 @@ import {
 	Show,
 } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
-import { createPlanningItem, renamePlanningItem } from "../tickets/tickets.ts";
+import { planNewGoal } from "../planning-runner.ts";
+import { renamePlanningItem } from "../tickets/tickets.ts";
 import { GoalPreview } from "./goal-preview.tsx";
 import {
 	type GoalRow,
@@ -117,7 +118,9 @@ function liveGoalRows(root: string): {
  * `vago` (`startGoal`), and the footer says what came of it until the next
  * key. `d` then `y` discards the selected planning item in a
  * `vago plan discard` (`runPlanDiscard`), which stops a response to it
- * first; the footer says so while the view waits, and shows a refusal.
+ * first; the footer says so while the view waits, and shows a refusal. `n`
+ * asks a new planning item's name and, when `harnesses` holds more than
+ * one, which of them it plans on, the first unless Tab picks another.
  * Reads the Goals itself, and again every second, so changes on disk show
  * without a key; the selection stays on its Goal when the rows reorder.
  * Throws what the first read throws.
@@ -125,6 +128,7 @@ function liveGoalRows(root: string): {
 export function ProjectView(props: {
 	root: string;
 	vago: string[];
+	harnesses: string[];
 }): JSX.Element {
 	const { color, symbol, scrollbars, dimText } = theme();
 	const { rows, refresh } = liveGoalRows(props.root);
@@ -188,8 +192,12 @@ export function ProjectView(props: {
 		try {
 			if (question.kind === "rename") {
 				await renamePlanningItem(props.root, question.item, name);
-			} else {
-				await createPlanningItem(props.root, name);
+			} else if (question.kind === "new") {
+				await planNewGoal(
+					props.root,
+					name,
+					question.harnesses[question.chosen],
+				);
 			}
 		} catch (error) {
 			setNotice(projectMessage(error, props.root));
@@ -227,6 +235,11 @@ export function ProjectView(props: {
 			setAsking(undefined);
 			setNotice(undefined);
 		}
+		if (key.name === "tab" && question.kind === "new") {
+			key.preventDefault();
+			const chosen = (question.chosen + 1) % question.harnesses.length;
+			setAsking({ ...question, chosen });
+		}
 	};
 	let description: ScrollBoxRenderable | undefined;
 	useKeyboard((key) => {
@@ -248,7 +261,7 @@ export function ProjectView(props: {
 		// Kept from the field that opens next, which would type the key.
 		if (key.name === "n" && !helpShown()) {
 			key.preventDefault();
-			setAsking({ kind: "new" });
+			setAsking({ kind: "new", harnesses: props.harnesses, chosen: 0 });
 		}
 		if (
 			row?.standing === "planning" &&

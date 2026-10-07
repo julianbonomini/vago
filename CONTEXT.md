@@ -45,7 +45,7 @@ An outcome the human wants for a Project, from a one-Ticket feature to a whole a
 _Avoid_: epic, mission
 
 **Planning item**:
-A Goal still being planned: a folder in `.vago-goals/` with a `planning/` folder and no `goal.md`. It shows in the Goals list as `planning`, has a name the human may change, and can be discarded. It is no Goal: `vago run` doesn't find it, and it has no Workflow, Tickets or Runs. It holds its planning chat. Accepting it writes its `goal.md`, which turns it into a Goal that keeps its `planning/` folder.
+A Goal still being planned: a folder in `.vago-goals/` with a `planning/` folder and no `goal.md`. It shows in the Goals list as `planning`, has a name the human may change, and can be discarded. It is no Goal: `vago run` doesn't find it, and it has no Workflow, Tickets or Runs. It holds its planning chat, whose agent runs on the Harness chosen when the item is made, Claude Code or Codex, Claude Code by default when it is installed; the accepted Goal's Workflow picks its own Harnesses. Accepting it writes its `goal.md`, which turns it into a Goal that keeps its `planning/` folder.
 _Avoid_: draft, idea
 
 **Planning chat**:

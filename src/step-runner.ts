@@ -217,7 +217,8 @@ export type ReadOnlySession = {
  * id as soon as the Harness reports it. A tool call the Harness refuses
  * doesn't fail it. SIGINT or SIGTERM stops every process it started and
  * ends it `interrupted`. No idle timeout, and no fallback when a resume
- * fails to start: that ends it `exit N`. Throws as `withoutWritesUnder`
+ * fails to start: that ends it `exit N`. Throws, naming what to install,
+ * when the Harness's program isn't on `PATH`, and as `withoutWritesUnder`
  * does.
  */
 export async function runReadOnlySession(
@@ -225,6 +226,13 @@ export async function runReadOnlySession(
 	onSessionId: (sessionId: string) => Promise<void>,
 ): Promise<{ outcome: RunOutcome; report: HarnessSessionReport }> {
 	const harness = findHarness(session.harness);
+	// Checked here: inside the sandbox a missing program reads only as the
+	// sandbox's exit code.
+	if (Bun.which(harness.program) === null) {
+		throw new Error(
+			`${harness.program} isn't on PATH, so no ${harness.title} session can start; install ${harness.title} or put ${harness.program} on PATH`,
+		);
+	}
 	const command =
 		session.resume === undefined
 			? harness.readOnlyCommand(session.model)

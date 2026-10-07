@@ -125,6 +125,10 @@ export type RunDiffLine = {
  * and the TUI feeds a Run's log to `runActivity`.
  */
 export type Harness = {
+	/** The name the human knows the Harness by, such as "Claude Code". */
+	title: string;
+	/** The CLI's program, the first word of every command, found on `PATH`. */
+	program: string;
 	/**
 	 * The argv that starts a fresh session on `model` in guarded mode, with
 	 * the Step's `args` appended as given.
@@ -175,6 +179,16 @@ const harnesses: Record<string, Harness> = {
 /** Whether a Harness is registered as `name`. */
 export function knownHarness(name: string): boolean {
 	return Object.hasOwn(harnesses, name);
+}
+
+/**
+ * The name of every registered Harness whose program is on `PATH`, Claude
+ * Code first; none when no program is.
+ */
+export function installedHarnesses(): string[] {
+	return Object.entries(harnesses)
+		.filter(([, harness]) => Bun.which(harness.program) !== null)
+		.map(([name]) => name);
 }
 
 /** Returns the Harness registered as `name`. Throws an Error when none is. */

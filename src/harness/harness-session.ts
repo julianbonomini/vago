@@ -21,6 +21,10 @@ import type {
  * resume hint. Turned into a `Harness` by `harnessFromCli`.
  */
 export type HarnessCli = {
+	/** As `Harness.title`. */
+	title: string;
+	/** As `Harness.program`. */
+	program: string;
 	/** As `Harness.command`. */
 	command(model: string, args: readonly string[]): string[];
 	/** As `Harness.resumeCommand`. */
@@ -192,6 +196,8 @@ export type ModelPrice = {
 /** The `Harness` that drives `cli`, reading its stream through `cli.events`. */
 export function harnessFromCli(cli: HarnessCli): Harness {
 	return {
+		title: cli.title,
+		program: cli.program,
 		command: cli.command,
 		resumeCommand: cli.resumeCommand,
 		readOnlyCommand: cli.readOnlyCommand,

@@ -14,13 +14,13 @@ import {
 } from "./goal-runner.ts";
 import { initProject, updateProject } from "./init.ts";
 import {
+	planNewGoal,
 	retryPlanningResponse,
 	sendPlanningMessage,
 } from "./planning-runner.ts";
 import { printGoalReport } from "./progress.ts";
 import { readRunOutput } from "./step-runner.ts";
 import {
-	createPlanningItem,
 	discardPlanningItem,
 	readGoal,
 	readGoalBody,
@@ -182,6 +182,14 @@ const blockedByFlag: RepeatedFlag = {
 	digits: true,
 };
 
+const planningHarnessFlag: OptionalFlag = {
+	name: "--harness",
+	value: "<name>",
+	times: "at most once",
+	meaning:
+		"The Harness the planning agent runs on, claude-code or codex. Without it, claude-code when its claude is on PATH, else codex when its codex is.",
+};
+
 const bodyFileFlag: OptionalFlag = {
 	name: "--body-file",
 	value: "<path>",
@@ -291,14 +299,20 @@ how long they took and what they cost, ready to paste into a PR description.`,
 		name: "plan new",
 		summary: "Start planning a Goal",
 		description: `Makes a planning item, a Goal still being planned, and prints its folder. It
-shows in the TUI's Goals list as planning. It makes no Goal and no Ticket, so
-vago run doesn't find it. It refuses a name a Goal or planning item has.`,
+shows in the TUI's Goals list as planning. Its agent runs on the Harness
+chosen here for every message, whatever Harness the accepted Goal's Workflow
+uses. It makes no Goal and no Ticket, so vago run doesn't find it. It refuses
+a name a Goal or planning item has.`,
 		operands: [newPlanningName],
-		flags: [],
-		example: "vago plan new search",
+		flags: [planningHarnessFlag],
+		example: "vago plan new search --harness codex",
 		run: async (root, given) => {
 			console.log(
-				await createPlanningItem(root, given.operand(newPlanningName)),
+				await planNewGoal(
+					root,
+					given.operand(newPlanningName),
+					given.optionalFlag(planningHarnessFlag),
+				),
 			);
 			return 0;
 		},

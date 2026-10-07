@@ -380,14 +380,15 @@ export async function listPlanningItems(root: string): Promise<string[]> {
 
 /**
  * Makes planning item `name` in the Project at `root`, a Goal still being
- * planned, and returns its folder. It is no Goal: `readGoal` and `vago run`
- * don't find it. Throws an Error naming the problem, and makes nothing,
- * when a Goal or planning item already has the name or it isn't a valid
- * name.
+ * planned whose agent runs on Harness `harness`, and returns its folder. It
+ * is no Goal: `readGoal` and `vago run` don't find it. Throws an Error
+ * naming the problem, and makes nothing, when a Goal or planning item
+ * already has the name or it isn't a valid name.
  */
 export async function createPlanningItem(
 	root: string,
 	name: string,
+	harness: string,
 ): Promise<string> {
 	const folder = goalFolder(root, name);
 	await mkdir(join(root, goalsFolderName), { recursive: true });
@@ -401,6 +402,9 @@ export async function createPlanningItem(
 		throw error;
 	}
 	await mkdir(planningFolder(folder));
+	await rewritePlanningChatFile(planningFolder(folder), (chat) => {
+		chat.harness = harness;
+	});
 	return folder;
 }
 
@@ -476,8 +480,9 @@ export type PlanningTurn = {
 };
 
 /**
- * The conversation of planning item `item`. `harness` and `sessionId` are
- * absent until a turn's session reports them.
+ * The conversation of planning item `item`. `harness` is absent for an item
+ * made before its Harness was recorded at its making, until its first turn;
+ * `sessionId` until a turn's session reports it.
  */
 export type PlanningChat = {
 	item: string;

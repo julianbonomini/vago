@@ -13,6 +13,7 @@ A planning turn is not a Run. It has no Step, Ticket or Goal, no retry and no id
 ## Consequences
 
 - Linux needs `bwrap` to plan.
+- The guard is the same for every Harness: the sandbox wraps Codex's `--sandbox read-only` command as it wraps Claude Code's read-only tools. An item records its Harness when it is made, so every turn of its chat resumes the same Harness's session.
 - The sandbox covers the Project root only. A Goal's worktree under `VAGO_HOME` is guarded by the Harness's read-only tools alone.
 - The sandboxed agent can't write the log or `chat.toml`, since both sit under the Project root. The unsandboxed `vago plan say` writes them from the agent's stdout.
 - A `vago plan say` that dies leaves its turn open, which reads as interrupted once no live process holds the item. Retry response or a new message continues from there (ADR 0014).
