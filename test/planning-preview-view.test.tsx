@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import type { TestRendererSetup } from "@opentui/core/testing";
 import { planningFixtureAnswering } from "./fake-harness.ts";
 import { makeProject } from "./project.ts";
-import { frameWith, frameWithout, renderView } from "./view-render.tsx";
+import { bgAt, frameWith, frameWithout, renderView } from "./view-render.tsx";
 
 const wide = { width: 120, height: 40 };
 
@@ -296,4 +296,93 @@ test("a turn whose block wasn't saved says so, and a bad proposal.toml hides no 
 	expect(frame).toContain("Here is the plan.");
 	expect(frame).toContain("proposal.toml isn't valid TOML");
 	expect(frame).not.toContain("Earlier proposal, since replaced");
+});
+
+// A Proposal whose Goal runs `paragraphs` paragraphs, `para 1` first, so
+// the Preview overflows a short screen.
+function longProposalToml(paragraphs: number): string {
+	const goal = Array.from(
+		{ length: paragraphs },
+		(_, index) => `para ${index + 1}`,
+	).join("\n\n");
+	return proposalToml().replace(
+		"Results come back\nbest first.",
+		`Results come back\nbest first.\n\n${goal}`,
+	);
+}
+
+// The Preview of a Proposal longer than the screen, clicked and then
+// focused, with the picker open on its recommended Workflow.
+async function pickerOverLongPreview(): Promise<TestRendererSetup> {
+	const root = await planningProject({
+		"chat.toml": chatToml(["Plan search"]),
+		"proposal.toml": longProposalToml(30),
+	});
+	const view = await renderView(root, { width: 120, height: 20 });
+	await openOnlyItem(view);
+	const frame = await frameWith(view, "para 1");
+	const lines = frame.split("\n");
+	const y = lines.findIndex((line) => line.includes("para 1"));
+	await view.mockMouse.click(lines[y]?.indexOf("para 1") ?? 0, y);
+	view.mockInput.pressTab();
+	await frameWith(view, "w Workflow");
+	await view.mockInput.typeText("w");
+	await frameWith(view, "try-hard");
+	return view;
+}
+
+test("with the picker open, ↑↓ move its choice and the Preview stays still", async () => {
+	const view = await pickerOverLongPreview();
+	const selected = bgAt(view, "small, recommended");
+	const opened = view.captureCharFrame();
+
+	view.mockInput.pressArrow("down");
+	await view.renderOnce();
+
+	expect(view.captureCharFrame()).toBe(opened);
+	expect(bgAt(view, "try-hard").equals(selected)).toBe(true);
+	expect(bgAt(view, "small, recommended").equals(selected)).toBe(false);
+	view.mockInput.pressArrow("up");
+	await view.renderOnce();
+	expect(bgAt(view, "small, recommended").equals(selected)).toBe(true);
+});
+
+test("with the picker open, PgDn and the wheel never hide it", async () => {
+	const view = await pickerOverLongPreview();
+	const frame = view.captureCharFrame();
+	const lines = frame.split("\n");
+	const y = lines.findIndex((line) => line.includes("para 1"));
+
+	view.mockInput.pressKey("\u001b[6~");
+	for (let turn = 0; turn < 10; turn++) {
+		await view.mockMouse.scroll(lines[y]?.indexOf("para 1") ?? 0, y, "down");
+	}
+	view.mockInput.pressKey("\u001b[5~");
+	view.mockInput.pressKey("\u001b[6~");
+	await view.renderOnce();
+
+	const scrolled = view.captureCharFrame();
+	expect(scrolled).toContain("Choose the Workflow:");
+	expect(scrolled).toContain("small, recommended");
+	expect(scrolled).toContain("try-hard");
+	view.mockInput.pressEscape();
+	await frameWithout(view, "Choose the Workflow:");
+});
+
+test("with the picker closed, ↓ and PgDn scroll the Preview", async () => {
+	const root = await planningProject({
+		"chat.toml": chatToml(["Plan search"]),
+		"proposal.toml": longProposalToml(30),
+	});
+	const view = await renderView(root, { width: 120, height: 20 });
+	await openOnlyItem(view);
+	await frameWith(view, "para 1");
+	view.mockInput.pressTab();
+	await frameWith(view, "w Workflow");
+
+	view.mockInput.pressArrow("down");
+	await frameWithout(view, "small, recommended");
+	view.mockInput.pressKey("\u001b[6~");
+	// The trailing space tells "para 1" from "para 10" and on.
+	await frameWithout(view, "para 1 ");
 });
