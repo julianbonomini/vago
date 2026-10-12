@@ -42,7 +42,7 @@ NEW FEATURES (grilling needed)
 - [ ] Milestones and nested Goals. _(grill)_
   - [ ] Show Milestones in the TUI, once Vago has them.
 - [x] goal on start and on end configuration steps, so workflows don't have to manually do those thigns
-- [ ] Creating Goals and Tickets inside Vago, and decomposing Goals automatically. _(grill)_
+- [x] Creating Goals and Tickets inside Vago, and decomposing Goals automatically. _(grill)_
 - [ ] create github app so commits come from vago (maybe)
 - [ ] Notifications (ntfy, Slack, push). something to let you know if something is stuck, or what. or current progress.
 - [x] Harnesses other than Claude Code (a Codex adapter, user-supplied Harness plugins). _(grill)_ (Codex only)
