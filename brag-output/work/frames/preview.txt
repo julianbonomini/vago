@@ -1,0 +1,32 @@
+ vago                                         15 done · 0 ready · 0 running · 0 stuck, lost or broken · $373.77 spent 
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Goals                                                                                                         6/16  
+    STATE    GOAL                        TICKETS          RUN TIME COST     NOW                     TITLE             
+  ◇ planning steer-in-flight-agent       ━━━━━━━━━━ 0/0                     waiting for your reply                  ▀ 
+  ✓ done     planning-real-session       ━━━━━━━━━━ 5/5   4h 11m   $50.74   finished                A planning item…  
+  ✓ done     planning-quick-fixes        ━━━━━━━━━━ 2/2   46m 19s  $3.92    finished                The planning vi…  
+  ✓ done     plan-goals-in-vago          ━━━━━━━━━━ 7/7   4h 59m   $63.69   finished                A new Goal can …  
+  ✓ done     goal-steps                  ━━━━━━━━━━ 6/6   2h 20m   $25.95   finished                A Workflow runs…  
+  ✓ done     pick-up-from-failure        ━━━━━━━━━━ 8/8   2h 45m   $22.79   finished                A failed or int…  
+  ✓ done     tui-readability             ━━━━━━━━━━ 5/5   2h 6m    $12.59   finished                The TUI is easy…  
+  ✓ done     codex-harness               ━━━━━━━━━━ 4/4   1h 36m   $11.93   finished                Vago runs agent…  
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  pick-up-from-failure                                 Workflow small · created 2026-10-06 · last activity 7d 9h ago  
+  A failed or interrupted Ticket picks up where it stopped                                                            
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  8/8 Tickets  
+                                                                                                                      
+  STEP          RUNS  TOOK     COST      GOAL                                                                         
+  New branch       8  0s                 Problem Statement                                                            
+  Build            8  1h 26m   $13.41                                                                                 
+  Checks           8  23m 27s            When a Ticket fails at Step 5 of 7, the human has to reset it, and the next  
+  Review           8  38m 3s   $5.25     `vago run` starts its Workflow over from Step 1. `branch.sh` then replaces   
+  Squash merge     8  53s                the Ticket's branch, so the work the failed attempt built is lost. Worse,    
+  Design           1  3m 26s   $1.11     that Step refuses to start on the uncommitted changes the interrupted Run    
+  Product          1  1m 43s   $0.51     left behind. The commonest failures in practice are the human pressing       
+  Architecture     1  3m 22s   $1.10     Ctrl-C, the laptop closing or the network dropping mid-Run, `merge` failing  
+  Design choic…    1  10s      $0.29     after it already pushed, and the agent stopping on an API error or an "out   
+  Goal review      1  8m 46s   $1.11     of tokens" message. A plain "continue" sent to the same Claude session       
+  Ready for re…    1  0s                 fixes most of these. Vago records each Run's `session_id`, but only prints   
+  total           46  2h 45m   $22.79    `claude --resume <id>` as a hint for the human.                              
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ↑↓ Goal   Enter Open   s Start   n New Goal   g G First, last   PgUp PgDn Scroll   ? Help   q Quit                   

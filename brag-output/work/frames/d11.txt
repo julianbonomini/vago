@@ -1,0 +1,32 @@
+ vago                                         15 done · 0 ready · 0 running · 0 stuck, lost or broken · $373.77 spent 
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Goals                                                                                                        12/16  
+    STATE    GOAL                        TICKETS          RUN TIME COST     NOW                     TITLE             
+  ✓ done     goal-steps                  ━━━━━━━━━━ 6/6   2h 20m   $25.95   finished                A Workflow runs…  
+  ✓ done     pick-up-from-failure        ━━━━━━━━━━ 8/8   2h 45m   $22.79   finished                A failed or int…  
+  ✓ done     tui-readability             ━━━━━━━━━━ 5/5   2h 6m    $12.59   finished                The TUI is easy…  
+  ✓ done     codex-harness               ━━━━━━━━━━ 4/4   1h 36m   $11.93   finished                Vago runs agent…  
+  ✓ done     ux-improvements             ━━━━━━━━━━ 12/12 4h 50m   $39.85   finished                The backlog's U…▀ 
+  ✓ done     tui-goal-view               ━━━━━━━━━━ 9/9   5h 22m   $38.18   finished                Opening a Goal …  
+  ✓ done     tui-project-view            ━━━━━━━━━━ 8/8   3h 33m   $40.93   finished                `vago` opens a …  
+  ✓ done     goal-worktrees              ━━━━━━━━━━ 7/7   2h 29m   $31.77   finished                Each Goal runs …  
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  goal-worktrees                                                        Workflow try-hard · last activity 9d 22h ago  
+  Each Goal runs in its own worktree, so Goals run in parallel                                                        
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  7/7 Tickets  
+                                                                                                                      
+  STEP          RUNS  TOOK     COST      GOAL                                                                         
+  New branch       8  0s                 Problem Statement                                                            
+  Design           8  26m 9s   $7.43                                                                                  
+  Product          7  9m 30s   $3.34     `vago run <goal>` runs every Step in the human's own checkout. The starter   
+  Architecture     7  19m 49s  $5.99     Workflow's `branch.sh` switches that checkout to the Goal's and Ticket's     
+  Build            7  1h 0m    $9.77     branches, so only one Goal can run at a time, and the human can't touch the  
+  Checks           7  6m 49s             checkout while it runs (ADR 0002 says so). Starting a second Goal in         
+  Review           7  19m 51s  $5.23     another terminal would switch branches under the first one.                  
+  Squash merge     7  7m 33s                                                                                          
+  Ready for re…    1  0s                 Pointing a Workflow at a worktree doesn't help today. A shell Step can       
+  total           59  2h 29m   $31.77    create a worktree, but every later Step still runs in the folder `vago run`  
+                                         started in. And a new worktree has only tracked files: no `.vago-goals/`,    
+                                         no untracked `.vago/`, no `node_modules/`, no `.env`.                        
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ↑↓ Goal   Enter Open   s Start   n New Goal   g G First, last   PgUp PgDn Scroll   ? Help   q Quit                   

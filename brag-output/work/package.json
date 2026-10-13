@@ -1,0 +1,7 @@
+{
+  "name": "brag-work",
+  "private": true,
+  "dependencies": {
+    "playwright-core": "1.58"
+  }
+}

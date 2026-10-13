@@ -1,0 +1,32 @@
+ vago                                         15 done · 0 ready · 0 running · 0 stuck, lost or broken · $373.77 spent 
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Goals                                                                                                         2/16  
+    STATE    GOAL                        TICKETS          RUN TIME COST     NOW                     TITLE             
+  ◇ planning steer-in-flight-agent       ━━━━━━━━━━ 0/0                     waiting for your reply                  ▀ 
+  ✓ done     planning-real-session       ━━━━━━━━━━ 5/5   4h 11m   $50.74   finished                A planning item…  
+  ✓ done     planning-quick-fixes        ━━━━━━━━━━ 2/2   46m 19s  $3.92    finished                The planning vi…  
+  ✓ done     plan-goals-in-vago          ━━━━━━━━━━ 7/7   4h 59m   $63.69   finished                A new Goal can …  
+  ✓ done     goal-steps                  ━━━━━━━━━━ 6/6   2h 20m   $25.95   finished                A Workflow runs…  
+  ✓ done     pick-up-from-failure        ━━━━━━━━━━ 8/8   2h 45m   $22.79   finished                A failed or int…  
+  ✓ done     tui-readability             ━━━━━━━━━━ 5/5   2h 6m    $12.59   finished                The TUI is easy…  
+  ✓ done     codex-harness               ━━━━━━━━━━ 4/4   1h 36m   $11.93   finished                Vago runs agent…  
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  planning-real-session                                Workflow small · created 2026-10-07 · last activity 6d 3h ago  
+  A planning item's chat is a real interactive Harness session inside the planning view                               
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  5/5 Tickets  
+                                                                                                                      
+  STEP          RUNS  TOOK     COST      GOAL                                                                         
+  New branch       5  0s                 Problem Statement                                                            
+  Design           2  10m 22s  $3.62                                                                                  
+  Product          2  3m 42s   $1.10     The planning chat doesn't behave like the agent chat the human uses every    
+  Architecture     2  10m 55s  $3.62     day. Each message is a headless `vago plan say` turn that runs detached, so  
+  Design choic…    2  31s      $0.67     the chat feels like messages sent to a background job: the reply appears     
+  Build            5  2h 17m   $29.22    with a strange background, Shift+Enter doesn't make a new line, nothing can  
+  Checks           5  24m 39s            be edited the way Claude Code allows, and the footer says "The agent is      
+  Review           5  44m 32s  $7.21     still answering; press Enter again once it has." while it works. Building a  
+  Squash merge     5  27s                full chat UI that matches Claude Code (editing messages, history, slash      
+  Goal review      2  16m 41s  $3.68     commands, multi-line input) would be a large and endless job.                
+  PR descripti…    1  2m 4s    $1.61                                                                                  
+  Ready for re…    1  5s                 The preview also fills with a Goal and Tickets after the human's first       
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ↑↓ Goal   Enter Open   s Start   n New Goal   g G First, last   PgUp PgDn Scroll   ? Help   q Quit                   

@@ -1,0 +1,32 @@
+ vago                                         15 done · 0 ready · 0 running · 0 stuck, lost or broken · $373.77 spent 
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Goals                                                                                                        11/16  
+    STATE    GOAL                        TICKETS          RUN TIME COST     NOW                     TITLE             
+  ✓ done     plan-goals-in-vago          ━━━━━━━━━━ 7/7   4h 59m   $63.69   finished                A new Goal can …  
+  ✓ done     goal-steps                  ━━━━━━━━━━ 6/6   2h 20m   $25.95   finished                A Workflow runs…  
+  ✓ done     pick-up-from-failure        ━━━━━━━━━━ 8/8   2h 45m   $22.79   finished                A failed or int…  
+  ✓ done     tui-readability             ━━━━━━━━━━ 5/5   2h 6m    $12.59   finished                The TUI is easy…▀ 
+  ✓ done     codex-harness               ━━━━━━━━━━ 4/4   1h 36m   $11.93   finished                Vago runs agent…  
+  ✓ done     ux-improvements             ━━━━━━━━━━ 12/12 4h 50m   $39.85   finished                The backlog's U…  
+  ✓ done     tui-goal-view               ━━━━━━━━━━ 9/9   5h 22m   $38.18   finished                Opening a Goal …  
+  ✓ done     tui-project-view            ━━━━━━━━━━ 8/8   3h 33m   $40.93   finished                `vago` opens a …  
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  tui-project-view                                                      Workflow try-hard · last activity 9d 16h ago  
+  `vago` opens a TUI that shows every Goal of the Project                                                             
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  8/8 Tickets  
+                                                                                                                      
+  STEP          RUNS  TOOK     COST      GOAL                                                                         
+  New branch       8  0s                 Problem Statement                                                            
+  Build            8  1h 58m   $21.95                                                                                 
+  Checks           8  11m 15s            To see how a Goal is doing, the human reads the `vago run` output in the     
+  Review           8  29m 46s  $5.99     terminal running it, opens Ticket headers under `.vago-goals/`, or runs      
+  Squash merge     8  12m 8s             `vago goal report <goal>`. Since Goals run in their own worktrees, several   
+  Design           4  13m 26s  $4.14     run at once, each in its own terminal, and nothing shows all of them         
+  Product          4  7m 32s   $2.40     together: which are running, which went stuck or lost and need the human,    
+  Architecture     4  12m 12s  $3.96     which are ready to start, what they cost.                                    
+  Goal review      2  8m 9s    $2.48                                                                                  
+  Ready for re…    1  0s                 Solution                                                                     
+  total           55  3h 33m   $40.93                                                                                 
+                                         `vago` with no command, on a terminal, opens a full-screen TUI on the        
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ↑↓ Goal   Enter Open   s Start   n New Goal   g G First, last   PgUp PgDn Scroll   ? Help   q Quit                   
