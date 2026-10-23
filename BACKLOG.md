@@ -53,6 +53,7 @@ NEW FEATURES (grilling needed)
 
 TECHINICAL IMRPOVEMENTS
 - [ ] A cheaper way to copy big untracked folders (`node_modules`) into a Goal's worktree, if copying everything gets slow.
+- [ ] `vago update` removes files the starter no longer ships. It left `.vago/rules/` behind after the starter dropped `rules/`.
 
 TO DECIDE IF I WANT IT
 - [ ] Vago owns pushing the Goal's branch and opening its PR, instead of the Workflow's `merge.sh`. _(grill)_
