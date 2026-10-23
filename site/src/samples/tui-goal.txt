@@ -1,0 +1,40 @@
+ ⁘ many-tickets  Vago alpha: the whole kernel                                                  Time 4h 20m · In 12.6M · Out 360.0K · $18.00 
+ ○ READY  ▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱       9/15 Tickets 
+┌─ Ticket 09 ────────────────────────────────────────────────────────────────────────┐┌─ Tickets ──────────────────────────────────────────┐
+│ Goal report lists every Run with its cost                                          ││ ✓ 01 Parse workflow toml and reject unknown step ▀ │
+│                                                                                    ││ ✓ 02 Ticket headers keep unknown fields on rewrit  │
+│ ✓ branch  ✓ implement  ✓ check  ✓ review  ✓ merge                                  ││ ✓ 03 A very long Ticket title that will certainly  │
+│                                                                                    ││ ✓ 04 ワークフローの名前を日本語で表示する          │
+│   What to build                                                                  █ ││ ✓ 05 Emoji in a title 🚀 should measure two cells  │
+│                                                                                  █ ││ ✓ 06 Shell Step output streams to its .log file    │
+│   Goal report lists every Run with its cost. This is fixture text so the Ticket  █ │└───────────────────────────────────────────── 9/15 ─┘
+│   pane has something to show, with a second sentence that runs long enough to    █ │┌─ Events ───────────────────────────────────────────┐
+│   wrap at eighty columns.                                                        █ ││ 2d 16h 09 merge ok 1m 0s                         ▀ │
+│                                                                                  █ ││ 2d 16h 09 merge started                            │
+│   Acceptance criteria                                                              ││ 2d 16h 09 review ok 6m 0s $0.60                    │
+│                                                                                    ││ 2d 16h 09 review started                           │
+│   · The first thing works                                                          ││ 2d 16h 09 check ok 1m 0s                           │
+│   · The second thing works                                                         ││ 2d 16h 09 check started                            │
+└──────────────────────────────────────────────────────────────────────────── small ─┘└─────────────────────────────────────────────── 90 ─┘
+┌─ Run · 09 merge 5/5 ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│   → $ merge                                                                                                                              │
+│   → ok                                                                                                                                   │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── ok in 1m 0s ─┘
+ Tab Pane   ↑↓ Move   p/n Run   f Follow   Esc Goals   ? Help                       ◂ {  A Mission Control (round 1) · c colours full  } ▸  

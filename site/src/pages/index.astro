@@ -1,0 +1,32 @@
+---
+// PROTOTYPE: three visual directions for the Vago landing page, from
+// brand-identity/landing-brief.md, switchable with ?variant=A|B|C.
+// Each is a rough hero plus one "how it works" section. Throw away once one wins.
+import PrototypeSwitcher from "../components/PrototypeSwitcher.astro";
+import VariantA from "../variants/VariantA.astro";
+import VariantB from "../variants/VariantB.astro";
+import VariantC from "../variants/VariantC.astro";
+
+const variants = [
+  { key: "A", name: "Session transcript" },
+  { key: "B", name: "Engineer's notebook" },
+  { key: "C", name: "Away from desk" },
+];
+---
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Vago</title>
+    <style is:global>
+      html, body { margin: 0; padding: 0; }
+      [data-variant][hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <div data-variant="A"><VariantA /></div>
+    <div data-variant="B" hidden><VariantB /></div>
+    <div data-variant="C" hidden><VariantC /></div>
+    <PrototypeSwitcher variants={variants} />
+  </body>
+</html>

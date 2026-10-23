@@ -1,0 +1,707 @@
+---
+// PROTOTYPE: variant B, "Engineer's notebook". A light, editorial write-up
+// where the terminal is the only dark thing on the page. Throw away once a
+// direction wins.
+import "@fontsource-variable/geist";
+import "@fontsource/jetbrains-mono/400.css";
+import "@fontsource/jetbrains-mono/500.css";
+import { projectView, smallWorkflow } from "./b/specimens.ts";
+
+const tui = projectView();
+const workflow = smallWorkflow();
+
+// `vago run` Step lines, in progress.ts's columns: time, took padded to 6,
+// cost padded to 6, then the Step and how it ended.
+type StepLine = { at: string; took?: string; cost?: string; text: string; outcome: string };
+const runLines: StepLine[] = [
+	{ at: "21:00:48", text: "New branch", outcome: "started" },
+	{ at: "21:00:48", took: "0.1s", text: "New branch", outcome: "ok" },
+	{ at: "21:00:48", text: "Build", outcome: "started" },
+	{ at: "21:14:01", took: "13m13s", cost: "$2.41", text: "Build", outcome: "ok" },
+	{ at: "21:14:01", text: "Checks", outcome: "started" },
+	{ at: "21:14:39", took: "38.4s", text: "Checks", outcome: "ok" },
+	{ at: "21:14:39", text: "Review", outcome: "started" },
+	{ at: "21:22:15", took: "7m36s", cost: "$1.49", text: "Review", outcome: "ok" },
+	{ at: "21:22:15", text: "Goal review", outcome: "skipped" },
+	{ at: "21:22:15", text: "Squash merge", outcome: "started" },
+	{ at: "21:22:28", took: "12.9s", text: "Squash merge", outcome: "ok" },
+];
+const stepLine = ({ at, took = "", cost = "", text, outcome }: StepLine) => {
+	const head = `  2026-10-02T${at}Z  ${took.padStart(6)}  ${cost.padStart(6)}  ${text} `;
+	const quiet = outcome === "started" || outcome === "skipped";
+	return quiet
+		? `<span class="t-dim">${head}${outcome}</span>`
+		: `${head}<span class="t-ok">${outcome}</span>`;
+};
+const runOutput = [
+	`<span class="t-prompt">$</span> vago run search`,
+	`Worktree /Users/you/.vago/worktrees/my-app-3f9c2a1e/search`,
+	`01-index`,
+	...runLines.map(stepLine),
+	`02-ranking`,
+	`<span class="t-dim">  …</span>`,
+]
+	.map((l, i) => `<span class="ln" style="--d:${i * 55}">${l}</span>`)
+	.join("");
+
+const summary = [
+	`search: 2 of 2 Tickets done`,
+	`<span class="t-dim">Ticket      Status  Runs    Took   Cost</span>`,
+	`01-index    <span class="t-ok">done  </span>     5  21m40s  $3.90`,
+	`02-ranking  <span class="t-ok">done  </span>     5  18m02s  $3.12`,
+	`Total                 10  39m42s  $7.02`,
+].join("\n");
+
+const gitLog = [
+	`<span class="t-prompt">$</span> git log --oneline vago/search`,
+	`<span class="t-acc">8e41c07</span> 02 ranking`,
+	`<span class="t-acc">c2b9f5a</span> 01 index`,
+	`<span class="t-acc">5d0e3b2</span> <span class="t-dim">the last commit on main</span>`,
+].join("\n");
+---
+
+<div class="vb">
+	<div class="vb-page">
+		<header class="vb-mast vb-in" style="--i:0">
+			<span class="vb-mark">Vago</span>
+			<span class="vb-mast-meta">Alpha · MIT · a personal project</span>
+		</header>
+
+		<section class="vb-hero">
+			<div class="vb-row">
+				<div class="vb-main">
+					<p class="vb-kicker vb-in" style="--i:1">Notes on a tool I built</p>
+					<h1 class="vb-in" style="--i:2">Set the Goal.<br />Go do something else.</h1>
+					<p class="vb-lede vb-in" style="--i:3">
+						Vago builds a Goal in your repo while you're away. You write what you want,
+						split it into Tickets and pick a Workflow. Vago takes each Ticket through that
+						Workflow, and you come back to a PR.<sup class="vb-ref">1</sup>
+					</p>
+					<p class="vb-in" style="--i:4">
+						It's for the part of agent work that eats an afternoon: correcting a session,
+						rebriefing the next one when the context fills up, fixing the small thing by
+						hand. You decide how the work gets done once, in a file, and Vago runs it.
+					</p>
+				</div>
+				<aside class="vb-notes vb-in" style="--i:5">
+					<p class="vb-note"><span class="vb-ref">1</span>It runs one Ticket at a time.
+						When an agent Step fails three times, the Ticket stops and waits for you.</p>
+					<p class="vb-note"><em>Vago</em> is Spanish for “lazy”. You're the lazy
+						one.</p>
+				</aside>
+			</div>
+
+			<figure class="vb-fig vb-fig-wide vb-in" style="--i:6">
+				<div class="vb-term" tabindex="0" aria-label="The Vago TUI listing every Goal">
+					<pre set:html={tui} />
+				</div>
+				<figcaption><span class="vb-fignum">Fig. 1</span> <code>vago</code> with no command,
+					in this repo. The done Goals built parts of Vago. The lost, stuck and ready ones
+					are test fixtures, there to show the other states.</figcaption>
+			</figure>
+		</section>
+
+		<section class="vb-how" aria-labelledby="vb-how-title">
+			<div class="vb-row">
+				<div class="vb-main">
+					<h2 id="vb-how-title" data-reveal>How it works</h2>
+					<p data-reveal>One Goal from start to finish, called <code>search</code>, in a
+						Project called <code>my-app</code>. Every block below is a real file format or
+						real output. The paper ones are files you write. The dark ones are Vago
+						talking.</p>
+				</div>
+			</div>
+
+			<ol class="vb-stages">
+				<li class="vb-stage">
+					<div class="vb-row">
+						<div class="vb-main">
+							<h3 data-reveal><span class="vb-num">1</span>A Goal</h3>
+							<p data-reveal>A Goal is a Markdown file that says what you want, written the
+								way you'd brief a developer: what to build, what done means, what's out of
+								scope. Every agent Step sees it in its prompt.</p>
+							<div class="vb-spec vb-file" data-reveal>
+								<div class="vb-spec-label">.vago-goals/search/goal.md</div>
+<pre><span class="f-rule">+++</span>
+<span class="f-key">workflow</span> = <span class="f-val">"small"</span>
+<span class="f-key">created</span> = <span class="f-val">2026-10-02T20:58:12.405Z</span>
+<span class="f-rule">+++</span>
+<span class="f-h"># Search</span>
+
+Users can search their notes by title and body
+from the top bar.
+
+Done when typing in the search box lists matching
+notes, best match first.</pre>
+							</div>
+						</div>
+						<aside class="vb-notes">
+							<p class="vb-note" data-reveal>You can also plan the Goal and its Tickets with
+								an agent, in the TUI.</p>
+						</aside>
+					</div>
+				</li>
+
+				<li class="vb-stage">
+					<div class="vb-row">
+						<div class="vb-main">
+							<h3 data-reveal><span class="vb-num">2</span>Tickets</h3>
+							<p data-reveal>Tickets are the units of work, added in the order they should
+								run. A Ticket can wait on another one.<sup class="vb-ref">2</sup></p>
+							<div class="vb-term vb-term-sm" data-reveal>
+<pre><span class="t-prompt">$</span> vago ticket add search index --body-file index.md
+<span class="t-prompt">$</span> vago ticket add search ranking --blocked-by 1 --body-file ranking.md</pre>
+							</div>
+							<div class="vb-spec vb-file" data-reveal>
+								<div class="vb-spec-label">.vago-goals/search/tickets/02-ranking.md</div>
+<pre><span class="f-rule">+++</span>
+<span class="f-key">status</span> = <span class="f-val">"ready"</span>
+<span class="f-key">blocked_by</span> = <span class="f-val">[ 1 ]</span>
+<span class="f-key">created</span> = <span class="f-val">2026-10-02T20:59:40.118Z</span>
+<span class="f-rule">+++</span>
+<span class="f-h"># Ranking</span>
+
+Title matches rank above body matches.</pre>
+							</div>
+						</div>
+						<aside class="vb-notes">
+							<p class="vb-note" data-reveal><span class="vb-ref">2</span>One at a time, for
+								now. The lowest-numbered Ticket whose blockers are done goes next.</p>
+							<p class="vb-note" data-reveal>Vago writes the header and keeps the Ticket's
+								status and Runs there. The text under it is yours to edit whenever.</p>
+						</aside>
+					</div>
+				</li>
+
+				<li class="vb-stage">
+					<div class="vb-row">
+						<div class="vb-main">
+							<h3 data-reveal><span class="vb-num">3</span>The Workflow's Steps</h3>
+							<p data-reveal>A Workflow is a short TOML file in <code>.vago/workflows/</code>:
+								a list of Steps. Some run on a coding agent and some are shell commands.
+								This is <code>small</code>, one of the two Workflows <code>vago init</code>
+								gives you, with its comments taken out.</p>
+							<div class="vb-spec vb-file vb-toml" data-reveal>
+								<div class="vb-spec-label">.vago/workflows/small.toml</div>
+								<div class="vb-toml-cols">
+									{workflow.map((block) => <pre set:html={block} />)}
+								</div>
+							</div>
+						</div>
+						<aside class="vb-notes">
+							<p class="vb-note" data-reveal>Agent Steps run on Claude Code or Codex. A Step can
+								pick its own.</p>
+							<p class="vb-note" data-reveal><code>after_all</code> runs once, after the last
+								Ticket. Here it writes the PR description and marks the PR ready.</p>
+						</aside>
+					</div>
+					<div class="vb-row">
+						<div class="vb-main">
+							<p data-reveal>Vago has opinions about how the Steps run: the worktree, retries,
+								resumed sessions, state, what happens when one fails. It has none about what
+								the Steps are. A solo project can commit straight to <code>main</code>. A work
+								repo can wait on review and CI.</p>
+							<p data-reveal>Here's what <code>vago run</code> prints while it works through
+								the first Ticket.<sup class="vb-ref">3</sup></p>
+							<div class="vb-term vb-run" data-reveal="lines">
+								<pre set:html={runOutput} />
+							</div>
+						</div>
+						<aside class="vb-notes">
+							<p class="vb-note vb-note-low" data-reveal><span class="vb-ref">3</span>When an
+								agent Step fails, Vago resumes its session and retries, three times. Then the
+								Ticket goes stuck and waits for you. The next <code>vago run</code> picks it up
+								at the Step it stopped on.</p>
+						</aside>
+					</div>
+				</li>
+
+				<li class="vb-stage">
+					<div class="vb-row">
+						<div class="vb-main">
+							<h3 data-reveal><span class="vb-num">4</span>One commit per Ticket</h3>
+							<p data-reveal>The last Step, <code>merge</code>, squashes the Ticket's branch
+								into the Goal's branch, <code>vago/search</code>, as one commit named after the
+								Ticket.<sup class="vb-ref">4</sup></p>
+							<div class="vb-term vb-term-sm" data-reveal>
+								<pre set:html={gitLog} />
+							</div>
+						</div>
+						<aside class="vb-notes">
+							<p class="vb-note" data-reveal><span class="vb-ref">4</span>The starter's
+								<code>merge.sh</code> does this. Vago only owns the Goal's worktree and its
+								branch. Every other git call is up to the Workflow.</p>
+						</aside>
+					</div>
+				</li>
+
+				<li class="vb-stage">
+					<div class="vb-row">
+						<div class="vb-main">
+							<h3 data-reveal><span class="vb-num">5</span>One PR per Goal</h3>
+							<p data-reveal><code>merge</code> also pushes <code>vago/search</code> and opens or
+								updates its PR. The description is <code>vago goal report search</code>,
+								rewritten after every Ticket. When the last one is done, <code>vago run</code>
+								prints the totals and the PR gets a label and a mention, so GitHub tells
+								you.</p>
+							<div class="vb-term vb-term-sm" data-reveal>
+								<pre set:html={summary} />
+							</div>
+							<p class="vb-close" data-reveal>Go watch TV. There'll be a PR when you're
+								back.</p>
+						</div>
+						<aside class="vb-notes">
+							<p class="vb-note" data-reveal>You review the PR and merge it yourself. Vago
+								needs <code>gh</code> for this part, and Bun to build it in the first
+								place.</p>
+						</aside>
+					</div>
+				</li>
+			</ol>
+		</section>
+	</div>
+</div>
+
+<script>
+	// Reveal blocks once as they scroll in. Only blocks still below the fold
+	// at the first scroll are held back, so nothing on screen ever blinks out,
+	// and without JS, with reduced motion or in a full-page capture,
+	// everything is simply there.
+	const root = document.querySelector(".vb");
+	const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+	if (root && "IntersectionObserver" in window && !reduce) {
+		const seen = new IntersectionObserver(
+			(entries) => {
+				for (const entry of entries) {
+					if (!entry.isIntersecting) continue;
+					entry.target.classList.add("is-in");
+					seen.unobserve(entry.target);
+				}
+			},
+			{ rootMargin: "0px 0px -12% 0px" },
+		);
+		const arm = () => {
+			if (root.getClientRects().length === 0) return;
+			window.removeEventListener("scroll", arm);
+			for (const el of root.querySelectorAll("[data-reveal]")) {
+				if (el.getBoundingClientRect().top < window.innerHeight) continue;
+				el.classList.add("is-held");
+				seen.observe(el);
+			}
+		};
+		window.addEventListener("scroll", arm, { passive: true });
+	}
+</script>
+
+<style>
+	.vb {
+		--paper: #f5f2ea;
+		--paper-2: #ece7db;
+		--ink: #1d1c1a;
+		--ink-2: #5f5b53;
+		--ink-3: #8b867b;
+		--rule: #d8d1c2;
+		--accent: #a8481a;
+		--term-bg: #171717;
+		--term-fg: #d6d6d6;
+		--ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+		--sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+		--mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+		min-height: 100vh;
+		background: var(--paper);
+		color: var(--ink);
+		font-family: var(--sans);
+		font-size: 17px;
+		line-height: 1.62;
+		font-feature-settings: "ss01", "cv11";
+		-webkit-font-smoothing: antialiased;
+		overflow-x: clip;
+	}
+
+	.vb *,
+	.vb *::before,
+	.vb *::after {
+		box-sizing: border-box;
+	}
+
+	.vb-page {
+		max-width: 1120px;
+		margin: 0 auto;
+		padding: 28px 24px 120px;
+	}
+
+	.vb p {
+		margin: 0 0 1.1em;
+		text-wrap: pretty;
+	}
+
+	.vb code {
+		font-family: var(--mono);
+		font-size: 0.84em;
+		background: var(--paper-2);
+		padding: 0.08em 0.32em;
+		border-radius: 3px;
+		white-space: nowrap;
+	}
+
+	/* Masthead */
+	.vb-mast {
+		display: flex;
+		justify-content: space-between;
+		align-items: baseline;
+		gap: 16px;
+		padding-bottom: 14px;
+		border-bottom: 1px solid var(--ink);
+		font-size: 13px;
+	}
+	.vb-mark {
+		font-family: var(--mono);
+		font-weight: 500;
+		letter-spacing: 0.02em;
+	}
+	.vb-mark::before {
+		content: "⁘ ";
+		color: var(--accent);
+	}
+	.vb-mast-meta {
+		color: var(--ink-2);
+	}
+
+	/* The two-column grid: prose, then margin notes. */
+	.vb-row {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		gap: 0 56px;
+	}
+	.vb-main {
+		max-width: 640px;
+		min-width: 0;
+	}
+	@media (min-width: 960px) {
+		.vb-row {
+			grid-template-columns: minmax(0, 660px) 240px;
+			justify-content: space-between;
+		}
+	}
+
+	/* Hero */
+	.vb-hero {
+		padding: 72px 0 32px;
+	}
+	.vb-kicker {
+		font-family: var(--mono);
+		font-size: 12.5px;
+		letter-spacing: 0.04em;
+		color: var(--accent);
+	}
+	.vb h1 {
+		font-size: clamp(40px, 6.4vw, 68px);
+		width: max-content;
+		max-width: calc(100vw - 32px);
+		line-height: 1.02;
+		letter-spacing: -0.035em;
+		font-weight: 600;
+		margin: 0 0 32px;
+		text-wrap: balance;
+	}
+	.vb-lede {
+		font-size: 21px;
+		line-height: 1.5;
+		letter-spacing: -0.01em;
+	}
+
+	/* Margin notes */
+	.vb-notes {
+		font-size: 14px;
+		line-height: 1.5;
+		color: var(--ink-2);
+		margin: 4px 0 24px;
+	}
+	.vb-note {
+		border-left: 2px solid var(--rule);
+		padding-left: 12px;
+	}
+	.vb-notes code {
+		font-size: 0.88em;
+	}
+	@media (min-width: 960px) {
+		.vb-notes {
+			margin: 0;
+			padding-top: 6px;
+		}
+		.vb-hero .vb-notes {
+			padding-top: 132px;
+		}
+		.vb-note {
+			border-left: 0;
+			padding-left: 0;
+			border-top: 1px solid var(--rule);
+			padding-top: 10px;
+		}
+		.vb-note-low {
+			margin-top: 76px !important;
+		}
+	}
+	.vb-ref {
+		font-family: var(--mono);
+		font-size: 11px;
+		font-weight: 500;
+		color: var(--accent);
+		margin-right: 6px;
+		vertical-align: super;
+		line-height: 0;
+	}
+	sup.vb-ref {
+		margin: 0 0 0 2px;
+	}
+
+	/* Figures and specimens */
+	.vb-fig {
+		margin: 40px 0 0;
+	}
+	.vb figcaption {
+		font-size: 13.5px;
+		color: var(--ink-2);
+		margin-top: 12px;
+		max-width: 640px;
+	}
+	.vb-fignum {
+		font-family: var(--mono);
+		font-size: 12px;
+		color: var(--ink);
+		margin-right: 4px;
+	}
+
+	.vb pre {
+		margin: 0;
+		font-family: var(--mono);
+		font-size: 12.5px;
+		line-height: 1.6;
+		white-space: pre;
+		tab-size: 4;
+	}
+
+	.vb-term {
+		background: var(--term-bg);
+		color: var(--term-fg);
+		border-radius: 6px;
+		padding: 18px 20px;
+		overflow-x: auto;
+		margin: 0 0 1.5em;
+		box-shadow:
+			0 1px 0 rgba(0, 0, 0, 0.04),
+			0 12px 32px -18px rgba(40, 28, 10, 0.45);
+		scrollbar-width: thin;
+		scrollbar-color: #3a3a3a transparent;
+	}
+	.vb-term:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 3px;
+	}
+	.vb-fig-wide .vb-term {
+		padding: 20px 22px;
+	}
+	.vb-fig-wide pre {
+		font-size: 11.6px;
+		line-height: 1.45;
+	}
+	.vb-term-sm pre {
+		font-size: 12.5px;
+	}
+
+	.vb-spec {
+		margin: 0 0 1.5em;
+	}
+	.vb-file {
+		background: #fbf9f4;
+		border: 1px solid var(--rule);
+		border-radius: 6px;
+		overflow: hidden;
+	}
+	.vb-toml-cols {
+		padding: 16px 20px 18px;
+		overflow-x: auto;
+	}
+	.vb-toml-cols pre {
+		padding: 0 0 1.2em;
+		break-inside: avoid;
+	}
+	@media (min-width: 720px) {
+		.vb-toml-cols {
+			columns: 2;
+			column-gap: 32px;
+			column-rule: 1px dashed var(--rule);
+		}
+	}
+	.vb-file > pre {
+		padding: 16px 20px 18px;
+		overflow-x: auto;
+		color: var(--ink);
+	}
+	.vb-spec-label {
+		font-family: var(--mono);
+		font-size: 11.5px;
+		color: var(--ink-2);
+		padding: 8px 20px;
+		border-bottom: 1px solid var(--rule);
+		background: var(--paper-2);
+	}
+
+	.vb :global(.g) {
+		display: inline-block;
+		width: 1ch;
+		text-align: center;
+	}
+
+	/* Terminal tokens, from the TUI's theme. */
+	.vb :global(.t-line) { color: #5c5c5c; }
+	.vb :global(.t-faint) { color: #4a4a4a; }
+	.vb :global(.t-dim) { color: #7a7a7a; }
+	.vb :global(.t-bright) { color: #f0f0f0; }
+	.vb :global(.t-acc) { color: #ff8a3d; }
+	.vb :global(.t-ok) { color: #8fae8b; }
+	.vb :global(.t-bad) { color: #e5736b; }
+	.vb :global(.t-warn) { color: #e0b357; }
+	.vb :global(.t-prompt) { color: #7a7a7a; user-select: none; }
+
+	/* File tokens, in ink with one accent. */
+	.vb :global(.f-rule) { color: var(--ink-3); }
+	.vb :global(.f-key) { color: var(--ink); }
+	.vb :global(.f-val) { color: var(--ink-2); }
+	.vb :global(.f-type) { color: var(--accent); }
+	.vb :global(.f-table) { color: var(--accent); font-weight: 500; }
+	.vb :global(.f-h) { font-weight: 500; }
+
+	/* How it works */
+	.vb-how {
+		margin-top: 72px;
+		padding-top: 56px;
+		border-top: 1px solid var(--rule);
+	}
+	.vb h2 {
+		font-size: 34px;
+		letter-spacing: -0.025em;
+		line-height: 1.15;
+		font-weight: 600;
+		margin: 0 0 18px;
+	}
+	.vb-stages {
+		list-style: none;
+		margin: 40px 0 0;
+		padding: 0;
+	}
+	.vb-stage {
+		padding: 36px 0 20px;
+		border-top: 1px dashed var(--rule);
+	}
+	.vb h3 {
+		font-size: 22px;
+		letter-spacing: -0.015em;
+		font-weight: 600;
+		margin: 0 0 12px;
+		display: flex;
+		align-items: baseline;
+		gap: 14px;
+	}
+	.vb-num {
+		font-family: var(--mono);
+		font-size: 13px;
+		font-weight: 500;
+		color: var(--accent);
+		border: 1px solid currentColor;
+		border-radius: 999px;
+		width: 24px;
+		height: 24px;
+		display: inline-grid;
+		place-items: center;
+		flex: none;
+		transform: translateY(-2px);
+	}
+	.vb-close {
+		font-size: 21px;
+		letter-spacing: -0.01em;
+		margin-top: 40px !important;
+	}
+
+	/* Motion. The hero settles in once on load; the rest reveals once as it
+	   scrolls in, and the run output types its lines in order. */
+	@keyframes vb-rise {
+		from {
+			opacity: 0;
+			transform: translateY(8px);
+		}
+	}
+	@keyframes vb-fade {
+		from {
+			opacity: 0;
+		}
+	}
+	.vb-in {
+		animation: vb-rise 700ms var(--ease-out) both;
+		animation-delay: calc(var(--i, 0) * 70ms);
+	}
+	[data-reveal].is-held {
+		opacity: 0;
+		transform: translateY(8px);
+		transition:
+			opacity 600ms var(--ease-out),
+			transform 600ms var(--ease-out);
+	}
+	[data-reveal].is-held.is-in {
+		opacity: 1;
+		transform: none;
+	}
+	.vb :global(.ln) {
+		display: block;
+	}
+	[data-reveal="lines"].is-held :global(.ln) {
+		opacity: 0;
+		transition: opacity 260ms ease;
+	}
+	[data-reveal="lines"].is-held.is-in :global(.ln) {
+		opacity: 1;
+	}
+	[data-reveal="lines"].is-held.is-in :global(.ln) {
+		transition-delay: calc(var(--d, 0) * 1ms);
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.vb-in {
+			animation: vb-fade 400ms ease both;
+		}
+	}
+
+	@media (max-width: 600px) {
+		.vb {
+			font-size: 16px;
+		}
+		.vb-page {
+			padding: 20px 16px 80px;
+		}
+		.vb-mast-meta {
+			font-size: 12px;
+		}
+		.vb-hero {
+			padding-top: 48px;
+		}
+		.vb-lede {
+			font-size: 19px;
+		}
+		.vb-term,
+		.vb-toml-cols,
+		.vb-file > pre {
+			padding: 14px 16px;
+		}
+		.vb-spec-label {
+			padding: 8px 16px;
+		}
+		.vb pre,
+		.vb-term-sm pre {
+			font-size: 11.5px;
+		}
+		.vb h2 {
+			font-size: 28px;
+		}
+	}
+</style>

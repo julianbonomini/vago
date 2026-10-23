@@ -1,0 +1,407 @@
+---
+// PROTOTYPE, variant C, "Away from desk": the TUI as the hero object, then
+// the pipeline from Goal to PR and what happens when a Step fails.
+import "@fontsource-variable/geist";
+import "@fontsource/jetbrains-mono/400.css";
+import "@fontsource/jetbrains-mono/700.css";
+import { goalView, projectView } from "./c/tui.ts";
+import { failingRun, realSteps } from "./c/run-output.ts";
+
+const project = projectView();
+const goal = goalView();
+
+// One loop: Ticket 01 goes through the five Steps, then lands as a commit.
+const cycle = 14;
+const pct = (s: number) => `${((s / cycle) * 100).toFixed(2)}%`;
+const stepCss = realSteps
+	.map((_, i) => {
+		const start = 1 + i * 2;
+		const done = start + 2;
+		return `
+@keyframes vc-pend-${i} { 0%, ${pct(start)} { opacity: 1 } ${pct(start + 0.05)}, 96% { opacity: 0 } 100% { opacity: 1 } }
+@keyframes vc-cur-${i} { 0%, ${pct(start)} { opacity: 0 } ${pct(start + 0.05)}, ${pct(done)} { opacity: 1 } ${pct(done + 0.05)}, 100% { opacity: 0 } }
+@keyframes vc-done-${i} { 0%, ${pct(done)} { opacity: 0 } ${pct(done + 0.05)}, 94% { opacity: 1 } 97%, 100% { opacity: 0 } }
+@media (prefers-reduced-motion: no-preference) {
+  .vc [data-step="${i}"] .vc-m-pend { animation: vc-pend-${i} ${cycle}s linear infinite }
+  .vc [data-step="${i}"] .vc-m-cur { animation: vc-cur-${i} ${cycle}s linear infinite }
+  .vc [data-step="${i}"] .vc-m-done, .vc [data-step="${i}"] .vc-meta { animation: vc-done-${i} ${cycle}s linear infinite }
+}`;
+	})
+	.join("\n");
+const landed = 1 + realSteps.length * 2;
+const loopCss = `
+@keyframes vc-landed { 0%, ${pct(landed)} { opacity: 0; transform: translateY(-4px) } ${pct(landed + 0.4)}, 94% { opacity: 1; transform: none } 97%, 100% { opacity: 0 } }
+@keyframes vc-running { 0%, ${pct(landed)} { opacity: 1 } ${pct(landed + 0.05)}, 96% { opacity: 0 } 100% { opacity: 1 } }
+@keyframes vc-merged { 0%, ${pct(landed)} { opacity: 0 } ${pct(landed + 0.05)}, 94% { opacity: 1 } 97%, 100% { opacity: 0 } }
+@media (prefers-reduced-motion: no-preference) {
+  .vc .vc-landed { animation: vc-landed ${cycle}s ease-out infinite }
+  .vc .vc-t-run { animation: vc-running ${cycle}s linear infinite }
+  .vc .vc-t-merged { animation: vc-merged ${cycle}s linear infinite }
+}`;
+
+const tickets = [
+	"01-planning-items",
+	"02-planning-chat",
+	"03-proposal-preview",
+	"04-accept-proposal",
+	"05-background-planning",
+	"06-codex-picker",
+	"07-planning-status-cost",
+];
+const commits = [
+	["31a2feb", "07 planning status cost"],
+	["c70f100", "06 codex picker"],
+	["f836b45", "05 background planning"],
+	["4e2a0d4", "04 accept proposal"],
+	["cb628f6", "03 proposal preview"],
+	["a5ff901", "02 planning chat"],
+];
+---
+<div class="vc">
+	<style is:inline set:html={stepCss + loopCss}></style>
+
+	<header class="vc-nav">
+		<span class="vc-word">vago</span>
+		<nav>
+			<span class="vc-alpha">Alpha, MIT</span>
+			<a href="#">Docs</a>
+			<a href="#">GitHub</a>
+		</nav>
+	</header>
+
+	<section class="vc-hero">
+		<div class="vc-hero-copy">
+			<h1>Set the Goal.<br />Go do <span class="vc-nw">something else.</span></h1>
+			<p class="vc-sub">
+				Write a Goal, split it into Tickets, pick a Workflow. Vago runs it in your repo and leaves you a PR.
+			</p>
+			<div class="vc-ctas">
+				<a class="vc-btn" href="#">Install</a>
+				<a class="vc-link" href="#vc-how">How it works</a>
+			</div>
+		</div>
+
+		<figure class="vc-screen">
+			<div class="vc-glow" aria-hidden="true"></div>
+			<div class="vc-frame" style="--cols: 120">
+				<pre class="vc-tui" aria-label="The Vago TUI listing nine Goals with their state, Tickets, time and cost">{project.map((l) => <span class="vc-row" set:html={l} />)}</pre>
+			</div>
+			<figcaption>
+				<code>vago</code> with no arguments: every Goal in the Project, how far its Tickets are, what each costs and what it's doing now.
+			</figcaption>
+		</figure>
+	</section>
+
+	<section class="vc-how" id="vc-how">
+		<h2>What happens after you leave</h2>
+		<p class="vc-lede">
+			Each Ticket goes through your Workflow's Steps on its own branch and lands as one commit on the Goal's branch. The Goal becomes one PR. The example is plan-goals-in-vago, a Goal Vago built in its own repo.
+		</p>
+
+		<ol class="vc-pipe">
+			<li class="vc-stage">
+				<span class="vc-node" aria-hidden="true"></span>
+				<h3>Goal</h3>
+				<p>You write what you want, what's in scope and what's out.</p>
+				<pre class="vc-art"><span class="c-d">.vago-goals/plan-goals-in-vago/goal.md</span>
+<span class="c-x"># A new Goal can be planned and
+# accepted inside Vago</span></pre>
+			</li>
+			<li class="vc-stage">
+				<span class="vc-node" aria-hidden="true"></span>
+				<h3>Tickets</h3>
+				<p>You split it, or plan them with an agent in the TUI.</p>
+				<pre class="vc-art">{tickets.map((t, i) => i === 0
+					? <span class="vc-row"><span class="vc-swap"><span class="vc-t-run c-a">●</span><span class="vc-t-merged c-o">✓</span></span> <span class="c-x">{t}</span></span>
+					: <span class="vc-row"><span class="c-d">○</span> {t}</span>)}</pre>
+			</li>
+			<li class="vc-stage vc-stage-wide">
+				<span class="vc-node" aria-hidden="true"></span>
+				<h3>Steps</h3>
+				<p>Your Workflow, one short TOML file. Some Steps run an agent, some run a shell command.</p>
+				<pre class="vc-art">{realSteps.map((s, i) => (
+					<span class="vc-row" data-step={i}><span class="vc-swap"><span class="vc-m-pend c-d">·</span><span class="vc-m-cur c-a">●</span><span class="vc-m-done c-o">✓</span></span> {s.id.padEnd(10)}<span class="c-d">{s.type.padEnd(6)}</span><span class="vc-meta c-d">{s.took.padStart(6)} {s.cost.padStart(5)}</span></span>
+				))}</pre>
+			</li>
+			<li class="vc-stage">
+				<span class="vc-node" aria-hidden="true"></span>
+				<h3>Commits</h3>
+				<p>One per Ticket, squash-merged onto <code>vago/plan-goals-in-vago</code>.</p>
+				<pre class="vc-art"><span class="vc-row vc-landed"><span class="c-a">96af3f3</span> 01 planning items</span>{commits.map(([h, m]) => <span class="vc-row"><span class="c-d">{h}</span> {m}</span>)}</pre>
+			</li>
+			<li class="vc-stage">
+				<span class="vc-node" aria-hidden="true"></span>
+				<h3>PR</h3>
+				<p>The Goal report becomes its description. You review it and merge.</p>
+				<pre class="vc-art"><span class="c-x">plan-goals-in-vago (#39)</span>
+<span class="c-d">## Runs</span>
+<span class="c-d">Workflow: small</span>
+7 Tickets, 53 Runs
+4h59m, $63.69</pre>
+			</li>
+		</ol>
+
+		<figure class="vc-screen vc-screen-goal">
+			<div class="vc-frame" style="--cols: 140">
+				<pre class="vc-tui" aria-label="The Goal view: one Ticket's Steps, the Ticket list, events and the current Run">{goal.map((l) => <span class="vc-row" set:html={l} />)}</pre>
+			</div>
+			<figcaption>Open a Goal to watch it: the Ticket's Steps, its events with time and cost, and the Run's output as it streams.</figcaption>
+		</figure>
+
+		<div class="vc-fail">
+			<div class="vc-fail-copy">
+				<h3 class="vc-h3">When a Step fails</h3>
+				<p>An agent Step that fails resumes the same session and tries again, after 1, 1 and 5 minutes. When a retry passes, the Ticket goes on. When all three fail, it stops.</p>
+				<ol class="vc-timeline">
+					<li class="is-bad"><span class="vc-dot">✗</span><span><b>implement exit 1</b> The first Run fails.</span></li>
+					<li><span class="vc-dot">↻</span><span><b>1m</b> Resumes its session, fails again.</span></li>
+					<li><span class="vc-dot">↻</span><span><b>1m</b> Same again.</span></li>
+					<li><span class="vc-dot">↻</span><span><b>5m</b> Last retry, fails.</span></li>
+					<li class="is-bad"><span class="vc-dot">✗</span><span><b>stuck</b> The Ticket waits for you.</span></li>
+					<li class="is-ok"><span class="vc-dot">✓</span><span><b>vago run</b> Fix what you need, run it again, and the Ticket picks up at the Step that failed.</span></li>
+				</ol>
+				<p class="vc-honest">This is the Alpha. Past three retries it's your turn, and it runs one Ticket at a time. You need Bun to build it, plus Claude Code or Codex, and <code>gh</code>.</p>
+			</div>
+			<figure class="vc-out">
+				<pre>{failingRun.map((l) => <span class="vc-row" set:html={l.html} />)}</pre>
+				<figcaption>Example <code>vago run</code> output for a Ticket whose agent Step keeps failing.</figcaption>
+			</figure>
+		</div>
+	</section>
+</div>
+
+<style is:global>
+	.vc {
+		--bg: #0f0f0f;
+		--fg: #d6d6d6;
+		--bright: #f0f0f0;
+		--grey: #7a7a7a;
+		--border: #5c5c5c;
+		--faint: #4a4a4a;
+		--raised: #1b1b1b;
+		--accent: #ff8a3d;
+		--deep: #a8481a;
+		--ok: #8fae8b;
+		--bad: #e5736b;
+		--warn: #e0b357;
+		--sans: "Geist Variable", system-ui, sans-serif;
+		--mono: "JetBrains Mono", ui-monospace, monospace;
+		min-height: 100vh;
+		background: var(--bg);
+		color: var(--fg);
+		font-family: var(--sans);
+		font-size: 17px;
+		line-height: 1.55;
+		overflow-x: clip;
+		-webkit-font-smoothing: antialiased;
+	}
+	.vc * { box-sizing: border-box; }
+	.vc a { color: inherit; }
+	.vc code { font-family: var(--mono); font-size: 0.88em; color: var(--bright); }
+
+	.vc .c-l { color: var(--border); }
+	.vc .c-d { color: var(--grey); }
+	.vc .c-x { color: var(--bright); }
+	.vc .c-f { color: var(--faint); }
+	.vc .c-a { color: var(--accent); }
+	.vc .c-o { color: var(--ok); }
+	.vc .c-r { color: var(--bad); }
+	.vc .c-w { color: var(--warn); }
+	.vc .c-bold { font-weight: 700; }
+	.vc .c-sel { color: #fff; background: var(--deep); font-weight: 700; }
+
+	.vc-nav {
+		max-width: 1320px;
+		margin: 0 auto;
+		padding: 22px 24px;
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+	}
+	.vc-word { font-family: var(--mono); font-weight: 700; color: var(--bright); letter-spacing: -0.02em; }
+	.vc-nav nav { display: flex; gap: 22px; font-size: 14px; color: var(--grey); align-items: center; }
+	.vc-nav nav a { text-decoration: none; }
+	.vc-nav nav a:hover { color: var(--bright); }
+	.vc-alpha { font-family: var(--mono); font-size: 12px; }
+
+	.vc-hero { max-width: 1320px; margin: 0 auto; padding: 56px 24px 0; }
+	.vc-hero h1 {
+		font-size: clamp(42px, 6.6vw, 96px);
+		line-height: 0.98;
+		letter-spacing: -0.045em;
+		font-weight: 600;
+		color: var(--bright);
+		margin: 0;
+		text-wrap: balance;
+	}
+	.vc-nw { white-space: nowrap; }
+	.vc-sub { font-size: clamp(17px, 1.5vw, 20px); color: var(--grey); max-width: 42ch; margin: 28px 0 0; }
+	.vc-ctas { display: flex; gap: 28px; align-items: center; margin-top: 32px; }
+	.vc-btn {
+		background: var(--deep);
+		color: #fff;
+		text-decoration: none;
+		font-weight: 600;
+		padding: 12px 22px;
+		border-radius: 4px;
+		transition: transform 0.15s, background 0.15s;
+	}
+	.vc-btn:hover { background: #b9521f; }
+	.vc-btn:active { transform: translateY(1px); }
+	.vc-link { color: var(--fg); text-decoration: none; border-bottom: 1px solid var(--border); padding-bottom: 2px; }
+	.vc-link:hover { border-color: var(--accent); }
+
+	.vc-screen { position: relative; margin: 72px 0 0; }
+	.vc-glow {
+		position: absolute;
+		inset: -12% -6% 10%;
+		background: radial-gradient(60% 60% at 50% 40%, rgb(255 138 61 / 0.07), transparent 70%);
+		pointer-events: none;
+	}
+	.vc-frame {
+		position: relative;
+		container-type: inline-size;
+		background: #121212;
+		border: 1px solid #262626;
+		border-radius: 6px;
+		padding: clamp(10px, 1.4vw, 20px);
+		box-shadow: 0 40px 120px -40px rgb(0 0 0 / 0.9), inset 0 1px 0 rgb(255 255 255 / 0.04);
+		overflow-x: auto;
+	}
+	/* The fontsource build of JetBrains Mono has no box-drawing glyphs, so
+	   the captures use a system mono that does, and the lines join. */
+	.vc-tui {
+		margin: 0;
+		font-family: Menlo, "SF Mono", "DejaVu Sans Mono", Consolas, monospace;
+		font-size: clamp(8px, calc(100cqw / (var(--cols) * 0.6 + 1)), 18px);
+		line-height: 1.18;
+		color: var(--fg);
+		width: max-content;
+	}
+	.vc-row { display: block; white-space: pre; }
+	.vc .vc-g { display: inline-block; width: 1ch; text-align: center; font-style: normal; overflow: hidden; vertical-align: top; }
+	.vc .vc-swap { width: 1ch; justify-items: center; }
+	.vc-screen figcaption {
+		margin-top: 16px;
+		font-size: 14px;
+		color: var(--grey);
+		max-width: 60ch;
+	}
+
+	.vc-how { max-width: 1320px; margin: 0 auto; padding: 160px 24px 140px; }
+	.vc-how h2 {
+		font-size: clamp(32px, 4vw, 56px);
+		letter-spacing: -0.035em;
+		line-height: 1.05;
+		font-weight: 600;
+		color: var(--bright);
+		margin: 0;
+	}
+	.vc-lede { color: var(--grey); max-width: 58ch; margin: 20px 0 0; }
+
+	.vc-pipe {
+		list-style: none;
+		margin: 64px 0 0;
+		padding: 0;
+		display: grid;
+		grid-template-columns: 1fr 1.1fr 1.35fr 1.15fr 1fr;
+		gap: 0;
+	}
+	.vc-stage { position: relative; border-top: 1px solid var(--border); padding: 28px 20px 0 0; }
+	.vc-node {
+		position: absolute;
+		top: -5px;
+		left: 0;
+		width: 9px;
+		height: 9px;
+		background: var(--bg);
+		border: 1px solid var(--fg);
+		border-radius: 50%;
+	}
+	.vc-stage h3 { margin: 0; font-size: 19px; font-weight: 600; color: var(--bright); letter-spacing: -0.01em; }
+	.vc-stage p { margin: 6px 0 18px; font-size: 14.5px; color: var(--grey); line-height: 1.5; max-width: 30ch; }
+	.vc-art {
+		margin: 0;
+		font-family: var(--mono);
+		font-size: 12.5px;
+		line-height: 1.6;
+		color: var(--fg);
+		white-space: pre;
+		overflow-x: auto;
+	}
+	.vc-swap { display: inline-grid; }
+	.vc-swap > * { grid-area: 1 / 1; }
+	.vc .vc-m-pend, .vc .vc-m-cur, .vc .vc-t-run { opacity: 0; }
+
+	.vc-screen-goal { margin-top: 96px; }
+
+	.vc-fail {
+		margin-top: 120px;
+		display: grid;
+		grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+		gap: 64px;
+		align-items: start;
+	}
+	.vc-h3 { font-size: clamp(26px, 2.6vw, 36px); letter-spacing: -0.03em; font-weight: 600; color: var(--bright); margin: 0; }
+	.vc-fail-copy > p { color: var(--grey); margin: 16px 0 0; max-width: 46ch; }
+	.vc-timeline { list-style: none; padding: 0; margin: 32px 0 0; position: relative; }
+	.vc-timeline::before {
+		content: "";
+		position: absolute;
+		left: 9px;
+		top: 12px;
+		bottom: 12px;
+		border-left: 1px solid var(--faint);
+	}
+	.vc-timeline li { position: relative; display: grid; grid-template-columns: 20px 1fr; gap: 14px; padding: 7px 0; font-size: 15px; color: var(--grey); }
+	.vc-timeline b { font-family: var(--mono); font-weight: 400; font-size: 13.5px; color: var(--fg); margin-right: 8px; }
+	.vc-dot {
+		font-family: var(--mono);
+		font-size: 13px;
+		width: 20px;
+		height: 20px;
+		display: grid;
+		place-items: center;
+		background: var(--bg);
+		color: var(--grey);
+		position: relative;
+	}
+	.vc-timeline .is-bad .vc-dot, .vc-timeline .is-bad b { color: var(--bad); }
+	.vc-timeline .is-ok .vc-dot, .vc-timeline .is-ok b { color: var(--ok); }
+	.vc-honest {
+		margin-top: 32px !important;
+		padding-top: 18px;
+		border-top: 1px solid #262626;
+		font-size: 14.5px;
+	}
+
+	.vc-out { margin: 0; min-width: 0; }
+	.vc-out pre {
+		margin: 0;
+		background: var(--raised);
+		border-radius: 6px;
+		padding: 22px 24px;
+		font-family: var(--mono);
+		font-size: 12.5px;
+		line-height: 1.65;
+		overflow-x: auto;
+	}
+	.vc-out figcaption { margin-top: 12px; font-size: 13.5px; color: var(--grey); }
+
+	@media (max-width: 1023px) {
+		.vc-pipe { grid-template-columns: 1fr; margin-top: 48px; }
+		.vc-stage { border-top: 0; border-left: 1px solid var(--border); padding: 0 0 40px 28px; }
+		.vc-stage:last-child { padding-bottom: 0; }
+		.vc-node { top: 6px; left: -5px; }
+		.vc-stage p { max-width: 46ch; }
+		.vc-fail { grid-template-columns: 1fr; gap: 40px; }
+	}
+	@media (max-width: 640px) {
+		.vc-hero { padding-top: 32px; }
+		.vc-screen { margin-top: 48px; }
+		.vc-how { padding: 104px 16px 96px; }
+		.vc-hero, .vc-nav { padding-left: 16px; padding-right: 16px; }
+		.vc-alpha { display: none; }
+		.vc-out pre { padding: 16px; font-size: 11px; }
+	}
+</style>

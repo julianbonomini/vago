@@ -1,0 +1,648 @@
+---
+// PROTOTYPE variant A, "Terminal-native": the page reads like a Vago session.
+// The transcript lines are built with the same column rules as src/progress.ts,
+// from the real Runs of this repo's goal-steps Goal.
+import "@fontsource/jetbrains-mono/400.css";
+import "@fontsource/jetbrains-mono/700.css";
+import "@fontsource-variable/geist";
+
+const esc = (s: string) =>
+	s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const span = (cls: string, s: string) => `<span class="${cls}">${esc(s)}</span>`;
+
+function duration(ms: number): string {
+	const seconds = ms / 1000;
+	if (seconds < 60) return `${seconds.toFixed(1)}s`;
+	const minutes = Math.floor(seconds / 60);
+	if (minutes < 60)
+		return `${minutes}m${String(Math.floor(seconds % 60)).padStart(2, "0")}s`;
+	return `${Math.floor(minutes / 60)}h${String(minutes % 60).padStart(2, "0")}m`;
+}
+const stamp = (iso: string) => `${iso.slice(0, 19)}Z`;
+
+// One Step line, as progress.ts spells it.
+function stepLine(
+	at: string,
+	name: string,
+	outcome: string,
+	kind: "dim" | "ok" | "bad",
+	took = "",
+	cost = "",
+): string {
+	const cells = `  ${stamp(at)}  ${took.padStart(6)}  ${cost.padStart(6)}  `;
+	if (kind === "dim") return span("d", `${cells}${name} ${outcome}`);
+	return `${esc(cells + name)} ${span(kind, outcome)}`;
+}
+function run(name: string, start: string, end: string, outcome = "ok", cost?: number) {
+	const took = duration(Date.parse(end) - Date.parse(start));
+	return [
+		stepLine(start, name, "started", "dim"),
+		stepLine(end, name, outcome, outcome === "ok" ? "ok" : "bad", took, cost === undefined ? "" : `$${cost.toFixed(2)}`),
+	];
+}
+
+type Segment = { lines: string[]; note?: string; tone?: "limit" };
+
+const happy: Segment[] = [
+	{ lines: [span("p", "$ ") + "vago run goal-steps"] },
+	{
+		lines: ["Worktree ~/.vago/worktrees/vago-1c9e/goal-steps"],
+		note: "Each Goal gets its own worktree on <code>vago/goal-steps</code>. Your checkout stays the way you left it.",
+	},
+	{ lines: [span("d", "…five Tickets earlier, trimmed")] },
+	{
+		lines: [
+			"06-goal-review-goal-steps-owed",
+			...run("New branch", "2026-10-06T06:00:02.100Z", "2026-10-06T06:00:02.165Z"),
+		],
+		note: "One line per Ticket, then a line as each Step starts and ends.",
+	},
+	{
+		lines: run("Build", "2026-10-06T06:00:02.166Z", "2026-10-06T06:07:55.143Z", "ok", 0.9501374),
+		note: "Agent Steps report what they cost. Shell Steps only take time.",
+	},
+	{
+		lines: [
+			...run("Checks", "2026-10-06T06:07:55.144Z", "2026-10-06T06:11:11.391Z"),
+			...run("Review", "2026-10-06T06:11:11.392Z", "2026-10-06T06:16:25.459Z", "ok", 0.6969114),
+		],
+		note: "A fresh agent reviews the work. It has no memory of building it.",
+	},
+	{
+		lines: run("Goal review", "2026-10-06T06:16:25.461Z", "2026-10-06T06:22:17.953Z", "ok", 1.4062592),
+		note: "<code>when = \"last-ticket\"</code>: this one only runs on the Goal's last Ticket.",
+	},
+	{
+		lines: run("Squash merge", "2026-10-06T06:22:17.954Z", "2026-10-06T06:22:27.543Z"),
+		note: "The Ticket lands as one commit on the Goal's branch.",
+	},
+	{
+		lines: [
+			"after_all",
+			...run("Ready for review", "2026-10-06T06:22:27.543Z", "2026-10-06T06:22:27.543Z"),
+		],
+		note: "Then the Goal's own Steps. The Goal is one PR, marked ready for you to review and merge.",
+	},
+	{
+		lines: [
+			"",
+			"goal-steps: 6 of 6 Tickets done",
+			span("d", "Ticket                            Status  Runs    Took    Cost"),
+			`01-before-all                     ${span("ok", "done  ")}     9  44m49s  $10.90`,
+			`02-after-all                      ${span("ok", "done  ")}     5  19m17s   $2.14`,
+			`03-starter-after-all              ${span("ok", "done  ")}     5  12m58s   $1.68`,
+			`04-show-goal-steps                ${span("ok", "done  ")}     5  24m01s   $5.15`,
+			`05-docs                           ${span("ok", "done  ")}     6  16m36s   $3.03`,
+			`06-goal-review-goal-steps-owed    ${span("ok", "done  ")}     6  22m25s   $3.05`,
+			"Total                                      36   2h20m  $25.95",
+		],
+		note: "On exit, a table. The same numbers go in the Goal report, which becomes the PR description.",
+	},
+	{
+		lines: ["Removed worktree ~/.vago/worktrees/vago-1c9e/goal-steps; branch vago/goal-steps is kept"],
+	},
+];
+
+const t = (h: string, m: string, s: string) => `2026-10-04T${h}:${m}:${s}.000Z`;
+const failing: Segment[] = [
+	{ lines: [span("p", "$ ") + "vago run tui-goal-view"] },
+	{
+		lines: [
+			"08-goal-switch-mouse-small",
+			...run("Goal review", t("10", "01", "09"), t("10", "11", "09"), "idle-timeout"),
+			stepLine(t("10", "11", "09"), "Goal review", "retries in 1m00s", "dim"),
+			stepLine(t("10", "12", "09"), "Goal review", "started", "dim"),
+		],
+		note: "An agent Step that fails resumes its own session and tries again, after 1, 1 and 5 minutes.",
+	},
+	{ lines: [span("d", "…two more retries, trimmed")] },
+	{
+		lines: [
+			span("bad", "08-goal-switch-mouse-small is stuck after Goal review: idle-timeout"),
+			"  log:    .vago-goals/tui-goal-view/logs/08-goal-review-4.jsonl",
+			"  resume: claude --resume f679b9c4-e75a-4f73-affd-0dedfe161e0d",
+			"  again:  vago run tui-goal-view",
+			"  reset:  vago ticket reset tui-goal-view 08",
+		],
+		note: "After three retries it stops. The Ticket goes stuck and waits for you, with the log and the command to open the agent's session yourself.",
+		tone: "limit",
+	},
+	{
+		lines: [
+			"",
+			span("p", "$ ") + "vago run tui-goal-view",
+			"08-goal-switch-mouse-small, picked up at Goal review",
+		],
+		note: "The next <code>vago run</code> picks the Ticket up at the Step where it stopped. A run that crashed halfway is recovered the same way.",
+	},
+];
+
+// The small starter Workflow, comments dropped, with a note on what matters.
+const workflow: Segment[] = [
+	{
+		lines: [
+			`${span("k", "harness")} = ${span("s", '"claude-code"')}`,
+			`${span("k", "model")}   = ${span("s", '"claude-opus-5-5"')}`,
+			`${span("k", "idle_timeout")} = ${span("s", '"10m"')}`,
+		],
+		note: "Claude Code or Codex. Any Step can pick its own.",
+	},
+	{
+		lines: [
+			"",
+			span("h", "[[steps]]"),
+			`${span("k", "id")}   = ${span("s", '"branch"')}`,
+			`${span("k", "name")} = ${span("s", '"New branch"')}`,
+			`${span("k", "type")} = ${span("s", '"shell"')}`,
+			`${span("k", "run")}  = ${span("s", '"sh .vago/scripts/branch.sh"')}`,
+		],
+		note: "A shell Step runs a command in the Goal's worktree. Git is yours too: this script cuts the Ticket's branch.",
+	},
+	{
+		lines: [
+			"",
+			span("h", "[[steps]]"),
+			`${span("k", "id")}     = ${span("s", '"implement"')}`,
+			`${span("k", "name")}   = ${span("s", '"Build"')}`,
+			`${span("k", "type")}   = ${span("s", '"agent"')}`,
+			`${span("k", "prompt")} = ${span("s", '"prompts/small-implement.md"')}`,
+		],
+		note: "An agent Step hands a prompt you wrote to the agent.",
+	},
+	{
+		lines: [
+			"",
+			span("h", "[[steps]]"),
+			`${span("k", "id")}      = ${span("s", '"check"')}`,
+			`${span("k", "type")}    = ${span("s", '"shell"')}`,
+			`${span("k", "run")}     = ${span("s", '"bun run check"')}`,
+			`${span("k", "on_fail")} = ${span("s", '"continue"')}`,
+		],
+		note: "A failed check doesn't stop the Ticket here. The review Step reads it and fixes it.",
+	},
+	{
+		lines: [
+			"",
+			span("h", "[[steps]]"),
+			`${span("k", "id")}     = ${span("s", '"review"')}`,
+			`${span("k", "type")}   = ${span("s", '"agent"')}`,
+			`${span("k", "prompt")} = ${span("s", '"prompts/small-review.md"')}`,
+			"",
+			span("h", "[[steps]]"),
+			`${span("k", "id")}     = ${span("s", '"goal-review"')}`,
+			`${span("k", "type")}   = ${span("s", '"agent"')}`,
+			`${span("k", "prompt")} = ${span("s", '"prompts/goal-review.md"')}`,
+			`${span("k", "when")}   = ${span("s", '"last-ticket"')}`,
+			"",
+			span("h", "[[steps]]"),
+			`${span("k", "id")}   = ${span("s", '"merge"')}`,
+			`${span("k", "type")} = ${span("s", '"shell"')}`,
+			`${span("k", "run")}  = ${span("s", '"sh .vago/scripts/merge.sh"')}`,
+		],
+	},
+	{
+		lines: [
+			"",
+			span("h", "[[after_all]]"),
+			`${span("k", "id")}     = ${span("s", '"describe"')}`,
+			`${span("k", "type")}   = ${span("s", '"agent"')}`,
+			`${span("k", "prompt")} = ${span("s", '"prompts/describe.md"')}`,
+			"",
+			span("h", "[[after_all]]"),
+			`${span("k", "id")}  = ${span("s", '"ready"')}`,
+			`${span("k", "type")} = ${span("s", '"shell"')}`,
+			`${span("k", "run")} = ${span("s", '"sh .vago/scripts/ready.sh"')}`,
+		],
+		note: "Steps that run once, when no Tickets are left: write the PR description, mark it ready.",
+	},
+];
+
+// The TUI's Project view, from a capture, trimmed to the rows.
+type GoalRow = [sym: string, cls: string, state: string, goal: string, done: number, of: number, elapsed: string, cost: string, now: string];
+const goals: GoalRow[] = [
+	["?", "warn", "lost", "lost-goal", 1, 2, "13h 36m", "$3.70", "02 architecture, no vago run process"],
+	["✗", "bad", "stuck", "slack-auth", 1, 3, "1h 0m", "$5.00", "02 stuck after merge exit 1"],
+	["○", "fg", "ready", "many-tickets", 9, 15, "4h 20m", "$18.00", "paused, ready to go on"],
+	["○", "fg", "ready", "ready-to-start", 0, 3, "0s", "$0.00", "ready to start"],
+	["✓", "ok", "done", "goal-worktrees", 7, 7, "3h 7m", "$31.77", "finished"],
+	["✓", "ok", "done", "workflows-use-vago-skills", 4, 4, "25m 52s", "$5.97", "finished"],
+	["✓", "ok", "done", "review-ping-and-vago-rename", 3, 3, "17m 59s", "$3.97", "finished"],
+	["✓", "ok", "done", "supress-complexity-redflags", 4, 4, "1h 13m", "$14.41", "finished"],
+	["✓", "ok", "done", "small-ui-ux-improvemnts", 4, 4, "31m 41s", "$7.09", "finished"],
+];
+const W = 112;
+const row = (inner: string, visible: number) =>
+	`${span("b", "│")} ${inner}${" ".repeat(Math.max(0, W - 2 - visible))}${span("b", "│")}`;
+function bar(done: number, of: number, cls: string) {
+	const filled = Math.round((done / of) * 6);
+	return span(cls === "warn" ? "warn" : cls === "bad" ? "bad" : "ok", "▰".repeat(filled)) + span("f", "▱".repeat(6 - filled));
+}
+const headText = "  STATE    GOAL                           TICKETS       ELAPSED  COST     NOW";
+const tui: string[] = [
+	`${span("a", " ⁘ Vago")}  vago · 9 Goals${" ".repeat(W - 47)}${span("d", "0 running · $89.90 spent")}`,
+	"",
+	`${span("b", "┌─ ")}${span("a", "Goals")}${span("b", ` ${"─".repeat(W - 10)}┐`)}`,
+	row(span("d", headText), headText.length),
+	...goals.map(([sym, cls, state, goal, done, of, elapsed, cost, now], i) => {
+		const left = `${sym} ${state.padEnd(8)}`;
+		const rest = `${goal.padEnd(31)}`;
+		const count = ` ${done}/${of}`.padEnd(8);
+		const tail = `${elapsed.padEnd(9)}${cost.padEnd(9)}${now}`;
+		const plain = ` ${left}${rest}▰▰▰▰▰▰${count}${tail}`;
+		const inner = ` ${span(cls, left)}${esc(rest)}${bar(done, of, cls)}${esc(count)}${esc(elapsed.padEnd(9))}${esc(cost.padEnd(9))}${span(i < 4 ? "fg" : "d", now)}`;
+		return row(i === 2 ? `<span class="sel">${inner}</span>` : inner, plain.length);
+	}),
+	row("", 0),
+	`${span("b", `└${"─".repeat(W - 2)}┘`)}`,
+	span("d", " ↑↓ Goal   Enter Open   ? Help   q Quit"),
+];
+---
+<div class="va">
+	<header class="va-top">
+		<span><span class="a">⁘</span> vago</span>
+		<nav aria-label="Sections">
+			<a href="#va-how"><kbd>h</kbd> How it works</a>
+			<a href="#"><kbd>g</kbd> GitHub</a>
+		</nav>
+	</header>
+
+	<section class="va-hero">
+		<h1>Set the Goal.<br />Go do something <span class="va-nowrap">else.<span class="va-cursor" aria-hidden="true"></span></span></h1>
+		<div class="va-lede">
+			<p>
+				Vago builds a Goal in your repo while you're away. You write what you
+				want and split it into Tickets. <code>vago run</code> takes each Ticket
+				through your Workflow, commits it, and leaves one PR for the Goal when
+				they're all done.
+			</p>
+			<p>
+				It's for people who already know how they want agents to work and are
+				tired of babysitting them: correcting, rebriefing a new session,
+				fixing the small stuff by hand.
+			</p>
+		</div>
+		<p class="va-limits">
+			<span class="warn">!</span> Alpha. One Ticket at a time. Needs Bun, <code>gh</code>,
+			and Claude Code or Codex. A personal project, MIT.
+		</p>
+
+		<figure class="va-tui">
+			<pre aria-label="The Vago TUI listing Goals"><Fragment set:html={"\n" + tui.join("\n")} /></pre>
+			<figcaption>The TUI on this repo's Goals. Most of Vago was built by Vago.</figcaption>
+		</figure>
+	</section>
+
+	<section class="va-how" id="va-how">
+		<h2><span class="b">┌─</span> How it works <span class="b va-rule"></span></h2>
+
+		<ol class="va-flow" aria-label="The flow">
+			<li><span class="a">◇</span> Goal<small>you write it</small></li>
+			<li><span class="fg">○</span> Tickets<small>you split it, or plan with an agent</small></li>
+			<li><span class="a">●</span> Steps<small>your Workflow, per Ticket</small></li>
+			<li><span class="ok">✓</span> Commit<small>one per Ticket</small></li>
+			<li><span class="ok">✓</span> PR<small>one per Goal</small></li>
+		</ol>
+
+		<div class="va-block">
+			<div class="va-intro">
+				<h3>The Workflow is a file you write</h3>
+				<p>
+					Vago has opinions about how a Workflow runs: worktrees, retries,
+					resuming sessions, where state is kept. It has none about what's in
+					it. This is the <code>small</code> Workflow that ships with Vago,
+					minus comments and a few names. A work repo might add a required
+					check; a solo project might merge straight to <code>main</code>.
+				</p>
+			</div>
+			<div class="va-pane">
+				<div class="va-pane-title"><span class="b">┌─</span> <span class="a">.vago/workflows/small.toml</span></div>
+				{workflow.map((seg) => (
+					<div class={`va-seg ${seg.note ? "has-note" : ""}`}>
+						<pre><Fragment set:html={"\n" + seg.lines.join("\n")} /></pre>
+						{seg.note && <p class="va-note"><span class="a" aria-hidden="true">◂</span> <Fragment set:html={seg.note} /></p>}
+					</div>
+				))}
+			</div>
+		</div>
+
+		<div class="va-block">
+			<div class="va-intro">
+				<h3>Then you run it</h3>
+				<p>
+					The end of a real run: the Goal that added <code>before_all</code>
+					and <code>after_all</code> to Vago, six Tickets in a little over two
+					hours, for about $26.
+				</p>
+			</div>
+			<div class="va-pane">
+				<div class="va-pane-title"><span class="b">┌─</span> <span class="a">vago run</span></div>
+				{happy.map((seg) => (
+					<div class={`va-seg ${seg.note ? "has-note" : ""}`}>
+						<pre><Fragment set:html={"\n" + seg.lines.join("\n")} /></pre>
+						{seg.note && <p class="va-note"><span class="a" aria-hidden="true">◂</span> <Fragment set:html={seg.note} /></p>}
+					</div>
+				))}
+			</div>
+		</div>
+
+		<div class="va-block">
+			<div class="va-intro">
+				<h3>When a Step fails</h3>
+				<p>
+					Same output, worse night. The lines are in <code>vago run</code>'s
+					format; the retries are drawn for the example.
+				</p>
+			</div>
+			<div class="va-pane">
+				<div class="va-pane-title"><span class="b">┌─</span> <span class="a">vago run</span></div>
+				{failing.map((seg) => (
+					<div class={`va-seg ${seg.note ? "has-note" : ""} ${seg.tone === "limit" ? "is-limit" : ""}`}>
+						<pre><Fragment set:html={"\n" + seg.lines.join("\n")} /></pre>
+						{seg.note && <p class="va-note"><span class={seg.tone === "limit" ? "bad" : "a"} aria-hidden="true">◂</span> <Fragment set:html={seg.note} /></p>}
+					</div>
+				))}
+			</div>
+		</div>
+
+		<p class="va-done">Done.</p>
+	</section>
+</div>
+
+<style>
+	.va {
+		--bg: #161616;
+		--raised: #1b1b1b;
+		--fg: #d6d6d6;
+		--bright: #f0f0f0;
+		--grey: #7a7a7a;
+		--border: #5c5c5c;
+		--faint: #4a4a4a;
+		--accent: #ff8a3d;
+		--deep: #a8481a;
+		--ok: #8fae8b;
+		--bad: #e5736b;
+		--warn: #e0b357;
+		--mono: "JetBrains Mono", ui-monospace, monospace;
+		--sans: "Geist Variable", system-ui, sans-serif;
+
+		min-height: 100vh;
+		background: var(--bg);
+		color: var(--fg);
+		font-family: var(--mono);
+		font-size: 15px;
+		line-height: 1.5;
+		padding: 0 clamp(16px, 4vw, 56px) 96px;
+		overflow-x: clip;
+		box-sizing: border-box;
+	}
+	.va *, .va *::before, .va *::after { box-sizing: inherit; }
+	.va pre { margin: 0; font-family: var(--mono); }
+	.va code {
+		font-family: var(--mono);
+		font-size: 0.92em;
+		color: var(--bright);
+		background: var(--raised);
+		padding: 0.05em 0.3em;
+	}
+	.va a { color: inherit; }
+	.va a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+	.va .a { color: var(--accent); }
+	.va .b { color: var(--border); }
+	.va .d { color: var(--grey); }
+	.va .f { color: var(--faint); }
+	.va .fg { color: var(--fg); }
+	.va .ok { color: var(--ok); }
+	.va .bad { color: var(--bad); }
+	.va .warn { color: var(--warn); }
+	.va .p { color: var(--accent); }
+	.va .k { color: var(--fg); }
+	.va .s { color: var(--ok); }
+	.va .h { color: var(--bright); font-weight: 700; }
+	.va .sel { background: var(--deep); color: #fff; }
+	.va .sel span { color: #fff; }
+
+	/* The top line, as the TUI's header reads. */
+	.va-top {
+		display: flex;
+		justify-content: space-between;
+		gap: 16px;
+		padding: 14px 0;
+		font-size: 13px;
+		color: var(--grey);
+		border-bottom: 1px solid var(--faint);
+	}
+	.va-top > span { color: var(--bright); }
+	.va-top nav { display: flex; gap: 20px; }
+	.va-top nav a { text-decoration: none; color: var(--grey); }
+	.va-top nav a:hover { color: var(--bright); }
+	.va kbd {
+		font-family: var(--mono);
+		color: var(--bright);
+		margin-right: 0.4em;
+	}
+
+	.va-hero {
+		max-width: 1180px;
+		margin: 0 auto;
+		padding: clamp(56px, 10vw, 128px) 0 72px;
+	}
+	.va-hero h1 {
+		font-family: var(--mono);
+		font-weight: 700;
+		font-size: clamp(30px, 6.2vw, 76px);
+		line-height: 1.08;
+		letter-spacing: -0.035em;
+		color: var(--bright);
+		margin: 0 0 40px;
+	}
+	.va-cursor {
+		display: inline-block;
+		width: 0.55em;
+		height: 0.9em;
+		margin-left: 0.12em;
+		vertical-align: -0.06em;
+		background: var(--accent);
+		animation: va-blink 1.1s steps(1) infinite;
+	}
+	.va-nowrap { white-space: nowrap; }
+	@keyframes va-blink { 50% { opacity: 0; } }
+	@media (prefers-reduced-motion: reduce) { .va-cursor { animation: none; } }
+
+	.va-lede {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 32px;
+		max-width: 900px;
+		font-family: var(--sans);
+		font-size: 18px;
+		line-height: 1.6;
+	}
+	.va-lede p { margin: 0; }
+	.va-lede p:first-child { color: var(--bright); }
+	.va-limits {
+		margin: 28px 0 0;
+		font-size: 13px;
+		color: var(--grey);
+	}
+	.va-limits code { color: var(--fg); }
+
+	.va-tui { margin: 64px 0 0; }
+	.va-tui pre {
+		font-size: 13px;
+		line-height: 1.45;
+		overflow-x: auto;
+		padding: 20px 0;
+		color: var(--fg);
+	}
+	.va-tui figcaption {
+		margin-top: 8px;
+		font-family: var(--sans);
+		font-size: 14px;
+		color: var(--grey);
+	}
+
+	.va-how {
+		max-width: 1180px;
+		margin: 0 auto;
+		padding-top: 32px;
+	}
+	.va-how h2 {
+		display: flex;
+		align-items: center;
+		gap: 0.6em;
+		font-size: 15px;
+		font-weight: 400;
+		color: var(--accent);
+		margin: 0 0 40px;
+	}
+	.va-rule { flex: 1; height: 1px; background: var(--border); }
+
+	.va-flow {
+		list-style: none;
+		margin: 0 0 80px;
+		padding: 0;
+		display: grid;
+		grid-template-columns: repeat(5, minmax(0, 1fr));
+		border: 1px solid var(--border);
+	}
+	.va-flow li {
+		padding: 16px 18px;
+		color: var(--bright);
+		border-left: 1px solid var(--faint);
+		position: relative;
+	}
+	.va-flow li:first-child { border-left: 0; }
+	.va-flow li + li::before {
+		content: "─▸";
+		position: absolute;
+		left: -0.9em;
+		top: 16px;
+		color: var(--accent);
+		background: var(--bg);
+		font-size: 13px;
+	}
+	.va-flow small {
+		display: block;
+		font-family: var(--sans);
+		font-size: 13px;
+		color: var(--grey);
+		margin-top: 4px;
+	}
+
+	.va-block {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		gap: 20px;
+		margin-bottom: 88px;
+	}
+	.va-intro { max-width: 640px; }
+	.va-intro h3 {
+		font-size: 22px;
+		font-weight: 700;
+		letter-spacing: -0.02em;
+		color: var(--bright);
+		margin: 0 0 10px;
+	}
+	.va-intro p {
+		font-family: var(--sans);
+		font-size: 16px;
+		line-height: 1.6;
+		margin: 0;
+	}
+
+	.va-pane {
+		border: 1px solid var(--border);
+		background: var(--raised);
+		padding: 0 0 16px;
+	}
+	.va-pane-title {
+		font-size: 13px;
+		padding: 0 16px;
+		margin-top: -0.8em;
+	}
+	.va-pane-title > span { background: var(--bg); padding-right: 0.4em; }
+	.va-pane-title > span.b { padding-right: 0; }
+	.va-pane-title > .a { background: linear-gradient(var(--bg) 50%, var(--raised) 50%); }
+
+	/* A transcript line group and the note on it. */
+	.va-seg {
+		display: grid;
+		grid-template-columns: minmax(0, 96ch) minmax(240px, 340px);
+		column-gap: 24px;
+		padding: 0 16px;
+	}
+	.va-seg pre {
+		font-size: 13px;
+		line-height: 1.6;
+		overflow-x: auto;
+		min-width: 0;
+		scrollbar-width: none;
+		color: var(--fg);
+	}
+	.va-seg pre:empty { display: none; }
+	.va-seg.has-note pre { border-left: 2px solid transparent; }
+	.va-seg.has-note:hover pre,
+	.va-seg.has-note:focus-within pre { background: #232323; }
+	.va-note {
+		margin: 0;
+		padding: 2px 0 10px 14px;
+		border-left: 1px solid var(--faint);
+		font-family: var(--sans);
+		font-size: 14px;
+		line-height: 1.5;
+		color: var(--fg);
+		align-self: start;
+	}
+	.va-note code { font-size: 12.5px; }
+	.va-seg.is-limit .va-note { color: var(--bright); }
+
+	.va-done {
+		color: var(--grey);
+		margin: 0;
+	}
+
+	@media (max-width: 1000px) {
+		.va-seg { grid-template-columns: minmax(0, 1fr); }
+		.va-note {
+			padding: 6px 0 14px 12px;
+			border-left: 1px solid var(--faint);
+			margin: 4px 0 8px;
+		}
+		.va-note > span:first-child { display: none; }
+		.va-seg.is-limit .va-note { border-left-color: var(--bad); }
+	}
+	@media (max-width: 720px) {
+		.va { font-size: 14px; }
+		.va-lede { grid-template-columns: minmax(0, 1fr); gap: 16px; font-size: 17px; }
+		.va-top nav a:first-child { display: none; }
+		.va-flow { grid-template-columns: minmax(0, 1fr); }
+		.va-flow li { border-left: 0; border-top: 1px solid var(--faint); padding: 12px 16px; }
+		.va-flow li:first-child { border-top: 0; }
+		.va-flow li + li::before { content: none; }
+		.va-flow small { display: inline; margin: 0 0 0 0.8em; }
+		.va-seg { padding: 0 12px; }
+		.va-seg pre { font-size: 12px; }
+		.va-pane-title { padding: 0 12px; }
+	}
+</style>
