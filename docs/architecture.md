@@ -1,6 +1,6 @@
 # Architecture
 
-Vago Alpha's modules, what each one owns and hides, and the rules between them. The behaviour of each module is in the spec (`.scratch/vago-alpha/spec.md`, Implementation Decisions); this file covers boundaries only. A ticket that changes a boundary updates this file in the same PR.
+Vago Alpha's modules, what each one owns and hides, and the rules between them. The behaviour of each module is in the spec (`docs/spec.md`, Implementation Decisions); this file covers boundaries only. A ticket that changes a boundary updates this file in the same PR.
 
 ## Layout
 

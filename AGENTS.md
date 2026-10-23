@@ -29,7 +29,7 @@ The skills hold the rules for any language. These are Vago's own, on top of them
 - **Import cycles.** Biome's `noImportCycles` fails `bun run check` on one.
 - **Formatting** is Biome's defaults; `bun run check` fails on violations.
 - **Dependencies.** Allowed: `zod`, `smol-toml` (Bun can parse TOML but not write it), `@opentui/core`, `@opentui/solid` and `solid-js` for the TUI, pinned (ADR 0006), and dev-only `typescript`, `@biomejs/biome`, `@types/bun`. Anything else needs the human's OK. Commands are parsed by hand.
-- **Tests** go through the `vago` CLI seam the spec defines (`.scratch/vago-alpha/spec.md`, Testing Decisions), test-first with `/tdd`: exit code, stdout, Ticket files, logs. The TUI's views are Solid components, tested by rendering them from fixture `.vago-goals/` folders through OpenTUI's test renderer and checking the frame's text; build them with the `/tui-design` skill.
+- **Tests** go through the `vago` CLI seam the spec defines (`docs/spec.md`, Testing Decisions), test-first with `/tdd`: exit code, stdout, Ticket files, logs. The TUI's views are Solid components, tested by rendering them from fixture `.vago-goals/` folders through OpenTUI's test renderer and checking the frame's text; build them with the `/tui-design` skill.
 - **A TODO** carries a Ticket number.
 
 ## The installed `vago`

@@ -1,1 +1,0 @@
-Vago is a software factory you design yourself. Grill the plan with an agent, walk away, and Vago takes every Ticket through a Workflow you wrote: your Steps, your checks, Claude Code or Codex on each one (Pi is coming). It built itself that way: 15 Goals, 88 Tickets, 575 agent Runs.

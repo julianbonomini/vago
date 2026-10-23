@@ -1,6 +1,7 @@
 {
 	"name": "vago",
 	"type": "module",
+	"license": "MIT",
 	"private": true,
 	"bin": {
 		"vago": "src/cli.ts"
