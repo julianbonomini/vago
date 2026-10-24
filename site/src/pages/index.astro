@@ -1,23 +1,36 @@
 ---
-// A placeholder until the landing page is built: the page frame around the one-line pitch.
+// The landing page. Its hero: the one-line pitch beside what Vago does, then the live TUI replaying the
+// example Project across the first screen, there for the visitor to drive.
 import PageFrame from "../components/PageFrame.astro";
 import { repoUrl } from "../site.ts";
+import LiveTui from "../tui/LiveTui.astro";
 ---
 <PageFrame>
-	<section class="hero">
-		<h1>Set the Goal.<br />Go do something else.</h1>
-		<p>Vago runs your Workflow on a Goal in your repo, one Ticket at a time, and leaves you a PR.</p>
-		<a class="button" href={repoUrl}>Read it on GitHub</a>
+	<section class="hero" aria-labelledby="hero-title">
+		<div class="hero-copy">
+			<h1 id="hero-title">Set the Goal.<br />Go do something else.</h1>
+			<div class="hero-side">
+				<p>Vago runs your Workflow on a Goal in your repo, one Ticket at a time, and leaves you a PR.</p>
+				<a class="button" href={repoUrl}>Read it on GitHub</a>
+			</div>
+		</div>
+		<LiveTui id="hero-tui" />
 	</section>
 </PageFrame>
 
 <style>
 	.hero {
-		padding: var(--v-section) 0 0;
+		padding: 36px 0 0;
+	}
+	.hero-copy {
+		display: grid;
+		grid-template-columns: minmax(0, 7fr) minmax(0, 4fr);
+		gap: var(--v-gap);
+		align-items: end;
+		padding-bottom: 36px;
 	}
 	h1 {
 		margin: 0;
-		max-width: 12ch;
 		font-size: var(--v-fs-display);
 		line-height: var(--v-lh-display);
 		letter-spacing: var(--v-track-display);
@@ -25,21 +38,33 @@ import { repoUrl } from "../site.ts";
 		color: var(--v-bright);
 	}
 	p {
-		margin: 28px 0 32px;
-		max-width: 40ch;
-		font-size: 19px;
+		margin: 0 0 22px;
+		max-width: 34ch;
+		font-size: clamp(17px, 1.4vw, 20px);
+		line-height: 1.45;
 	}
 	.button {
 		display: inline-block;
-		padding: 12px 20px;
+		padding: 11px 22px;
 		border-radius: var(--v-radius);
 		background: var(--v-accent-fill);
 		color: var(--v-on-accent);
 		font-weight: 600;
 		text-decoration: none;
-		transition: background 0.15s;
+		transition:
+			background 0.15s,
+			transform 0.15s var(--v-ease);
 	}
 	.button:hover {
 		background: var(--v-accent-hover);
+	}
+	.button:active {
+		transform: scale(0.97);
+	}
+	@media (max-width: 860px) {
+		.hero-copy {
+			grid-template-columns: minmax(0, 1fr);
+			gap: 20px;
+		}
 	}
 </style>
