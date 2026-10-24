@@ -1,0 +1,449 @@
+---
+// PROTOTYPE, variant G (round 3): "The evening". The hero is one evening on
+// a track: you write the Goal, run it, go watch TV, and the scrubber drives
+// the LiveTui replay through it (g/EveningHero.astro, g/evening.ts). Then how
+// it works, your Workflow, honest limits and install, on variant D's tokens.
+import "../shared/tokens.css";
+import smallToml from "../samples/small.toml?raw";
+import EveningHero from "./g/EveningHero.astro";
+
+// Ticket 03 of the example Goal gift-cards, as the replay shows it.
+const steps = [
+	{ id: "New branch", type: "shell", took: "0.1s", cost: "" },
+	{ id: "Build", type: "agent", took: "9m12s", cost: "$0.86" },
+	{ id: "Checks", type: "shell", took: "1m38s", cost: "" },
+	{ id: "Review", type: "agent", took: "3m34s", cost: "$0.31" },
+	{ id: "Squash merge", type: "shell", took: "5.2s", cost: "" },
+];
+const tickets = [
+	"01-gift-card-codes",
+	"02-redeem-at-checkout",
+	"03-balance-page",
+	"04-staff-issue-cards",
+	"05-refunds-to-card",
+];
+const commits = [
+	["e19b3f2", "02 redeem at checkout"],
+	["7c41e0a", "01 gift card codes"],
+];
+
+// The starter's small Workflow without its comment block, one span per token.
+type TomlLine = { cls: string; text: string; tail: string };
+const tomlBlocks: TomlLine[][] = [];
+for (const raw of smallToml.split("\n")) {
+	if (raw.startsWith("#") || raw.trim() === "") continue;
+	const line = raw.replace(/\s+$/, "");
+	if (line.startsWith("[[")) {
+		tomlBlocks.push([{ cls: "k-h", text: line, tail: "" }]);
+		continue;
+	}
+	if (tomlBlocks.length === 0) tomlBlocks.push([]);
+	const hash = line.indexOf("  #");
+	const body = hash < 0 ? line : line.slice(0, hash);
+	const tail = hash < 0 ? "" : line.slice(hash);
+	tomlBlocks[tomlBlocks.length - 1]?.push({ cls: "k-kv", text: body, tail });
+}
+const splitKv = (s: string) => {
+	const eq = s.indexOf("=");
+	return eq < 0 ? [s, ""] : [s.slice(0, eq + 1), s.slice(eq + 1)];
+};
+---
+<div class="vago-page vg" data-theme="light">
+	<EveningHero />
+
+	<section class="vg-how vg-wrap" id="vg-how" aria-labelledby="vg-how-title">
+		<div class="vg-how-head" data-rise>
+			<h2 id="vg-how-title">What happened while you were out</h2>
+			<p class="vg-lede">
+				Each Ticket goes through your Workflow's Steps on its own branch and lands as one commit on the Goal's branch. The Goal becomes one PR. These are the evening's five parts, with Ticket 03 going through them.
+			</p>
+		</div>
+
+		<ol class="vg-pipe" data-pipe data-rise>
+			<span class="vg-rail" aria-hidden="true"><span class="vg-rail-fill" data-rail></span></span>
+			<li class="vg-stagecol">
+				<span class="vg-node" aria-hidden="true"></span>
+				<p class="vg-when">18:30</p>
+				<h3>Goal</h3>
+				<p>You write what you want, what's in scope and what's out.</p>
+				<pre class="vg-art"><span class="c-d">goal.md</span>
+<span class="c-x"># Customers can pay
+# with a gift card</span></pre>
+			</li>
+			<li class="vg-stagecol">
+				<span class="vg-node" aria-hidden="true"></span>
+				<p class="vg-when">18:47</p>
+				<h3>Tickets</h3>
+				<p>You split it, or plan them with an agent in the TUI.</p>
+				<pre class="vg-art">{tickets.map((t, i) => (
+					<span class="row" data-ticket={i === 2 ? "" : undefined}><span class={i < 2 ? "mk c-o" : "mk c-d"} data-mark>{i < 2 ? "✓" : "○"}</span> <span class={i === 2 ? "c-x" : ""}>{t}</span></span>
+				))}</pre>
+			</li>
+			<li class="vg-stagecol vg-stagecol-wide">
+				<span class="vg-node" aria-hidden="true"></span>
+				<p class="vg-when">19:19</p>
+				<h3>Steps</h3>
+				<p>Your Workflow. Some Steps run an agent, some a shell command.</p>
+				<pre class="vg-art">{steps.map((s, i) => (
+					<span class="row" data-step={i}><span class="mk c-o" data-mark>✓</span> {s.id.padEnd(13)}<span class="c-d">{s.type.padEnd(6)}</span><span class="meta c-d">{s.took.padStart(6)} {s.cost.padStart(5)}</span></span>
+				))}</pre>
+			</li>
+			<li class="vg-stagecol">
+				<span class="vg-node" aria-hidden="true"></span>
+				<p class="vg-when">19:34</p>
+				<h3>Commits</h3>
+				<p>One per Ticket, squash-merged onto <code>vago/gift-cards</code>.</p>
+				<pre class="vg-art"><span class="row vg-landed" data-landed><span class="c-a">a83d5c1</span> 03 balance page</span>{commits.map(([h, m]) => <span class="row"><span class="c-d">{h}</span> {m}</span>)}</pre>
+			</li>
+			<li class="vg-stagecol">
+				<span class="vg-node" aria-hidden="true"></span>
+				<p class="vg-when">20:12</p>
+				<h3>PR</h3>
+				<p>The Goal report becomes its description. You review it and merge.</p>
+				<pre class="vg-art"><span class="c-x">gift-cards #37</span>
+<span class="c-d">Workflow small</span>
+<span data-pr-count>5 of 5 Tickets</span>
+<span class="c-d">1h 20m, $5.74</span></pre>
+			</li>
+		</ol>
+
+		<aside class="vg-aside" data-rise aria-labelledby="vg-fail-title">
+			<h3 id="vg-fail-title">And when a Step fails</h3>
+			<p>
+				An agent Step resumes its own session and tries again, three times. When retries run out, the Ticket stops and waits for you. The next <code>vago run</code> picks it up at the Step that failed.
+			</p>
+		</aside>
+	</section>
+
+	<section class="vg-flow" id="vg-workflow" aria-labelledby="vg-flow-title">
+		<div class="vg-wrap vg-flow-grid">
+			<div class="vg-flow-copy" data-rise>
+				<h2 id="vg-flow-title">The Workflow is yours</h2>
+				<p>
+					A Workflow is a short TOML file in your Project: a list of Steps. Agent Steps run Claude Code or Codex with a prompt you wrote. Shell Steps run a command. This one is <code>small</code>, which gift-cards ran.
+				</p>
+				<p>
+					Vago has opinions about how a Workflow runs: worktrees, retries, resuming sessions, state. It has none about what's in it.
+				</p>
+				<dl class="vg-projects">
+					<div>
+						<dt>Your side project</dt>
+						<dd>Build, Checks, and straight onto <code>main</code>.</dd>
+					</div>
+					<div>
+						<dt>The repo at work</dt>
+						<dd>Reviews and the team's checks, then a PR like anyone else's.</dd>
+					</div>
+					<div>
+						<dt>Someone else's open source project</dt>
+						<dd>Their contributing rules. Nothing of yours lands in their repo.</dd>
+					</div>
+				</dl>
+				<p class="vg-self">Vago builds itself: most of its own repo came out of Goals run this way.</p>
+			</div>
+			<div class="vg-toml" data-ui data-rise>
+				<p class="vg-toml-name">.vago/workflows/small.toml</p>
+				<pre class="vg-toml-body"><code>{tomlBlocks.map((block) => (
+					<span class="blk">{block.map((l) => l.cls === "k-h" ? (
+						<span class="ln k-h">{l.text}</span>
+					) : (
+						<span class="ln"><span class="k-k">{splitKv(l.text)[0]}</span><span class="k-v">{splitKv(l.text)[1]}</span></span>
+					))}</span>
+				))}</code></pre>
+			</div>
+		</div>
+	</section>
+
+	<section class="vg-install vg-wrap" id="vg-install" aria-labelledby="vg-install-title">
+		<div class="vg-install-main" data-rise>
+			<h2 id="vg-install-title">Try it on a small Goal</h2>
+			<p>Clone it, build it with Bun, then set up a Project.</p>
+			<pre class="vg-code"><span class="c-d">$</span> git clone git@github.com:julianbonomini/vago.git
+<span class="c-d">$</span> cd vago && bun install && bun run reinstall
+<span class="c-d">$</span> cd ~/code/your-project && vago init
+<span class="c-d">$</span> vago goal new your-goal --workflow small
+<span class="c-d">$</span> vago run your-goal</pre>
+		</div>
+		<div class="vg-limits" data-rise>
+			<h3>What it doesn't do yet</h3>
+			<ul>
+				<li><b>It's an Alpha.</b> Past three retries, it's your turn.</li>
+				<li><b>One Ticket at a time.</b> Goals can run side by side, Tickets can't.</li>
+				<li><b>It needs</b> Bun to build, Claude Code or Codex, and <code>gh</code>.</li>
+				<li><b>It's a personal project,</b> under MIT.</li>
+			</ul>
+		</div>
+	</section>
+
+	<footer class="vg-foot">
+		<div class="vg-wrap">
+			<p class="vg-foot-line">Go watch TV. There'll be a PR when you're back.</p>
+			<p class="vg-foot-word" aria-hidden="true" data-rise>vago</p>
+			<div class="vg-foot-row">
+				<p><i>Vago</i>, Spanish for lazy. The example Project, acme-shop, is made up.</p>
+				<nav aria-label="Footer">
+					<a href="#">Docs</a>
+					<a href="#">GitHub</a>
+					<a href="#">MIT licence</a>
+				</nav>
+			</div>
+		</div>
+	</footer>
+</div>
+
+<script>
+	// The pipeline plays Ticket 03 through it while it's on screen.
+	const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+	for (const pipe of document.querySelectorAll<HTMLElement>(".vg [data-pipe]")) {
+		if (reduce) continue;
+		const stages = [...pipe.querySelectorAll<HTMLElement>(".vg-stagecol")];
+		const rail = pipe.querySelector<HTMLElement>("[data-rail]");
+		const stepRows = [...pipe.querySelectorAll<HTMLElement>("[data-step]")];
+		const ticket = pipe.querySelector<HTMLElement>("[data-ticket] [data-mark]");
+		const landed = pipe.querySelector<HTMLElement>("[data-landed]");
+		const count = pipe.querySelector<HTMLElement>("[data-pr-count]");
+		const CYCLE = 14;
+		const stageAt = [0, 1.2, 2.4, 9, 10.4];
+		const stepAt = (i: number) => 2.6 + i * 1.25;
+		let t = 0;
+		let timer = 0;
+		const set = (el: Element | null | undefined, mark: string, cls: string) => {
+			if (!el) return;
+			el.textContent = mark;
+			el.className = `mk ${cls}`;
+		};
+		function tick() {
+			t = (t + 0.1) % CYCLE;
+			const lit = stageAt.filter((s) => t >= s).length;
+			stages.forEach((s, i) => s.classList.toggle("is-lit", i < lit));
+			rail?.style.setProperty("--f", String(Math.max(0, lit - 1) / 4));
+			stepRows.forEach((row, i) => {
+				const a = stepAt(i);
+				const state = t < a ? "pend" : t < a + 1.25 ? "cur" : "done";
+				row.dataset.state = state;
+				const mark = row.querySelector("[data-mark]");
+				if (state === "pend") set(mark, "·", "c-d");
+				else if (state === "cur") set(mark, "●", "c-a");
+				else set(mark, "✓", "c-o");
+			});
+			const done = t >= stageAt[3];
+			if (t < 1.2) set(ticket, "○", "c-d");
+			else if (!done) set(ticket, "●", "c-a");
+			else set(ticket, "✓", "c-o");
+			landed?.classList.toggle("is-in", done);
+			if (count) count.textContent = t >= stageAt[4] ? "5 of 5 Tickets" : "2 of 5 Tickets";
+		}
+		new IntersectionObserver(
+			(es) => {
+				clearInterval(timer);
+				if (es.some((e) => e.isIntersecting)) {
+					pipe.classList.add("is-on");
+					timer = window.setInterval(tick, 100);
+				}
+			},
+			{ threshold: 0.2 },
+		).observe(pipe);
+	}
+
+	// Sections rise in, part by part, once.
+	if (!reduce) {
+		const parts = document.querySelectorAll<HTMLElement>(".vg [data-rise]");
+		const io = new IntersectionObserver(
+			(es) => {
+				for (const e of es) {
+					if (!e.isIntersecting) continue;
+					(e.target as HTMLElement).classList.add("is-in");
+					io.unobserve(e.target);
+				}
+			},
+			{ threshold: 0.15 },
+		);
+		for (const p of parts) {
+			p.classList.add("will-rise");
+			io.observe(p);
+		}
+	}
+</script>
+
+<style is:global>
+	.vg { min-height: 100vh; }
+	.vg a { color: inherit; }
+	.vg code { font-family: var(--v-mono); font-size: 0.86em; color: var(--v-bright); }
+	.vg button { font: inherit; }
+	.vg .c-d { color: var(--v-grey); }
+	.vg .c-x { color: var(--v-bright); }
+	.vg .c-a { color: var(--v-accent); }
+	.vg .c-o { color: var(--v-ok); }
+	.vg-wrap { max-width: var(--v-max); margin-left: auto; margin-right: auto; padding-left: var(--v-gutter); padding-right: var(--v-gutter); }
+
+	.vg-btn {
+		display: inline-block;
+		background: var(--v-accent-fill);
+		text-decoration: none;
+		font-weight: 600;
+		padding: 11px 22px;
+		border-radius: var(--v-radius);
+		transition: transform 0.15s var(--v-ease), background 0.15s;
+	}
+	.vg .vg-btn { color: var(--v-on-accent); }
+	.vg-btn-small { padding: 7px 14px; font-size: 14px; }
+	.vg-btn:hover { background: var(--v-accent-hover); }
+	.vg-btn:active { transform: scale(0.97); }
+	.vg-link { text-decoration: none; border-bottom: 2px solid var(--v-accent-fill); padding-bottom: 1px; transition: color 0.15s; }
+	.vg-link:hover { color: var(--v-accent); }
+	.vg a:focus-visible, .vg button:focus-visible { outline: 2px solid var(--v-accent); outline-offset: 3px; }
+
+	.vg h2 {
+		font-size: var(--v-fs-h2);
+		letter-spacing: var(--v-track-h2);
+		line-height: 1.04;
+		font-weight: var(--v-weight-head);
+		color: var(--v-bright);
+		margin: 0;
+	}
+	.vg h3 { margin: 0; font-size: var(--v-fs-h3); font-weight: 600; color: var(--v-bright); letter-spacing: -0.01em; }
+
+	/* How it works */
+	.vg-how { padding-top: var(--v-section); padding-bottom: var(--v-section); }
+	.vg-how-head { display: grid; grid-template-columns: minmax(0, 6fr) minmax(0, 5fr); gap: var(--v-gap); align-items: end; }
+	.vg-lede { margin: 0; max-width: 52ch; }
+	.vg-pipe {
+		position: relative;
+		list-style: none;
+		margin: 72px 0 0;
+		padding: 0;
+		display: grid;
+		grid-template-columns: 0.95fr 1.15fr 1.45fr 1.15fr 0.95fr;
+	}
+	.vg-rail { position: absolute; left: 0; right: 0; top: 0; height: 2px; background: var(--v-line); }
+	.vg-rail-fill { position: absolute; inset: 0; background: var(--v-accent-fill); transform-origin: left; transform: scaleX(var(--f, 1)); transition: transform 0.6s var(--v-ease); }
+	.vg-stagecol { position: relative; padding: 30px 22px 0 0; min-width: 0; }
+	.vg-node {
+		position: absolute;
+		top: -5px;
+		left: 0;
+		width: 12px;
+		height: 12px;
+		border-radius: 50%;
+		background: var(--v-accent-fill);
+		transition: background 0.3s, transform 0.3s var(--v-ease);
+	}
+	.vg-pipe.is-on .vg-stagecol:not(.is-lit) .vg-node { background: var(--v-line-strong); transform: scale(0.75); }
+	.vg-when { margin: 0 0 4px; font-size: 14px; font-weight: 600; color: var(--v-accent); font-variant-numeric: tabular-nums; }
+	.vg-stagecol > p:not(.vg-when) { margin: 6px 0 18px; font-size: 15px; color: var(--v-fg); line-height: 1.5; max-width: 30ch; }
+	.vg-art {
+		margin: 0;
+		font-family: var(--v-mono);
+		font-size: var(--v-fs-code);
+		line-height: 1.6;
+		color: var(--v-fg);
+		white-space: pre;
+		overflow-x: auto;
+	}
+	.vg-art .row { display: block; border-radius: 2px; margin-left: -4px; padding-left: 4px; transition: background 0.2s; }
+	.vg-art .row[data-state="cur"] { background: var(--v-row-hot); }
+	.vg-art .row[data-state="pend"] .meta { opacity: 0; }
+	.vg-pipe.is-on .vg-landed { opacity: 0; transform: translateY(-6px); transition: opacity 0.4s, transform 0.5s var(--v-ease); }
+	.vg-pipe.is-on .vg-landed.is-in { opacity: 1; transform: none; }
+
+	.vg-aside {
+		margin: 96px 0 0 auto;
+		max-width: 620px;
+		background: var(--v-raised);
+		padding: 26px 30px;
+		border-radius: var(--v-radius-lg);
+	}
+	.vg-aside p { margin: 8px 0 0; }
+
+	/* The Workflow */
+	.vg-flow { background: var(--v-raised); padding: var(--v-section) 0; }
+	.vg-flow-grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: clamp(40px, 5vw, 80px); align-items: start; }
+	.vg-flow-copy > p { margin: 20px 0 0; max-width: 46ch; }
+	.vg-projects { margin: 36px 0 0; display: grid; gap: 18px; }
+	.vg-projects dt { font-weight: 600; color: var(--v-bright); }
+	.vg-projects dd { margin: 2px 0 0; }
+	.vg-self { color: var(--v-grey); }
+	.vg-toml { background: var(--v-t-bg); color: var(--v-t-fg); border-radius: var(--v-radius-lg); padding: 22px 26px 26px; box-shadow: var(--v-t-shadow); min-width: 0; }
+	.vg-toml-name { margin: 0 0 16px; font-family: var(--v-mono); font-size: 12.5px; color: var(--v-t-grey); }
+	.vg-toml-body { margin: 0; font-family: var(--v-mono); font-size: 13px; line-height: 1.6; columns: 2; column-gap: 36px; overflow-x: auto; }
+	.vg-toml-body code { color: inherit; font-size: inherit; }
+	.vg-toml .blk { display: block; break-inside: avoid; margin-bottom: 1.1em; }
+	.vg-toml .ln { display: block; white-space: pre; }
+	.vg-toml .k-h { color: var(--v-accent-fill); }
+	.vg-toml .k-k { color: var(--v-t-grey); }
+	.vg-toml .k-v { color: var(--v-t-bright); }
+	.vg-toml .k-c { color: var(--v-t-grey); }
+
+	/* Install */
+	.vg-install {
+		padding-top: var(--v-section);
+		padding-bottom: var(--v-section);
+		display: grid;
+		grid-template-columns: minmax(0, 7fr) minmax(0, 4fr);
+		gap: clamp(40px, 5vw, 80px);
+		align-items: start;
+	}
+	.vg-install-main > p { margin: 16px 0 0; }
+	.vg-code {
+		margin: 26px 0 0;
+		font-family: var(--v-mono);
+		font-size: 14px;
+		line-height: 1.85;
+		background: var(--v-t-bg);
+		color: var(--v-t-fg);
+		padding: 20px 24px;
+		border-radius: var(--v-radius-lg);
+		overflow-x: auto;
+	}
+	.vg-code .c-d { color: var(--v-t-grey); }
+	.vg-limits { padding-top: 10px; }
+	.vg-limits ul { list-style: none; margin: 18px 0 0; padding: 0; display: grid; gap: 14px; }
+	.vg-limits b { color: var(--v-bright); font-weight: 600; }
+
+	/* Footer */
+	.vg-foot { background: var(--v-t-bg); color: var(--v-t-fg); padding: 96px 0 36px; overflow: hidden; }
+	.vg-foot-line { margin: 0; font-size: clamp(22px, 2.4vw, 32px); letter-spacing: -0.02em; font-weight: 500; max-width: 26ch; }
+	.vg-foot-word {
+		margin: 40px 0 0;
+		font-family: var(--v-mono);
+		font-weight: 700;
+		font-size: clamp(120px, 37vw, 540px);
+		line-height: 0.8;
+		letter-spacing: -0.07em;
+		color: var(--v-accent-fill);
+	}
+	.vg-foot-row { display: flex; justify-content: space-between; align-items: baseline; gap: 24px; margin-top: 64px; font-size: 15px; flex-wrap: wrap; }
+	.vg-foot-row p { margin: 0; }
+	.vg-foot-row nav { display: flex; gap: 22px; }
+	.vg-foot-row a { text-decoration: none; border-bottom: 1px solid currentColor; }
+	.vg-foot a:focus-visible { outline-color: var(--v-accent-fill); }
+
+	.vg [data-rise].will-rise { opacity: 0; transform: translateY(22px); transition: opacity 0.7s var(--v-ease), transform 0.8s var(--v-ease); }
+	.vg [data-rise].will-rise.is-in { opacity: 1; transform: none; }
+	.vg-toml.will-rise, .vg-limits.will-rise { transition-delay: 0.09s; }
+	.vg-pipe.will-rise { transition-delay: 0.08s; }
+
+	@media (max-width: 1023px) {
+		.vg-how-head { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+		.vg-pipe { grid-template-columns: minmax(0, 1fr); margin-top: 48px; }
+		.vg-rail { top: 0; bottom: 0; left: 0; right: auto; width: 2px; height: auto; }
+		.vg-rail-fill { transform-origin: top; transform: scaleY(var(--f, 1)); }
+		.vg-stagecol { padding: 0 0 40px 30px; }
+		.vg-stagecol:last-child { padding-bottom: 0; }
+		.vg-node { top: 4px; left: -5px; }
+		.vg-stagecol > p:not(.vg-when) { max-width: 46ch; }
+		.vg-aside { margin-top: 64px; max-width: none; }
+		.vg-flow-grid, .vg-install { grid-template-columns: minmax(0, 1fr); }
+	}
+	@media (max-width: 640px) {
+		.vg-aside { padding: 20px; }
+		.vg-toml { padding: 16px; }
+		.vg-toml-body { columns: 1; font-size: 11.5px; }
+		.vg-code { font-size: 11px; padding: 16px; }
+		.vg-foot { padding-top: 72px; }
+		.vg-foot-row { flex-direction: column; }
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.vg, .vg * { transition: none !important; }
+	}
+</style>

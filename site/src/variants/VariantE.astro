@@ -1,0 +1,716 @@
+---
+// PROTOTYPE, variant E (round 3), "screen-first": the live TUI is the hero
+// and fills the first screen. Scrolling pulls the camera back until the TUI
+// settles on the right, then a spotlight walks its panes while the column
+// beside it names each one. The rest of the page follows: what it's for, the
+// pipeline lit by scroll, the Workflow file lit by a second TUI, a small
+// failure aside, install, and a footer.
+import "../shared/tokens.css";
+import LiveTui from "../shared/LiveTui.astro";
+import ThemeToggle from "../shared/ThemeToggle.astro";
+import { workflowBlocks } from "./e/workflow.ts";
+
+const github = "https://github.com/julianbonomini/vago";
+
+const parts = [
+	{ name: "Goals", text: "Every Goal in the Project, with its Tickets done, what it has cost and what it's on now." },
+	{ name: "Tickets", text: "Open a Goal and its Tickets run top to bottom. Here 03 is on Build." },
+	{ name: "Ticket", text: "The running Ticket: what to build, and the Steps your Workflow gives it." },
+	{ name: "Runs", text: "Each time a Step runs is a Run, with its time and cost. A retry is another Run." },
+	{ name: "Run activity", text: "What the agent is doing in the live Run: files it writes, tests it runs, what it says." },
+];
+const keys = [
+	["ArrowUp", "↑"],
+	["ArrowDown", "↓"],
+	["Enter", "Enter"],
+	["Escape", "Esc"],
+	["[", "["],
+	["]", "]"],
+	["Tab", "Tab"],
+	["?", "?"],
+];
+
+// Ticket 03 of the example Goal gift-cards, as the replay shows it.
+const steps = [
+	{ id: "New branch", type: "shell", took: "0.1s", cost: "" },
+	{ id: "Build", type: "agent", took: "9m12s", cost: "$0.86" },
+	{ id: "Checks", type: "shell", took: "1m38s", cost: "" },
+	{ id: "Review", type: "agent", took: "3m34s", cost: "$0.31" },
+	{ id: "Squash merge", type: "shell", took: "5.2s", cost: "" },
+];
+const tickets = ["01-gift-card-codes", "02-redeem-at-checkout", "03-balance-page", "04-staff-issue-cards", "05-refunds-to-card"];
+const commits = [
+	["7c41e0a", "02 redeem at checkout"],
+	["e19b3f2", "01 gift card codes"],
+];
+---
+<div class="vago-page ve" data-theme="light">
+	<header class="ve-nav">
+		<a class="ve-word" href="#">vago</a>
+		<nav aria-label="Main">
+			<a href="#ve-how">How it works</a>
+			<a href="#ve-workflow">Workflow</a>
+			<a href="#ve-install">Install</a>
+			<a href={github}>GitHub</a>
+			<ThemeToggle />
+		</nav>
+	</header>
+
+	<section class="ve-stage" data-stage aria-labelledby="ve-title">
+		<div class="ve-sticky">
+			<div class="ve-copy">
+				<h1 id="ve-title">Set the Goal.<br />Go do something else.</h1>
+				<div class="ve-copy-side">
+					<p class="ve-sub">Vago runs your Workflow on a Goal in your repo, one Ticket at a time, and leaves you a PR.</p>
+					<div class="ve-ctas">
+						<a class="ve-btn" href="#ve-install">Install</a>
+						<a class="ve-link" href="#ve-how">How it works</a>
+					</div>
+				</div>
+			</div>
+
+			<div class="ve-slot" data-slot>
+				<LiveTui id="ve-tui" class="ve-tui" keys={false} controls={false} caption={false} />
+			</div>
+
+			<div class="ve-side" data-side>
+				<h2>One screen for every Goal</h2>
+				<p class="ve-side-note">A replay of Vago's TUI on an example Project, acme-shop. Nothing here is running.</p>
+				<ul class="ve-parts">
+					{parts.map((p, i) => (
+						<li>
+							<button type="button" class="ve-part" data-part={i} aria-pressed="false">
+								<span class="ve-part-name">{p.name}</span>
+								<span class="ve-part-text"><span>{p.text}</span></span>
+							</button>
+						</li>
+					))}
+				</ul>
+				<div class="ve-keys">
+					<p>Or drive it yourself. Click the screen and use its keys, or these.</p>
+					<div class="ve-keyrow" role="group" aria-label="Keys for the TUI">
+						{keys.map(([k, label]) => <button type="button" class="ve-key" data-press={k}>{label}</button>)}
+					</div>
+				</div>
+			</div>
+		</div>
+	</section>
+
+	<section class="ve-for" aria-labelledby="ve-for-h">
+		<div class="ve-for-lead" data-rise>
+			<h2 id="ve-for-h">Stop babysitting your agents</h2>
+			<p class="ve-statement">
+				You already know how agents should work on your code. You've got the skills, the prompts and the checks. What's left is the sitting: correcting a session, rebriefing the next one when the context fills up, fixing small things by hand.
+			</p>
+			<p class="ve-for-proof">Vago builds itself. Most of its own repo came out of Goals run through it.</p>
+		</div>
+		<div class="ve-split" data-rise>
+			<div class="ve-split-col">
+				<h3>You</h3>
+				<ul>
+					<li>Write the Goal: what you want, what's in scope, what's out.</li>
+					<li>Split it into Tickets, or plan them with an agent in the TUI.</li>
+					<li>Pick the Workflow.</li>
+					<li>Go do something else.</li>
+					<li>Review the PR and merge it.</li>
+				</ul>
+			</div>
+			<div class="ve-split-col ve-split-away">
+				<h3>While you're away</h3>
+				<ul>
+					<li>The Goal gets its own worktree on <code>vago/gift-cards</code>.</li>
+					<li>Each Ticket goes through the Workflow's Steps on a branch of its own.</li>
+					<li>A failed agent Step resumes its session and tries again.</li>
+					<li>Each Ticket lands as one commit.</li>
+					<li>The Goal report becomes the PR description.</li>
+				</ul>
+			</div>
+		</div>
+	</section>
+
+	<section class="ve-how" id="ve-how" aria-labelledby="ve-how-h">
+		<div class="ve-how-in">
+			<div class="ve-how-head" data-rise>
+				<h2 id="ve-how-h">What happens after you leave</h2>
+				<p>
+					Each Ticket goes through your Workflow's Steps on its own branch and lands as one commit on the Goal's branch. The Goal becomes one PR. Scroll, and Ticket 03 of gift-cards goes through.
+				</p>
+			</div>
+
+			<ol class="ve-pipe" data-pipe>
+				<span class="ve-rail" aria-hidden="true"><span class="ve-rail-fill"></span></span>
+				<li class="ve-stage-i is-lit" data-stage-i>
+					<span class="ve-node" aria-hidden="true"></span>
+					<h3>Goal</h3>
+					<p>You write what you want, what's in scope and what's out.</p>
+					<pre class="ve-art"><span class="row c-d">goal.md</span><span class="row c-x"># Customers can pay</span><span class="row c-x"># with a gift card</span></pre>
+				</li>
+				<li class="ve-stage-i is-lit" data-stage-i>
+					<span class="ve-node" aria-hidden="true"></span>
+					<h3>Tickets</h3>
+					<p>You split it, or plan them with an agent in the TUI.</p>
+					<pre class="ve-art">{tickets.map((t, i) => (
+						<span class="row">{i === 2 ? (
+							<span class="mark" data-t03 data-state="done"><span class="m-pend c-d">○</span><span class="m-cur c-a">●</span><span class="m-done c-o">✓</span></span>
+						) : (
+							<span class={i < 2 ? "c-o" : "c-d"}>{i < 2 ? "✓" : "○"}</span>
+						)} <span class={i === 2 ? "c-x" : ""}>{t}</span></span>
+					))}</pre>
+				</li>
+				<li class="ve-stage-i ve-stage-wide is-lit" data-stage-i>
+					<span class="ve-node" aria-hidden="true"></span>
+					<h3>Steps</h3>
+					<p>Your Workflow. Some Steps run an agent, some a shell command.</p>
+					<pre class="ve-art">{steps.map((s, i) => (
+						<span class="row" data-step={i} data-state="done"><span class="mark"><span class="m-pend c-d">·</span><span class="m-cur c-a">●</span><span class="m-done c-o">✓</span></span> {s.id.padEnd(13)}<span class="c-d">{s.type.padEnd(6)}</span><span class="meta c-d">{s.took.padStart(6)} {s.cost.padStart(5)}</span></span>
+					))}</pre>
+				</li>
+				<li class="ve-stage-i is-lit" data-stage-i>
+					<span class="ve-node" aria-hidden="true"></span>
+					<h3>Commits</h3>
+					<p>One per Ticket, squash-merged onto <code>vago/gift-cards</code>.</p>
+					<pre class="ve-art"><span class="row ve-landed" data-landed data-state="done"><span class="c-a">a83d5c1</span> 03 balance page</span>{commits.map(([h, m]) => <span class="row"><span class="c-d">{h}</span> {m}</span>)}</pre>
+				</li>
+				<li class="ve-stage-i is-lit" data-stage-i>
+					<span class="ve-node" aria-hidden="true"></span>
+					<h3>PR</h3>
+					<p>The Goal report is its description, rewritten after every Ticket.</p>
+					<pre class="ve-art" data-pr data-state="done"><span class="row c-x">gift-cards #37</span><span class="row c-d">Workflow small</span><span class="row"><span class="swap"><span class="v-old">2 of 5 Tickets</span><span class="v-new">3 of 5 Tickets</span></span></span><span class="row"><span class="swap"><span class="v-old">33m, $2.01</span><span class="v-new">48m, $3.18</span></span></span></pre>
+				</li>
+			</ol>
+			<p class="ve-limit">One Ticket at a time, for now. Goals can run side by side; the Tickets of one Goal can't.</p>
+		</div>
+	</section>
+
+	<section class="ve-wf" id="ve-workflow" aria-labelledby="ve-wf-h">
+		<div class="ve-wf-head" data-rise>
+			<h2 id="ve-wf-h">Your Workflow is a short file</h2>
+			<div class="ve-wf-text">
+				<p>
+					Vago has opinions about how a Workflow runs: worktrees, retries, resumed sessions, state. It has none about what the Workflow is. That's yours, per Project, in <code>.vago/workflows/</code>.
+				</p>
+				<p>
+					A solo project can commit straight to <code>main</code>. A work repo can wait for reviews and checks. An open source contribution can follow that project's rules, and nothing personal has to land in its repo.
+				</p>
+			</div>
+		</div>
+
+		<div class="ve-wf-body">
+			<div class="ve-file-wrap" data-rise>
+				<p class="ve-file-name"><code>.vago/workflows/small.toml</code>, one of the starter Workflows, without its comments</p>
+				<pre class="ve-file" data-file aria-label="The small Workflow">{workflowBlocks.map((b) => (
+					<span class={`blk blk-${b.kind}`} data-block={b.step || undefined} data-state={b.kind === "step" ? "pend" : undefined}>{b.lines.map((l) => <span class="ln">{l}</span>)}{b.kind === "skip" && <span class="ln c-d"># skipped: 03 isn't the Goal's last Ticket</span>}</span>
+				))}</pre>
+			</div>
+			<div class="ve-wf-tui">
+				<div class="ve-wf-sticky">
+					<p class="ve-now" aria-live="polite"><span class="ve-now-dot" aria-hidden="true"></span><span data-now>gift-cards, Ticket 03</span></p>
+					<LiveTui id="ve-flow-tui" class="ve-flow-tui" moment="ticket-steps" tour={false} keys={false} caption={false} />
+					<aside class="ve-fail" aria-labelledby="ve-fail-h">
+						<h3 id="ve-fail-h">When a Step fails</h3>
+						<p>
+							A failed agent Step resumes its own session and tries again after 1, 1 and 5 minutes. When those run out, the Ticket goes stuck and waits for you. Fix what you need and <code>vago run</code> again: it picks up at the Step that failed, on the same branch. A run that crashed is picked up the same way.
+						</p>
+						<button type="button" class="ve-text-btn" data-show-stuck aria-pressed="false">Show the stuck Goal in the TUI</button>
+					</aside>
+				</div>
+			</div>
+		</div>
+	</section>
+
+	<section class="ve-install" id="ve-install" aria-labelledby="ve-install-h">
+		<h2 id="ve-install-h" data-rise>Try it on a small Goal</h2>
+		<div class="ve-install-grid" data-rise>
+			<div>
+				<h3>Install</h3>
+				<pre class="ve-code"><span class="ln"><span class="c-d">$</span> git clone git@github.com:julianbonomini/vago.git</span><span class="ln"><span class="c-d">$</span> cd vago && bun install && bun run reinstall</span><span class="ln"><span class="c-d">$</span> cd ~/code/your-project && vago init</span></pre>
+				<p class="ve-install-note"><code>reinstall</code> builds <code>vago</code> into <code>~/.local/bin</code>. <code>init</code> copies the starter Workflows, prompts and scripts into <code>.vago/</code>.</p>
+			</div>
+			<div>
+				<h3>First Goal</h3>
+				<pre class="ve-code"><span class="ln"><span class="c-d">$</span> vago goal new search --workflow small --body-file goal.md</span><span class="ln"><span class="c-d">$</span> vago ticket add search index --body-file index.md</span><span class="ln"><span class="c-d">$</span> vago run search</span></pre>
+				<p class="ve-install-note">Then run <code>vago</code> on its own to watch it, and go do something else.</p>
+			</div>
+		</div>
+		<ul class="ve-limits" data-rise>
+			<li>It's an Alpha. When the retries run out, it's your turn.</li>
+			<li>You need Bun to build it, Claude Code or Codex to run agent Steps, and <code>gh</code> for the PR.</li>
+			<li>The starter Workflows are the ones I use. Change them, or write your own.</li>
+		</ul>
+	</section>
+
+	<footer class="ve-foot">
+		<div class="ve-foot-row">
+			<p><i>Vago</i> is Spanish for lazy. You're the lazy one. A personal project, MIT licensed.</p>
+			<nav aria-label="Footer">
+				<a href={github}>GitHub</a>
+				<a href="#">Docs</a>
+				<a href={`${github}/blob/main/LICENSE`}>License</a>
+				<ThemeToggle />
+			</nav>
+		</div>
+		<p class="ve-foot-word" aria-hidden="true">vago</p>
+	</footer>
+</div>
+
+<script>
+	import { mountVariantE } from "./e/page.ts";
+	const root = document.querySelector<HTMLElement>(".ve");
+	if (root) mountVariantE(root);
+</script>
+
+<style is:global>
+	.ve { min-height: 100vh; --ve-max: 1600px; }
+	@media (min-width: 1000px) { .ve { --v-gutter: 40px; } }
+	.ve a { color: inherit; }
+	.ve code { font-family: var(--v-mono); font-size: 0.86em; color: var(--v-bright); }
+	.ve button { font: inherit; color: inherit; }
+	.ve h2 {
+		font-size: var(--v-fs-h2);
+		letter-spacing: var(--v-track-h2);
+		line-height: 1.04;
+		font-weight: var(--v-weight-head);
+		color: var(--v-bright);
+		margin: 0;
+	}
+	.ve h3 { margin: 0; font-size: var(--v-fs-h3); font-weight: 600; color: var(--v-bright); letter-spacing: -0.01em; }
+	.ve .c-d { color: var(--v-grey); }
+	.ve .c-x { color: var(--v-bright); }
+	.ve .c-a { color: var(--v-accent); }
+	.ve .c-o { color: var(--v-ok); }
+	.ve :focus-visible { outline: 2px solid var(--v-accent); outline-offset: 3px; }
+
+	/* Nav */
+	.ve-nav {
+		max-width: var(--ve-max);
+		margin: 0 auto;
+		padding: 20px var(--v-gutter);
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 16px;
+		position: relative;
+		z-index: 2;
+	}
+	.ve-word { font-family: var(--v-mono); font-weight: 700; color: var(--v-bright); letter-spacing: -0.02em; text-decoration: none; font-size: 20px; }
+	.ve-nav nav { display: flex; gap: 26px; font-size: 15px; align-items: center; }
+	.ve-nav nav a { text-decoration: none; color: var(--v-fg); transition: color 0.15s; }
+	.ve-nav nav a:hover { color: var(--v-accent); }
+
+	/* Hero stage: by default a plain layout; .is-pinned makes it the pull-back. */
+	.ve-sticky {
+		max-width: var(--ve-max);
+		margin: 0 auto;
+		padding: 16px var(--v-gutter) 0;
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		grid-template-areas: "copy" "slot" "side";
+	}
+	.ve-copy {
+		grid-area: copy;
+		display: grid;
+		grid-template-columns: minmax(0, 7fr) minmax(0, 4fr);
+		gap: var(--v-gap);
+		align-items: end;
+		padding-bottom: 36px;
+	}
+	.ve h1 {
+		font-size: var(--v-fs-display);
+		line-height: var(--v-lh-display);
+		letter-spacing: var(--v-track-display);
+		font-weight: var(--v-weight-head);
+		color: var(--v-bright);
+		margin: 0;
+	}
+	.ve-sub { font-size: clamp(17px, 1.4vw, 20px); color: var(--v-fg); margin: 0; max-width: 34ch; line-height: 1.45; }
+	.ve-ctas { display: flex; gap: 26px; align-items: center; margin-top: 22px; }
+	.ve-btn {
+		background: var(--v-accent-fill);
+		text-decoration: none;
+		font-weight: 600;
+		padding: 11px 22px;
+		border-radius: var(--v-radius);
+		transition: transform 0.15s var(--v-ease), background 0.15s;
+	}
+	.ve .ve-btn { color: var(--v-on-accent); }
+	.ve-btn:hover { background: var(--v-accent-hover); }
+	.ve-btn:active { transform: scale(0.97); }
+	.ve-link { text-decoration: none; border-bottom: 1px solid var(--v-line-strong); padding-bottom: 2px; transition: border-color 0.15s; }
+	.ve-link:hover { border-color: var(--v-accent); }
+
+	.ve-slot { grid-area: slot; min-width: 0; transform-origin: 100% 0; }
+	.ve-side { grid-area: side; display: flex; flex-direction: column; padding-top: 40px; }
+	.ve-side h2 { font-size: clamp(26px, 2.4vw, 34px); }
+	.ve-side-note { margin: 10px 0 0; font-size: var(--v-fs-small); color: var(--v-grey); max-width: 44ch; }
+
+	.ve-parts { list-style: none; margin: 22px 0 0; padding: 0; display: grid; gap: 2px; }
+	.ve-part {
+		all: unset;
+		box-sizing: border-box;
+		cursor: pointer;
+		display: block;
+		width: 100%;
+		padding: 10px 14px 10px 16px;
+		border-radius: var(--v-radius);
+		position: relative;
+		transition: background 0.25s var(--v-ease);
+	}
+	.ve-part::before {
+		content: "";
+		position: absolute;
+		left: 0;
+		top: 12px;
+		bottom: 12px;
+		width: 3px;
+		border-radius: 2px;
+		background: var(--v-accent-fill);
+		transform: scaleY(0);
+		transition: transform 0.35s var(--v-ease);
+	}
+	.ve-part:hover { background: var(--v-raised); }
+	.ve-part-name { display: block; font-weight: 600; color: var(--v-grey); font-size: 17px; transition: color 0.2s; }
+	.ve-part-text {
+		display: grid;
+		grid-template-rows: 0fr;
+		font-size: 15px;
+		line-height: 1.45;
+		color: var(--v-fg);
+		opacity: 0;
+		transition: grid-template-rows 0.4s var(--v-ease), opacity 0.3s, margin 0.4s var(--v-ease);
+	}
+	.ve-part-text > span { overflow: hidden; min-height: 0; }
+	.ve-part.is-on { background: var(--v-raised); }
+	.ve-part.is-on::before { transform: scaleY(1); }
+	.ve-part.is-on .ve-part-name { color: var(--v-bright); }
+	.ve-part.is-on .ve-part-text { grid-template-rows: 1fr; opacity: 1; margin-top: 4px; }
+	/* Unpinned, every description shows and a tap moves the spotlight. */
+	.ve-stage:not(.is-pinned) .ve-part-text { grid-template-rows: 1fr; opacity: 1; margin-top: 4px; }
+	.ve-stage:not(.is-pinned) .ve-part-name { color: var(--v-bright); }
+
+	.ve-keys { margin-top: 24px; }
+	.ve-keys p { margin: 0 0 10px; font-size: var(--v-fs-small); color: var(--v-grey); }
+	.ve-keyrow { display: flex; gap: 6px; flex-wrap: wrap; }
+	.ve-key {
+		all: unset;
+		cursor: pointer;
+		font-family: var(--v-mono);
+		font-size: 12.5px;
+		line-height: 1.5;
+		min-width: 18px;
+		text-align: center;
+		padding: 5px 9px;
+		border-radius: var(--v-radius);
+		color: var(--v-fg);
+		background: var(--v-raised);
+		box-shadow: inset 0 -2px 0 var(--v-line);
+		transition: transform 0.1s var(--v-ease), background 0.15s;
+	}
+	.ve-key:hover { background: var(--v-line); }
+	.ve-key:active { transform: translateY(1px); }
+	.ve-key.is-pressed { animation: ve-press 0.45s var(--v-ease); }
+	@keyframes ve-press { 0% { background: var(--v-accent-fill); color: var(--v-on-accent); transform: translateY(1px); } }
+
+	/* The spotlight, laid in the TUI's own grid. */
+	.ve .ve-spot {
+		position: absolute;
+		top: calc(var(--r, 0) * 1.17em - 0.2em);
+		left: calc(var(--c, 0) * 1ch - 0.3ch);
+		width: calc(var(--w, 120) * 1ch + 0.6ch);
+		height: calc(var(--h, 34) * 1.17em + 0.4em);
+		border-radius: 4px;
+		box-shadow: 0 0 0 2px var(--v-accent-fill), 0 0 0 300em rgb(8 8 8 / 0.62);
+		pointer-events: none;
+		opacity: 0;
+		transition: opacity 0.35s var(--v-ease), top 0.55s var(--v-ease), left 0.55s var(--v-ease), width 0.55s var(--v-ease), height 0.55s var(--v-ease);
+		z-index: 1;
+	}
+	.ve .ve-spot.is-on { opacity: 1; }
+	.ve-slot .vtui-scroll { display: flex; justify-content: center; }
+
+	@media (min-width: 1000px) {
+		.ve-sticky {
+			grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
+			grid-template-areas: "copy copy" "side slot";
+			column-gap: 56px;
+		}
+		.ve-side { padding-top: 0; }
+	}
+
+	/* Pinned: the stage holds the screen while the camera pulls back. */
+	.ve-stage.is-pinned { height: var(--ve-stage-h, 400vh); }
+	.ve-stage.is-pinned .ve-sticky {
+		position: sticky;
+		top: 0;
+		height: 100vh;
+		display: block;
+		overflow: hidden;
+	}
+	.ve-stage.is-pinned .ve-slot { will-change: transform; }
+	.ve-stage.is-pinned .ve-side {
+		--e: 0;
+		position: absolute;
+		left: var(--v-gutter);
+		top: var(--side-top);
+		width: var(--side-w);
+		height: var(--side-h);
+		padding: 0;
+		justify-content: center;
+		opacity: var(--e);
+		transform: translate3d(calc((1 - var(--e)) * -40px), 0, 0);
+		pointer-events: none;
+	}
+	.ve-stage.is-pinned .ve-side * { pointer-events: auto; }
+
+	/* What it's for */
+	.ve-for {
+		max-width: var(--ve-max);
+		margin: 0 auto;
+		padding: 72px var(--v-gutter) 0;
+		display: grid;
+		grid-template-columns: minmax(0, 6fr) minmax(0, 6fr);
+		gap: 72px;
+		align-items: start;
+	}
+	.ve-statement { font-size: clamp(20px, 1.8vw, 25px); line-height: 1.42; color: var(--v-fg); margin: 26px 0 0; max-width: 34ch; letter-spacing: -0.01em; }
+	.ve-for-proof { margin: 26px 0 0; color: var(--v-grey); max-width: 46ch; }
+	.ve-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; padding-top: 10px; }
+	.ve-split-col { background: var(--v-raised); border-radius: var(--v-radius-lg); padding: 26px 26px 30px; }
+	.ve-split-away { background: var(--v-t-bg); color: var(--v-t-fg); }
+	.ve-split-away h3 { color: var(--v-t-bright); }
+	.ve-split-away code { color: var(--v-t-bright); }
+	.ve-split ul { list-style: none; margin: 18px 0 0; padding: 0; display: grid; gap: 14px; font-size: 15.5px; line-height: 1.45; }
+	.ve-split li { padding-left: 20px; position: relative; }
+	.ve-split li::before { content: "○"; position: absolute; left: 0; color: var(--v-grey); font-family: var(--v-term); font-size: 13px; top: 1px; }
+	.ve-split-away li::before { content: "✓"; color: var(--v-t-ok); }
+
+	/* How it works */
+	.ve-how { padding: var(--v-section) 0 0; }
+	.ve-how-in { max-width: var(--ve-max); margin: 0 auto; padding: 0 var(--v-gutter); }
+	.ve-how-head { display: grid; grid-template-columns: minmax(0, 6fr) minmax(0, 5fr); gap: 72px; align-items: end; }
+	.ve-how-head p { margin: 0; max-width: 52ch; }
+	.ve-pipe {
+		--fill: 1;
+		position: relative;
+		list-style: none;
+		margin: 72px 0 0;
+		padding: 0;
+		display: grid;
+		grid-template-columns: 0.95fr 1.15fr 1.45fr 1.15fr 0.95fr;
+	}
+	.ve-rail { position: absolute; left: 0; right: 0; top: 0; height: 2px; background: var(--v-line); border-radius: 2px; }
+	.ve-rail-fill { position: absolute; inset: 0; background: var(--v-accent-fill); transform-origin: left; transform: scaleX(var(--fill)); border-radius: 2px; }
+	.ve-stage-i { position: relative; padding: 32px 22px 0 0; min-width: 0; }
+	.ve-node {
+		position: absolute;
+		top: -5px;
+		left: 0;
+		width: 12px;
+		height: 12px;
+		background: var(--v-line);
+		border-radius: 50%;
+		transition: background 0.3s, transform 0.3s var(--v-ease);
+	}
+	.ve-stage-i.is-lit .ve-node { background: var(--v-accent-fill); transform: scale(1.15); }
+	.ve-stage-i h3, .ve-stage-i p, .ve-stage-i .ve-art { transition: opacity 0.4s var(--v-ease); }
+	.ve-stage-i:not(.is-lit) h3, .ve-stage-i:not(.is-lit) p, .ve-stage-i:not(.is-lit) .ve-art { opacity: 0.4; }
+	.ve-stage-i p { margin: 6px 0 18px; font-size: 15px; color: var(--v-fg); line-height: 1.5; max-width: 30ch; }
+	.ve-art {
+		margin: 0;
+		font-family: var(--v-mono);
+		font-size: var(--v-fs-code);
+		line-height: 1.6;
+		color: var(--v-fg);
+		white-space: pre;
+		overflow-x: auto;
+	}
+	.ve-art .row { display: block; border-radius: 2px; margin-left: -4px; padding-left: 4px; transition: background 0.3s; }
+	.ve-art .row[data-state="cur"] { background: var(--v-row-hot); }
+	.ve-art .mark, .ve-art .swap { display: inline-grid; justify-items: start; }
+	.ve-art .mark { width: 1ch; justify-items: center; }
+	.ve-art .mark > *, .ve-art .swap > * { grid-area: 1 / 1; transition: opacity 0.2s; }
+	.ve .m-pend, .ve .m-cur, .ve .m-done, .ve .meta, .ve .v-old, .ve .v-new { opacity: 0; }
+	.ve [data-state="pend"] > .m-pend, .ve [data-state="pend"] > .mark > .m-pend { opacity: 1; }
+	.ve [data-state="cur"] > .m-cur, .ve [data-state="cur"] > .mark > .m-cur { opacity: 1; }
+	.ve [data-state="done"] > .m-done, .ve [data-state="done"] > .mark > .m-done, .ve [data-state="done"] > .meta { opacity: 1; }
+	.ve [data-pr][data-state="pend"] .v-old, .ve [data-pr][data-state="done"] .v-new { opacity: 1; }
+	.ve-wf-tui { align-self: stretch; }
+	.ve-landed { transition: opacity 0.4s, transform 0.4s var(--v-ease); }
+	.ve-landed[data-state="pend"] { opacity: 0; transform: translateY(-6px); }
+	.ve-limit { margin: 56px 0 0; color: var(--v-grey); font-size: 15px; }
+
+	/* Workflow */
+	.ve-wf { max-width: var(--ve-max); margin: 0 auto; padding: var(--v-section) var(--v-gutter) 0; }
+	.ve-wf-head { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 72px; align-items: start; }
+	.ve-wf-text { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 32px; }
+	.ve-wf-text p { margin: 0; }
+	.ve-wf-body { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 56px; margin-top: 64px; align-items: start; }
+	.ve-file-name { margin: 0 0 12px; font-size: var(--v-fs-small); color: var(--v-grey); }
+	.ve-file {
+		margin: 0;
+		background: var(--v-raised);
+		border-radius: var(--v-radius-lg);
+		padding: 18px 0;
+		font-family: var(--v-mono);
+		font-size: 13px;
+		line-height: 1.62;
+		color: var(--v-fg);
+		overflow-x: auto;
+	}
+	.ve-file .blk { display: block; padding: 6px 22px 6px 34px; position: relative; transition: background 0.3s var(--v-ease), color 0.3s; }
+	.ve-file .blk + .blk { margin-top: 6px; }
+	.ve-file .ln { display: block; white-space: pre; }
+	.ve-file .blk > .ln:first-child { color: var(--v-bright); }
+	.ve-file .blk::before {
+		position: absolute;
+		left: 14px;
+		top: 6px;
+		font-family: var(--v-term);
+		width: 1ch;
+		text-align: center;
+		transition: color 0.2s;
+	}
+	.ve-file .blk[data-state="pend"]::before { content: "·"; color: var(--v-grey); }
+	.ve-file .blk[data-state="cur"]::before { content: "●"; color: var(--v-accent); }
+	.ve-file .blk[data-state="done"]::before { content: "✓"; color: var(--v-ok); }
+	.ve-file .blk[data-state="bad"]::before { content: "✗"; color: var(--v-bad); }
+	.ve-file .blk[data-state="cur"] { background: var(--v-row-hot); }
+	.ve-file .blk-setting::before, .ve-file .blk-skip::before, .ve-file .blk-after::before { content: none; }
+	.ve-file .blk-skip, .ve-file .blk-after { color: var(--v-grey); }
+	.ve-file .blk-skip > .ln:first-child, .ve-file .blk-after > .ln:first-child { color: var(--v-grey); }
+	.ve-file.is-stuck .blk[data-state="bad"] { background: rgb(229 115 107 / 0.14); }
+
+	.ve-wf-sticky { position: sticky; top: 32px; }
+	.ve-now { margin: 0 0 12px; font-size: var(--v-fs-small); color: var(--v-fg); display: flex; align-items: center; gap: 10px; }
+	.ve-now-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--v-accent-fill); flex: none; }
+	@media (prefers-reduced-motion: no-preference) {
+		.ve-now-dot { animation: ve-blink 1.6s ease-in-out infinite; }
+	}
+	@keyframes ve-blink { 50% { opacity: 0.3; } }
+	.ve-fail { margin-top: 40px; display: grid; grid-template-columns: minmax(0, 1fr); max-width: 62ch; }
+	.ve-fail p { margin: 8px 0 0; font-size: 15px; }
+	.ve-text-btn {
+		all: unset;
+		cursor: pointer;
+		justify-self: start;
+		margin-top: 12px;
+		font-size: 15px;
+		color: var(--v-bright);
+		border-bottom: 1px solid var(--v-accent);
+		padding-bottom: 1px;
+		transition: color 0.15s;
+	}
+	.ve-text-btn:hover { color: var(--v-accent); }
+
+	/* Install */
+	.ve-install { max-width: var(--ve-max); margin: 0 auto; padding: var(--v-section) var(--v-gutter) 0; }
+	.ve-install-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 32px; margin-top: 40px; }
+	.ve-code {
+		margin: 14px 0 0;
+		font-family: var(--v-mono);
+		font-size: 13.5px;
+		line-height: 1.85;
+		background: var(--v-t-bg);
+		color: var(--v-t-fg);
+		padding: 20px 24px;
+		border-radius: var(--v-radius-lg);
+		overflow-x: auto;
+	}
+	.ve-code .ln { display: block; white-space: pre; }
+	.ve-code .c-d { color: var(--v-t-grey); }
+	.ve-install-note { margin: 14px 0 0; font-size: 15px; color: var(--v-fg); max-width: 56ch; }
+	.ve-limits {
+		list-style: none;
+		margin: 48px 0 0;
+		padding: 0;
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 32px;
+		font-size: 15px;
+		color: var(--v-fg);
+	}
+
+	/* Footer: the name returns at full width. */
+	.ve-foot { margin-top: var(--v-section); padding: 40px var(--v-gutter) 0; background: var(--v-t-bg); color: var(--v-t-fg); overflow: hidden; }
+	.ve-foot-word {
+		margin: 0;
+		font-family: var(--v-mono);
+		font-weight: 700;
+		font-size: min(26vw, 420px);
+		line-height: 0.72;
+		letter-spacing: -0.06em;
+		color: var(--v-t-bright);
+		margin-top: 0.1em;
+		padding-bottom: 0.06em;
+		margin-left: -0.05em;
+		white-space: nowrap;
+	}
+	.ve-foot-word::after {
+		content: "";
+		display: inline-block;
+		width: 0.42em;
+		height: 0.52em;
+		margin-left: 0.1em;
+		vertical-align: baseline;
+		background: var(--v-accent-fill);
+	}
+	@media (prefers-reduced-motion: no-preference) {
+		.ve-foot-word::after { animation: ve-caret 1.1s steps(1) infinite; }
+	}
+	@keyframes ve-caret { 50% { opacity: 0; } }
+	.ve-foot-row { display: flex; justify-content: space-between; align-items: center; gap: 24px; flex-wrap: wrap; font-size: 15px; max-width: var(--ve-max); margin: 0 auto; }
+	.ve-foot-row p { margin: 0; }
+	.ve-foot-row nav { display: flex; gap: 22px; align-items: center; }
+	.ve-foot-row a { text-decoration: none; transition: color 0.15s; }
+	.ve-foot-row a:hover { color: var(--v-accent-fill); }
+	.ve-foot .v-theme { border-color: #333; }
+	.ve-foot .v-theme-opt { color: var(--v-t-grey); }
+	.ve.vago-page .ve-foot .v-theme-opt[data-opt] { background: none; color: var(--v-t-grey); }
+	.ve.vago-page[data-theme="light"] .ve-foot .v-theme-opt[data-opt="light"],
+	.ve.vago-page[data-theme="dark"] .ve-foot .v-theme-opt[data-opt="dark"] { background: var(--v-t-bright); color: var(--v-t-bg); }
+
+	/* Entrances */
+	.ve.ve-anim [data-rise] { opacity: 0; transform: translateY(24px); transition: opacity 0.8s var(--v-ease), transform 0.8s var(--v-ease); }
+	.ve.ve-anim [data-rise].is-in { opacity: 1; transform: none; }
+	.ve.ve-anim [data-rise] + [data-rise] { transition-delay: 0.08s; }
+	@media (prefers-reduced-motion: no-preference) {
+		.ve-copy h1, .ve-copy-side, .ve-slot .vtui { animation: ve-rise 0.9s var(--v-ease) both; }
+		.ve-copy-side { animation-delay: 0.08s; }
+		.ve-slot .vtui { animation-delay: 0.16s; }
+	}
+	@keyframes ve-rise { from { opacity: 0; transform: translateY(16px); } }
+
+	@media (prefers-reduced-motion: reduce) {
+		.ve, .ve * { transition: none !important; }
+	}
+
+	@media (max-width: 1023px) {
+		.ve-for, .ve-how-head, .ve-wf-head, .ve-wf-body { grid-template-columns: minmax(0, 1fr); gap: 32px; }
+		.ve-pipe { grid-template-columns: minmax(0, 1fr); margin-top: 48px; }
+		.ve-rail { top: 0; bottom: 0; left: 0; right: auto; width: 2px; height: auto; }
+		.ve-rail-fill { transform-origin: top; transform: scaleY(var(--fill)); }
+		.ve-stage-i { padding: 0 0 40px 32px; }
+		.ve-stage-i:last-child { padding-bottom: 0; }
+		.ve-node { top: 6px; left: -5px; }
+		.ve-stage-i p { max-width: 46ch; }
+		.ve-wf-sticky { position: static; }
+		.ve-wf-tui { order: -1; }
+	}
+	@media (max-width: 999px) {
+		.ve-copy { grid-template-columns: minmax(0, 1fr); gap: 20px; padding-bottom: 28px; }
+		.ve-side { display: flex; }
+		.ve-keys { order: -1; margin: 0 0 28px; }
+	}
+	@media (max-width: 640px) {
+		.ve-nav nav a:not([href="#ve-install"]) { display: none; }
+		.ve-sticky { padding-top: 8px; }
+		.ve-side { padding-top: 16px; }
+		.ve-keyrow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+		.ve-key { padding: 10px 0; font-size: 14px; }
+		.ve-split, .ve-wf-text, .ve-install-grid, .ve-limits { grid-template-columns: minmax(0, 1fr); }
+		.ve-split-col { padding: 22px 20px 24px; }
+		.ve-file { font-size: 11.5px; }
+		.ve-file .blk { padding-left: 30px; padding-right: 14px; }
+		.ve-code { font-size: 11.5px; padding: 16px; }
+		.ve-foot-row { flex-direction: column; align-items: flex-start; }
+	}
+</style>

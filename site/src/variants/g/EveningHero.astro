@@ -1,0 +1,624 @@
+---
+// PROTOTYPE, variant G's hero: one evening on a track. The scrubber under the
+// stage moves the clock, says what you and Vago are doing, and sends the
+// LiveTui replay to the matching frame with `vago-tui:goto`. In the first
+// segment an editor lies over the TUI while you write the Goal. It plays
+// once when it comes into view; dragging or a key takes over.
+import LiveTui from "../../shared/LiveTui.astro";
+import ThemeToggle from "../../shared/ThemeToggle.astro";
+import { LAST_PHASE, clockText, eveningAt, positionOfPhase, segmentStarts, segments } from "./evening.ts";
+
+// Without script, the stage rests on Build writing its failing tests.
+const restPhase = 5;
+const restPos = positionOfPhase(restPhase);
+const rest = eveningAt(restPos);
+const pct = (n: number) => `${(n * 100).toFixed(3)}%`;
+---
+<header class="vg-nav vg-wrap">
+	<a class="vg-word" href="#">vago</a>
+	<nav aria-label="Main">
+		<a href="#vg-how">How it works</a>
+		<a href="#vg-workflow">Workflows</a>
+		<a href="#">Docs</a>
+		<a href="#">GitHub</a>
+		<ThemeToggle />
+		<a class="vg-btn vg-btn-small" href="#vg-install">Install</a>
+	</nav>
+</header>
+
+<section class="vg-hero" aria-labelledby="vg-title">
+	<div class="vg-wrap vg-head">
+		<h1 id="vg-title">Set the Goal.<br />Go watch TV.</h1>
+		<div class="vg-head-side">
+			<p class="vg-sub">
+				<i>Vago</i> is Spanish for lazy, and you're the lazy one. You write the Goal and the Workflow. Vago takes each Ticket through it in your repo and leaves you a PR.
+			</p>
+			<div class="vg-ctas">
+				<a class="vg-btn" href="#vg-install">Install</a>
+				<a class="vg-link" href="#vg-how">How it works</a>
+			</div>
+		</div>
+	</div>
+
+	<div class="vg-stage" data-stage data-part="replay" data-night={rest.clock >= 21 * 60 ? "" : undefined}>
+		<div class="vg-wrap vg-scrub">
+			<button type="button" class="vg-play" data-play aria-pressed="false">Play the evening</button>
+			<div class="vg-track-wrap">
+				<div
+					class="vg-track"
+					data-track
+					role="slider"
+					tabindex="0"
+					aria-label="Time of the evening"
+					aria-valuemin="0"
+					aria-valuemax="1000"
+					aria-valuenow={String(Math.round(restPos * 1000))}
+					aria-valuetext={`${clockText(rest.clock)}. ${rest.vago}`}
+				>
+					{segments.map((s, i) => (
+						<span class={`vg-seg vg-seg-${s.part}`} style={`left:${pct(segmentStarts[i] ?? 0)};width:${pct(s.width)}`}>
+							<span class="vg-seg-fill" data-seg-fill style={`--f:${i < 2 ? 1 : i === 2 ? (restPos - (segmentStarts[2] ?? 0)) / s.width : 0}`}></span>
+						</span>
+					))}
+					<span class="vg-thumb" data-thumb style={`left:${pct(restPos)}`}></span>
+				</div>
+				<ol class="vg-ticks" aria-hidden="true">
+					{segments.map((s, i) => (
+						<li class={`vg-tick vg-tick-${s.part}`} style={`left:${pct(segmentStarts[i] ?? 0)}`}>
+							<span class="vg-tick-time">{clockText(s.from)}</span>
+							<span class="vg-tick-name">{s.name}</span>
+						</li>
+					))}
+					<li class="vg-tick vg-tick-end" style="left:100%">
+						<span class="vg-tick-time">{clockText(segments[segments.length - 1]?.to ?? 0)}</span>
+						<span class="vg-tick-name">Bed</span>
+					</li>
+				</ol>
+			</div>
+		</div>
+		<div class="vg-wrap vg-stage-grid">
+			<div class="vg-now">
+				<p class="vg-clock" data-clock>{clockText(rest.clock)}</p>
+				<p class="vg-day">Saturday evening at acme-shop, an example Project</p>
+				<dl class="vg-lanes">
+					<div class="vg-lane">
+						<dt>You</dt>
+						<dd data-you>{rest.you}</dd>
+					</div>
+					<div class="vg-lane">
+						<dt>Vago</dt>
+						<dd data-vago>{rest.vago}</dd>
+					</div>
+				</dl>
+			</div>
+
+			<div class="vg-screen" data-screen-wrap>
+				<LiveTui
+					id="vg-tui"
+					autoplay={false}
+					tour={false}
+					moment="goal-running"
+					time={restPhase / LAST_PHASE}
+					controls={false}
+					caption={false}
+				/>
+				<div class="vg-editor" data-editor data-ui hidden aria-hidden="true">
+					<div class="vg-editor-chrome"><b>vim</b> .vago-goals/gift-cards/goal.md</div>
+					<div class="vg-editor-body">
+						<pre class="vg-editor-text"><code data-typed></code><span class="vg-caret" data-caret></span></pre>
+						<p class="vg-editor-cmd" data-cmd><span class="vg-prompt">~/code/acme-shop $</span> <span data-cmd-text></span></p>
+					</div>
+				</div>
+				<aside class="vg-pr" data-pr aria-live="polite">
+					<p class="vg-pr-top">acme-shop · PR #37</p>
+					<p class="vg-pr-title">Customers can pay with a gift card</p>
+					<p class="vg-pr-meta">vago/gift-cards into main · 5 commits</p>
+					<p class="vg-pr-meta">Ready for review. 1h 20m of run time, $5.74.</p>
+				</aside>
+			</div>
+		</div>
+
+		<p class="vg-wrap vg-note">
+			A replay of Vago's own TUI on an example Project. Drag along the evening, or click the TUI and use its keys. The track isn't to scale: Ticket 03 plays in full and the rest of the evening skips ahead.
+		</p>
+	</div>
+</section>
+
+<script>
+	import { LAST_PHASE, NIGHT_AT, PR_AT, clockText, eveningAt, goalFile, positionOfPhase, runCommand, segmentStarts, segments } from "./evening.ts";
+
+	const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+	for (const stage of document.querySelectorAll<HTMLElement>(".vg [data-stage]")) {
+		if (stage.dataset.mounted !== undefined) continue;
+		stage.dataset.mounted = "";
+		const q = <T extends Element>(sel: string) => stage.querySelector<T & HTMLElement>(sel);
+		const tui = q<HTMLElement>("[data-live-tui]");
+		const track = q<HTMLElement>("[data-track]");
+		const thumb = q<HTMLElement>("[data-thumb]");
+		const clockEl = q<HTMLElement>("[data-clock]");
+		const youEl = q<HTMLElement>("[data-you]");
+		const vagoEl = q<HTMLElement>("[data-vago]");
+		const editor = q<HTMLElement>("[data-editor]");
+		const typed = q<HTMLElement>("[data-typed]");
+		const cmd = q<HTMLElement>("[data-cmd]");
+		const cmdText = q<HTMLElement>("[data-cmd-text]");
+		const pr = q<HTMLElement>("[data-pr]");
+		const playBtn = q<HTMLButtonElement>("[data-play]");
+		const fills = [...stage.querySelectorAll<HTMLElement>("[data-seg-fill]")];
+		if (!tui || !track) continue;
+
+		let pos = reduce ? positionOfPhase(5) : 0;
+		let lastView = "";
+		let lastPhase = -1;
+		let lastYou = "";
+		let lastVago = "";
+
+		const goto = (detail: Record<string, unknown>) => tui.dispatchEvent(new CustomEvent("vago-tui:goto", { detail }));
+
+		const swapText = (el: HTMLElement | null, text: string) => {
+			if (!el || el.textContent === text) return;
+			el.textContent = text;
+			if (reduce) return;
+			el.classList.remove("is-new");
+			void el.offsetWidth;
+			el.classList.add("is-new");
+		};
+
+		function render() {
+			const m = eveningAt(pos);
+			if (clockEl) clockEl.textContent = clockText(m.clock);
+			if (m.you !== lastYou) swapText(youEl, m.you);
+			if (m.vago !== lastVago) swapText(vagoEl, m.vago);
+			lastYou = m.you;
+			lastVago = m.vago;
+
+			fills.forEach((f, i) => {
+				const s = segments[i];
+				const start = segmentStarts[i] ?? 0;
+				const v = s ? Math.max(0, Math.min(1, (pos - start) / s.width)) : 0;
+				f.style.setProperty("--f", v.toFixed(4));
+			});
+			if (thumb) thumb.style.left = `${(pos * 100).toFixed(3)}%`;
+			track.setAttribute("aria-valuenow", String(Math.round(pos * 1000)));
+			track.setAttribute("aria-valuetext", `${clockText(m.clock)}. ${m.vago}`);
+
+			stage.toggleAttribute("data-night", m.clock >= NIGHT_AT);
+			stage.dataset.part = m.part;
+			pr?.classList.toggle("is-on", m.clock >= PR_AT);
+
+			// The editor while you write the Goal, then the command.
+			const writing = m.part === "goal";
+			if (editor) editor.hidden = !writing;
+			if (writing && typed && cmdText && cmd) {
+				const typing = Math.min(1, m.local / 0.72);
+				typed.textContent = goalFile.slice(0, Math.round(goalFile.length * typing));
+				const c = Math.max(0, Math.min(1, (m.local - 0.78) / 0.16));
+				cmd.classList.toggle("is-on", m.local >= 0.76);
+				cmdText.textContent = runCommand.slice(0, Math.round(runCommand.length * c));
+			}
+
+			// The TUI: the Goals list until Ticket 03, then the running Goal.
+			const view = m.part === "goal" || m.part === "early" ? "project" : "goal";
+			if (view !== lastView) {
+				goto({ moment: view === "project" ? "project" : "goal-running", time: m.phase / LAST_PHASE });
+				lastView = view;
+				lastPhase = m.phase;
+			} else if (m.phase !== lastPhase) {
+				goto({ time: m.phase / LAST_PHASE });
+				lastPhase = m.phase;
+			}
+		}
+
+		// The editor covers the TUI's window exactly.
+		const win = tui.querySelector<HTMLElement>("[data-frame]");
+		if (win && editor) {
+			const fit = () => {
+				editor.style.height = `${win.offsetHeight}px`;
+			};
+			new ResizeObserver(fit).observe(win);
+			fit();
+		}
+
+		// Playing the evening.
+		let playing = false;
+		let played = false;
+		let raf = 0;
+		let lastT = 0;
+		const speed = () => {
+			const m = eveningAt(pos);
+			const s = segments.find((x) => x.part === m.part);
+			return s ? s.width / s.plays : 0.03;
+		};
+		function frame(t: number) {
+			const dt = Math.min(0.1, (t - lastT) / 1000);
+			lastT = t;
+			pos = Math.min(1, pos + dt * speed());
+			render();
+			if (pos >= 1) {
+				setPlaying(false);
+				return;
+			}
+			raf = requestAnimationFrame(frame);
+		}
+		function setPlaying(on: boolean) {
+			playing = on && !reduce;
+			cancelAnimationFrame(raf);
+			if (playing) {
+				lastT = performance.now();
+				raf = requestAnimationFrame(frame);
+			}
+			if (playBtn) {
+				playBtn.textContent = reduce ? "Skip ahead" : playing ? "Pause" : pos >= 1 ? "Play it again" : "Play the evening";
+				playBtn.setAttribute("aria-pressed", String(playing));
+			}
+		}
+		playBtn?.addEventListener("click", () => {
+			if (!playing && pos >= 1) pos = 0;
+			setPlaying(!playing);
+			if (reduce) {
+				// No travel: step to the next part of the evening instead.
+				const i = segmentStarts.findIndex((s) => s > pos + 1e-6);
+				pos = i < 0 ? 0 : (segmentStarts[i] ?? 0);
+				render();
+			}
+		});
+
+		// Dragging and keys.
+		const posAt = (x: number) => {
+			const r = track.getBoundingClientRect();
+			if (r.width <= 0) return pos;
+			return Math.max(0, Math.min(1, (x - r.left) / r.width));
+		};
+		let dragging = false;
+		track.addEventListener("pointerdown", (e) => {
+			dragging = true;
+			track.setPointerCapture(e.pointerId);
+			track.focus({ preventScroll: true });
+			setPlaying(false);
+			pos = posAt(e.clientX);
+			render();
+			stage.classList.add("is-dragging");
+		});
+		track.addEventListener("pointermove", (e) => {
+			if (!dragging) return;
+			pos = posAt(e.clientX);
+			render();
+		});
+		const endDrag = () => {
+			dragging = false;
+			stage.classList.remove("is-dragging");
+			setPlaying(false);
+		};
+		track.addEventListener("pointerup", endDrag);
+		track.addEventListener("pointercancel", endDrag);
+		track.addEventListener("keydown", (e) => {
+			const m = eveningAt(pos);
+			const replay = segments.find((s) => s.part === "replay");
+			const step = m.part === "replay" && replay ? replay.width / LAST_PHASE : 0.015;
+			let next = pos;
+			if (e.key === "ArrowRight" || e.key === "ArrowUp") next = pos + step;
+			else if (e.key === "ArrowLeft" || e.key === "ArrowDown") next = pos - step;
+			else if (e.key === "PageDown") next = segmentStarts.find((s) => s > pos + 1e-6) ?? 1;
+			else if (e.key === "PageUp") next = [...segmentStarts].reverse().find((s) => s < pos - 1e-6) ?? 0;
+			else if (e.key === "Home") next = 0;
+			else if (e.key === "End") next = 1;
+			else return;
+			e.preventDefault();
+			setPlaying(false);
+			pos = Math.max(0, Math.min(1, next));
+			render();
+		});
+
+		// Touching the TUI hands it to the visitor.
+		tui.addEventListener("pointerdown", () => setPlaying(false));
+		document.addEventListener(
+			"keydown",
+			() => {
+				if (playing && tui.classList.contains("is-hot")) setPlaying(false);
+			},
+			true,
+		);
+
+		// Plays once, the first time the stage is well in view.
+		new IntersectionObserver(
+			(entries) => {
+				const seen = entries.some((e) => e.isIntersecting);
+				if (seen && !played && !reduce) {
+					played = true;
+					pos = 0;
+					render();
+					setPlaying(true);
+				} else if (!seen && playing) {
+					setPlaying(false);
+				}
+			},
+			{ threshold: 0.35 },
+		).observe(stage);
+
+		render();
+		setPlaying(false);
+	}
+</script>
+
+<style is:global>
+	/* Nav */
+	.vg-nav { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding-top: 20px; padding-bottom: 20px; }
+	.vg-word { font-family: var(--v-mono); font-weight: 700; color: var(--v-bright); letter-spacing: -0.02em; text-decoration: none; font-size: 19px; }
+	.vg-nav nav { display: flex; gap: 24px; font-size: 15px; color: var(--v-fg); align-items: center; }
+	.vg-nav nav a:not(.vg-btn) { text-decoration: none; transition: color 0.15s; }
+	.vg-nav nav a:not(.vg-btn):hover { color: var(--v-accent); }
+
+	/* Head */
+	.vg-head {
+		display: grid;
+		grid-template-columns: minmax(0, 7fr) minmax(0, 4fr);
+		gap: var(--v-gap);
+		align-items: end;
+		padding-top: clamp(28px, 3.6vw, 56px);
+		padding-bottom: clamp(28px, 3vw, 44px);
+	}
+	.vg-hero h1 {
+		font-size: clamp(42px, 6vw, 92px);
+		line-height: 0.96;
+		letter-spacing: var(--v-track-display);
+		font-weight: var(--v-weight-head);
+		color: var(--v-bright);
+		margin: 0;
+		
+	}
+	.vg-sub { font-size: clamp(17px, 1.35vw, 19px); margin: 0; max-width: 38ch; color: var(--v-fg); }
+	.vg-sub i { font-style: italic; }
+	.vg-ctas { display: flex; gap: 26px; align-items: center; margin-top: 24px; }
+
+	/* The stage: a field that gets dark when the evening does. */
+	.vg-stage {
+		--st-bg: var(--v-raised);
+		--st-fg: var(--v-fg);
+		--st-bright: var(--v-bright);
+		--st-grey: var(--v-grey);
+		--st-track: var(--v-line);
+		--st-accent: var(--v-accent);
+		background: var(--st-bg);
+		color: var(--st-fg);
+		padding: clamp(24px, 2.6vw, 36px) 0 clamp(28px, 3vw, 40px);
+		transition: background-color 0.9s var(--v-ease), color 0.9s var(--v-ease);
+	}
+	.vg-stage[data-night] {
+		--st-bg: var(--v-t-bg);
+		--st-fg: var(--v-t-fg);
+		--st-bright: var(--v-t-bright);
+		--st-grey: var(--v-t-grey);
+		--st-track: #2a2a2a;
+		--st-accent: var(--v-accent-fill);
+	}
+	.vago-page[data-theme="dark"] .vg-stage[data-night] { --st-bg: var(--v-bg); --st-track: var(--v-line); }
+
+	.vg-stage-grid {
+		display: grid;
+		grid-template-columns: minmax(0, 33fr) minmax(0, 67fr);
+		gap: clamp(28px, 3vw, 48px);
+		align-items: start;
+	}
+	.vg-day { margin: 10px 0 0; font-size: 15px; color: var(--st-grey); transition: color 0.9s; }
+	.vg-clock {
+		margin: -6px 0 0;
+		font-size: clamp(76px, 8.6vw, 136px);
+		line-height: 0.9;
+		letter-spacing: -0.055em;
+		font-weight: 600;
+		font-variant-numeric: tabular-nums;
+		color: var(--st-bright);
+		transition: color 0.9s;
+	}
+	.vg-lanes { margin: clamp(28px, 3vw, 44px) 0 0; display: grid; gap: 20px; }
+	.vg-lane { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 12px; align-items: baseline; }
+	.vg-lane dt { font-size: 15px; color: var(--st-grey); transition: color 0.9s; }
+	.vg-lane dd { margin: 0; font-size: clamp(17px, 1.4vw, 20px); line-height: 1.4; color: var(--st-fg); min-height: 2.8em; transition: color 0.9s; }
+	.vg-lane:last-child dt { color: var(--st-accent); }
+
+	.vg-screen { position: relative; min-width: 0; }
+	.vg-screen .vtui-window { border-color: transparent; }
+	.vg-screen .vtui-scroll { transition: opacity 0.6s var(--v-ease); }
+	.vg-stage[data-part="late"] .vtui-scroll { opacity: 0.7; }
+	.vg-stage[data-part="pr"] .vtui-scroll { opacity: 0.4; }
+	.vg-stage[data-night] .vg-screen .vtui-window { border-color: var(--v-t-line); }
+	.vg-screen .vtui-key { background: transparent; color: var(--st-fg); border-color: var(--st-track); }
+	.vg-screen .vtui-key:hover { border-color: var(--st-grey); }
+	.vg-screen .vtui-under { margin-top: 12px; }
+
+	/* The editor over the TUI while you write the Goal. */
+	.vg-editor {
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		background: var(--v-t-bg);
+		color: var(--v-t-fg);
+		border-radius: var(--v-radius-lg);
+		overflow: hidden;
+		display: flex;
+		flex-direction: column;
+		box-shadow: var(--v-t-shadow);
+	}
+	.vg-editor[hidden] { display: none; }
+	.vg-editor-chrome {
+		padding: 9px 16px;
+		font-family: var(--v-mono);
+		font-size: 12px;
+		line-height: 1.4;
+		color: var(--v-t-grey);
+		border-bottom: 1px solid var(--v-t-line);
+	}
+	.vg-editor-chrome b { color: var(--v-t-fg); font-weight: 400; margin-right: 8px; }
+	.vg-editor-body {
+		container-type: inline-size;
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		justify-content: space-between;
+		padding: clamp(10px, 1.6vw, 22px) clamp(12px, 2vw, 28px);
+		min-height: 0;
+	}
+	.vg-editor-text, .vg-editor-cmd {
+		font-family: var(--v-term);
+		font-size: clamp(5px, calc(100cqw / (70 * 0.602)), 16px);
+		line-height: 1.32;
+		margin: 0;
+	}
+	.vg-editor-text { white-space: pre-wrap; overflow: hidden; color: var(--v-t-fg); }
+	.vg .vg-editor-text code { color: inherit; font: inherit; }
+	.vg-caret {
+		display: inline-block;
+		width: 0.6em;
+		height: 1.1em;
+		vertical-align: text-bottom;
+		background: var(--v-accent-fill);
+	}
+	.vg-editor-cmd { color: var(--v-t-bright); opacity: 0; transform: translateY(6px); transition: opacity 0.25s, transform 0.3s var(--v-ease); }
+	.vg-editor-cmd.is-on { opacity: 1; transform: none; }
+	.vg-prompt { color: var(--v-t-grey); }
+
+	/* The PR, when it's ready. It floats, so it has a shadow. */
+	.vg-pr {
+		position: absolute;
+		top: clamp(44px, 6%, 80px);
+		right: clamp(-28px, -1.8vw, -12px);
+		width: min(300px, 70%);
+		background: var(--v-bg);
+		color: var(--v-fg);
+		border-radius: var(--v-radius-lg);
+		padding: 16px 18px;
+		box-shadow: 0 24px 60px -18px rgb(0 0 0 / 0.55), 0 2px 8px rgb(0 0 0 / 0.12);
+		opacity: 0;
+		transform: translateY(-10px) scale(0.98);
+		pointer-events: none;
+		transition: opacity 0.35s var(--v-ease), transform 0.5s var(--v-ease);
+	}
+	.vg-pr.is-on { opacity: 1; transform: none; }
+	.vago-page[data-theme="dark"] .vg-pr { background: var(--v-raised); box-shadow: 0 24px 60px -18px rgb(0 0 0 / 0.8), 0 0 0 1px var(--v-line-strong); }
+	.vg-pr p { margin: 0; }
+	.vg-pr-top { font-size: 13px; color: var(--v-accent); font-weight: 600; }
+	.vg-pr-title { margin-top: 4px !important; font-size: 17px; line-height: 1.3; font-weight: 600; color: var(--v-bright); }
+	.vg-pr-meta { margin-top: 6px !important; font-size: 13.5px; line-height: 1.4; color: var(--v-grey); }
+
+	/* The scrubber */
+	.vg-scrub {
+		display: grid;
+		grid-template-columns: auto minmax(0, 1fr);
+		gap: 28px;
+		align-items: start;
+		margin-bottom: clamp(20px, 2.4vw, 32px);
+	}
+	.vg-play {
+		all: unset;
+		cursor: pointer;
+		font-size: 15px;
+		font-weight: 600;
+		color: var(--v-on-accent);
+		background: var(--v-accent-fill);
+		padding: 9px 16px;
+		border-radius: var(--v-radius);
+		white-space: nowrap;
+		min-width: 9.6em;
+		text-align: center;
+		transition: background 0.15s, transform 0.15s var(--v-ease);
+	}
+	.vg-play:hover { background: var(--v-accent-hover); }
+	.vg-play:active { transform: scale(0.97); }
+	.vg-track-wrap { position: relative; padding-bottom: 46px; }
+	.vg-track {
+		position: relative;
+		height: 40px;
+		cursor: pointer;
+		touch-action: none;
+		outline: none;
+	}
+	.vg-seg {
+		position: absolute;
+		top: 17px;
+		height: 6px;
+		padding-right: 4px;
+		background-clip: content-box;
+	}
+	.vg-seg::before { content: ""; position: absolute; inset: 0 4px 0 0; background: var(--st-track); border-radius: 1px; transition: background 0.9s; }
+	.vg-seg:last-child, .vg-seg-pr { padding-right: 0; }
+	.vg-seg-pr::before { right: 0; }
+	.vg-seg-replay { top: 14px; height: 12px; }
+	.vg-seg-fill {
+		position: absolute;
+		inset: 0 4px 0 0;
+		background: var(--v-accent-fill);
+		transform-origin: left;
+		transform: scaleX(var(--f, 0));
+		border-radius: 1px;
+	}
+	.vg-seg-pr .vg-seg-fill { right: 0; }
+	.vg-thumb {
+		position: absolute;
+		top: 4px;
+		width: 4px;
+		height: 32px;
+		margin-left: -2px;
+		background: var(--st-bright);
+		border-radius: 2px;
+		transition: transform 0.15s var(--v-ease), background 0.9s;
+	}
+	.vg-track:hover .vg-thumb, .vg-stage.is-dragging .vg-thumb { transform: scaleY(1.15); }
+	.vg-track:focus-visible .vg-thumb { outline: 2px solid var(--st-accent); outline-offset: 3px; }
+	.vg-ticks { list-style: none; margin: 0; padding: 0; position: absolute; left: 0; right: 0; top: 44px; height: 40px; }
+	.vg-tick { position: absolute; top: 0; display: flex; flex-direction: column; font-size: 13.5px; line-height: 1.3; white-space: nowrap; }
+	.vg-tick-time { color: var(--st-fg); font-variant-numeric: tabular-nums; font-weight: 600; transition: color 0.9s; }
+	.vg-tick-name { color: var(--st-grey); transition: color 0.9s; }
+	.vg-tick-end { transform: translateX(-100%); text-align: right; align-items: flex-end; }
+	.vg-note { margin-top: 18px; margin-bottom: 0; font-size: 14px; color: var(--st-grey); max-width: none; transition: color 0.9s; }
+
+	@media (prefers-reduced-motion: no-preference) {
+		.vg-lane dd.is-new { animation: vg-swap 0.45s var(--v-ease); }
+		.vg-head h1, .vg-head-side, .vg-stage { animation: vg-rise 0.8s var(--v-ease) both; }
+		.vg-head-side { animation-delay: 0.08s; }
+		.vg-stage { animation-delay: 0.16s; }
+		.vg-caret { animation: vg-blink 1s steps(1) infinite; }
+	}
+	@keyframes vg-swap { from { opacity: 0; transform: translateY(8px); } }
+	@keyframes vg-rise { from { opacity: 0; transform: translateY(14px); } }
+	@keyframes vg-blink { 50% { opacity: 0; } }
+	@media (prefers-reduced-motion: reduce) {
+		.vg-stage, .vg-stage * { transition: none !important; }
+	}
+
+	@media (max-width: 1023px) {
+		.vg-head { grid-template-columns: minmax(0, 1fr); gap: 22px; }
+		.vg-stage-grid { grid-template-columns: minmax(0, 1fr); }
+		.vg-now { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 36px; row-gap: 12px; align-items: end; }
+		.vg-clock { grid-row: 1 / span 2; align-self: center; }
+		.vg-day { grid-column: 2; grid-row: 1; margin: 0; }
+		.vg-lanes { grid-column: 2; grid-row: 2; margin: 0; gap: 10px; }
+		.vg-tick-pr { display: none; }
+		.vg-lane dd { min-height: 0; }
+		.vg-pr { right: 8px; }
+	}
+	@media (max-width: 640px) {
+		.vg-nav nav a:not(.vg-btn) { display: none; }
+		.vg-head { padding-top: 28px; }
+		.vg-now { display: block; }
+		.vg-day { margin-top: 8px; }
+		.vg-clock { font-size: 68px; }
+		.vg-lanes { margin-top: 18px; }
+		.vg-lane { grid-template-columns: 44px minmax(0, 1fr); }
+		.vg-lane dd { font-size: 16px; min-height: 2.8em; }
+		.vg-lanes { gap: 8px; }
+		.vg-tick-early, .vg-tick-late, .vg-tick-pr { display: none; }
+		.vg-stage { display: flex; flex-direction: column; }
+		.vg-stage > .vg-wrap { width: 100%; }
+		.vg-stage-grid { order: 1; gap: 22px; }
+		.vg-scrub { order: 2; margin: 18px 0 0; grid-template-columns: minmax(0, 1fr); gap: 4px; }
+		.vg-scrub .vg-track-wrap { order: 1; }
+		.vg-scrub .vg-play { order: 2; justify-self: start; padding: 9px 14px; font-size: 14px; }
+		.vg-note { order: 3; }
+		.vg-tick-name { display: none; }
+		.vg-track-wrap { padding-bottom: 28px; }
+		.vg-pr { top: 10px; width: min(260px, 80%); padding: 12px 14px; }
+		.vg-pr-title { font-size: 15px; }
+	}
+</style>

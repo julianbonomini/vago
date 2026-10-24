@@ -1,0 +1,585 @@
+---
+// PROTOTYPE, variant F (round 3): "scroll drives the tool". A full hero with
+// the TUI running at full width; as the hero scrolls away the same TUI flies
+// into a sticky column, and the story beside it (Goal, Tickets, Workflow, Run,
+// Commit, PR) sends it to the matching screen. f/scroll-story.ts does both.
+import "../shared/tokens.css";
+import LiveTui from "../shared/LiveTui.astro";
+import ThemeToggle from "../shared/ThemeToggle.astro";
+import { beats, chapterNames, starters } from "./f/story.ts";
+
+const keys: [string, string][] = [
+	["ArrowUp", "↑"],
+	["ArrowDown", "↓"],
+	["Enter", "Enter"],
+	["Escape", "Esc"],
+	["Tab", "Tab"],
+	["?", "?"],
+];
+---
+<div class="vago-page vf" data-theme="light">
+	<header class="vf-nav">
+		<a class="vf-word" href="#">vago</a>
+		<nav aria-label="Main">
+			<a href="#vf-how">How it works</a>
+			<a href="#vf-yours">Workflows</a>
+			<a href="#">Docs</a>
+			<a href="#">GitHub</a>
+			<ThemeToggle />
+			<a class="vf-btn vf-btn-sm" href="#vf-install">Install</a>
+		</nav>
+	</header>
+
+	<section class="vf-hero" aria-labelledby="vf-title">
+		<div class="vf-hero-copy">
+			<h1 id="vf-title">Set the Goal.<br />Go do something else.</h1>
+			<div class="vf-hero-side">
+				<p class="vf-sub">Vago takes a Goal in your repo through your own Workflow, one Ticket at a time, and leaves you a PR to review.</p>
+				<div class="vf-ctas">
+					<a class="vf-btn" href="#vf-install">Install</a>
+					<a class="vf-link" href="#vf-how">Scroll to watch it run</a>
+				</div>
+			</div>
+		</div>
+		<div class="vf-slot" data-slot aria-hidden="true"></div>
+		<div class="vf-hero-bar">
+			<p>Vago's TUI, replaying <b>acme-shop</b>, an example Project. Click it and use its keys.</p>
+			<div class="vf-keys" role="group" aria-label="Keys">
+				{keys.map(([k, label]) => <button type="button" class="vf-key" data-tui-key={k}>{label}</button>)}
+			</div>
+		</div>
+	</section>
+
+	<section class="vf-story" id="vf-how" aria-labelledby="vf-how-title">
+		<div class="vf-story-grid">
+			<div class="vf-beats">
+				<header class="vf-story-head" data-rise>
+					<h2 id="vf-how-title">From Goal to PR</h2>
+					<p>Follow gift-cards, one Goal in acme-shop, from the file you write to the PR you merge. Scroll, and the TUI follows along.</p>
+				</header>
+				{beats.map((b, i) => (
+					<article
+						class={b.short ? "vf-beat vf-beat-short" : "vf-beat"}
+						id={`vf-beat-${b.id}`}
+						data-beat={i}
+						data-chapter-of={b.chapter}
+						data-goto={JSON.stringify(b.goto)}
+						data-scrub={b.scrub ? b.scrub.join(",") : undefined}
+					>
+						<h3>{b.title}</h3>
+						<p class="vf-beat-body">{b.body}</p>
+						{b.limit && <p class="vf-limit">{b.limit}</p>}
+						<figure class="vf-art">
+							<figcaption>{b.file}</figcaption>
+							<pre>{b.rows.map((row, r) => (
+								<span class="row" style={`--i:${r}`}>{row.map(([cls, text]) => <span class={cls ? `c-${cls}` : undefined}>{text}</span>)}</span>
+							))}</pre>
+						</figure>
+					</article>
+				))}
+			</div>
+			<div class="vf-dock-col" data-dock-col>
+				<div class="vf-dock" data-dock>
+					<ol class="vf-chapters" aria-label="Where the story is">
+						{chapterNames.map((name, i) => (
+							<li><button type="button" data-chapter={i}>{name}</button></li>
+						))}
+					</ol>
+					<div class="vf-anchor" data-anchor>
+						<div class="vf-fly" data-fly>
+							<LiveTui id="vf-tui" keys={false} controls={false} caption={false} />
+						</div>
+					</div>
+					<div class="vf-dock-bar">
+						<p data-drive aria-live="polite">Scrolling drives it. Click it to take over.</p>
+						<div class="vf-keys" role="group" aria-label="Keys">
+							{keys.map(([k, label]) => <button type="button" class="vf-key" data-tui-key={k}>{label}</button>)}
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</section>
+
+	<section class="vf-yours" id="vf-yours" aria-labelledby="vf-yours-title">
+		<div class="vf-yours-in" data-rise>
+			<div class="vf-yours-copy">
+				<h2 id="vf-yours-title">Opinions about how.<br />None about what.</h2>
+				<p>
+					Vago decides how a Workflow runs. What's in it is yours, per Project. A side project can commit straight to main, a work repo can wait on reviews and checks, and an open source contribution can follow that project's rules. Nothing personal has to land in a shared repo.
+				</p>
+				<div class="vf-split">
+					<div>
+						<h3>Vago takes care of</h3>
+						<ul>
+							<li>A worktree per Goal, so your checkout stays yours</li>
+							<li>Retries that resume the agent's own session</li>
+							<li>Ticket and Run state in plain files in your repo</li>
+							<li>Picking up a stuck Ticket, or a crashed run, where it stopped</li>
+						</ul>
+					</div>
+					<div>
+						<h3>You decide</h3>
+						<ul>
+							<li>The Steps and their order</li>
+							<li>Every prompt an agent Step gets</li>
+							<li>Which agent and model, per Step</li>
+							<li>The scripts that branch, check and merge</li>
+						</ul>
+					</div>
+				</div>
+			</div>
+			<div class="vf-starters" data-starters>
+				<p class="vf-starters-lede">It ships two Workflows to start from. Copy one and make it yours.</p>
+				<div class="vf-tabs" role="tablist" aria-label="Starter Workflows">
+					{starters.map((w, i) => (
+						<button type="button" role="tab" id={`vf-tab-${i}`} aria-controls={`vf-wf-${i}`} aria-selected={i === 0 ? "true" : "false"} tabindex={i === 0 ? 0 : -1} data-tab={i}>{w.file}</button>
+					))}
+				</div>
+				{starters.map((w, i) => (
+					<div class="vf-wf" role="tabpanel" id={`vf-wf-${i}`} aria-labelledby={`vf-tab-${i}`} hidden={i !== 0} data-panel={i}>
+						<p class="vf-wf-blurb">{w.blurb}</p>
+						<ol class="vf-wf-steps">
+							{w.steps.map((s, r) => (
+								<li style={`--i:${r}`}><span class="n">{s.name}</span><span class={`t t-${s.type}`}>{s.type}</span><code>{s.what}</code></li>
+							))}
+						</ol>
+						<p class="vf-wf-after">Once every Ticket is done</p>
+						<ol class="vf-wf-steps">
+							{w.after.map((s, r) => (
+								<li style={`--i:${w.steps.length + r}`}><span class="n">{s.name}</span><span class={`t t-${s.type}`}>{s.type}</span><code>{s.what}</code></li>
+							))}
+						</ol>
+					</div>
+				))}
+			</div>
+		</div>
+	</section>
+
+	<section class="vf-install" id="vf-install" aria-labelledby="vf-install-title" data-rise>
+		<div class="vf-install-copy">
+			<h2 id="vf-install-title">Try it on a small Goal</h2>
+			<p>Pick something you'd finish in an afternoon, write the Goal, split it into two or three Tickets and run it with the small Workflow. Then go do something else.</p>
+		</div>
+		<div class="vf-install-main">
+			<pre class="vf-code"><span class="row"><span class="c-d">$ </span>git clone git@github.com:julianbonomini/vago.git</span><span class="row"><span class="c-d">$ </span>cd vago && bun install && bun run reinstall</span><span class="row"><span class="c-d">$ </span>cd ~/code/your-project && vago init</span></pre>
+			<ul class="vf-needs">
+				<li>You need Bun to build it, Claude Code or Codex for the agent Steps, and <code>gh</code> for the PR.</li>
+				<li>It's an Alpha. When retries run out, it stops and waits for you.</li>
+				<li>Most of this repo was built by Goals run through Vago.</li>
+			</ul>
+		</div>
+	</section>
+
+	<footer class="vf-foot">
+		<p class="vf-foot-word" aria-hidden="true">vago</p>
+		<div class="vf-foot-row">
+			<p><i>Vago</i> is Spanish for lazy. That's you, once the Goal is written. A personal project, MIT.</p>
+			<nav aria-label="Footer">
+				<a href="#">GitHub</a>
+				<a href="#">Docs</a>
+				<a href="#">License</a>
+			</nav>
+		</div>
+	</footer>
+</div>
+
+<script>
+	import { mountScrollStory } from "./f/scroll-story.ts";
+
+	const root = document.querySelector<HTMLElement>(".vf");
+	if (root) {
+		mountScrollStory(root);
+
+		// The starter Workflow tabs.
+		const tabs = [...root.querySelectorAll<HTMLButtonElement>("[data-tab]")];
+		const panels = [...root.querySelectorAll<HTMLElement>("[data-panel]")];
+		const pick = (i: number) => {
+			tabs.forEach((t, j) => {
+				t.setAttribute("aria-selected", String(i === j));
+				t.tabIndex = i === j ? 0 : -1;
+			});
+			panels.forEach((p, j) => {
+				p.hidden = i !== j;
+			});
+		};
+		for (const t of tabs) {
+			t.addEventListener("click", () => pick(Number(t.dataset.tab)));
+			t.addEventListener("keydown", (e) => {
+				if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+				const next = (Number(t.dataset.tab) + 1) % tabs.length;
+				pick(next);
+				tabs[next]?.focus();
+			});
+		}
+
+		// Sections rise in once, as they arrive.
+		if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
+			const io = new IntersectionObserver(
+				(es) => {
+					for (const e of es) {
+						if (!e.isIntersecting) continue;
+						e.target.classList.add("is-in");
+						io.unobserve(e.target);
+					}
+				},
+				{ threshold: 0.15 },
+			);
+			for (const el of root.querySelectorAll("[data-rise]")) io.observe(el);
+			root.classList.add("can-rise");
+		}
+	}
+</script>
+
+<style is:global>
+	.vf { min-height: 100vh; }
+	.vf a { color: inherit; }
+	.vf code { font-family: var(--v-mono); font-size: 0.86em; color: var(--v-bright); }
+	.vf button { font: inherit; color: inherit; }
+	.vf .c-d { color: var(--v-grey); }
+	.vf .c-x { color: var(--v-bright); }
+	.vf .c-a { color: var(--v-accent); }
+	.vf .c-o { color: var(--v-ok); }
+	.vf .c-b { color: var(--v-bad); }
+	.vf h2 {
+		font-size: var(--v-fs-h2);
+		letter-spacing: var(--v-track-h2);
+		line-height: 1.02;
+		font-weight: var(--v-weight-head);
+		color: var(--v-bright);
+		margin: 0;
+	}
+	.vf h3 { margin: 0; font-size: var(--v-fs-h3); font-weight: 600; color: var(--v-bright); letter-spacing: -0.01em; }
+	.vf :focus-visible { outline: 2px solid var(--v-accent); outline-offset: 3px; }
+
+	/* Nav */
+	.vf-nav {
+		max-width: var(--v-max);
+		margin: 0 auto;
+		padding: 18px var(--v-gutter);
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 16px;
+	}
+	.vf-word { font-family: var(--v-mono); font-weight: 700; color: var(--v-bright); letter-spacing: -0.02em; text-decoration: none; font-size: 19px; }
+	.vf-nav nav { display: flex; gap: 24px; font-size: 15px; color: var(--v-fg); align-items: center; }
+	.vf-nav nav > a:not(.vf-btn) { text-decoration: none; transition: color 0.15s; }
+	.vf-nav nav > a:not(.vf-btn):hover { color: var(--v-accent); }
+
+	.vf-btn {
+		display: inline-block;
+		background: var(--v-accent-fill);
+		text-decoration: none;
+		font-weight: 600;
+		padding: 12px 24px;
+		border-radius: var(--v-radius);
+		transition: transform 0.15s var(--v-ease), background 0.15s;
+	}
+	.vf a.vf-btn { color: var(--v-on-accent); }
+	.vf-btn:hover { background: var(--v-accent-hover); }
+	.vf-btn:active { transform: scale(0.97); }
+	.vf-btn-sm { padding: 7px 14px; font-size: 14px; }
+	.vf-link { text-decoration: none; border-bottom: 2px solid var(--v-accent-fill); padding-bottom: 1px; transition: color 0.15s; }
+	.vf-link:hover { color: var(--v-accent); }
+
+	/* Hero */
+	.vf-hero { max-width: var(--v-max); margin: 0 auto; padding: clamp(40px, 6vw, 88px) var(--v-gutter) 0; }
+	.vf-hero-side {
+		display: flex;
+		justify-content: space-between;
+		align-items: flex-end;
+		gap: var(--v-gap);
+		margin-top: clamp(24px, 2.4vw, 36px);
+	}
+	.vf-hero h1 {
+		font-size: clamp(34px, 7.1vw, 108px);
+		line-height: 0.96;
+		letter-spacing: var(--v-track-display);
+		font-weight: var(--v-weight-head);
+		color: var(--v-bright);
+		margin: 0;
+	}
+	.vf-sub { font-size: clamp(17px, 1.5vw, 21px); color: var(--v-fg); margin: 0; max-width: 40ch; }
+	.vf-ctas { display: flex; gap: 26px; align-items: center; flex-wrap: wrap; flex: none; }
+	.vf-slot { margin-top: clamp(40px, 4vw, 64px); width: 100%; aspect-ratio: 1.78; }
+	.vf-hero-bar {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 24px;
+		margin-top: 18px;
+		font-size: var(--v-fs-small);
+		color: var(--v-grey);
+	}
+	.vf-hero-bar p { margin: 0; }
+	.vf-hero-bar { opacity: var(--hero-out, 1); }
+	.vf-hero-bar b { color: var(--v-fg); font-weight: 600; }
+
+	.vf-keys { display: flex; gap: 6px; flex-wrap: wrap; }
+	.vf-key {
+		all: unset;
+		cursor: pointer;
+		font-family: var(--v-mono);
+		font-size: 12.5px;
+		line-height: 1.5;
+		min-width: 18px;
+		text-align: center;
+		padding: 5px 9px;
+		border-radius: var(--v-radius);
+		color: var(--v-fg);
+		background: var(--v-raised);
+		box-shadow: inset 0 -2px 0 var(--v-line);
+		transition: transform 0.1s var(--v-ease), background 0.15s;
+	}
+	.vf .vf-key:hover { background: var(--v-line); }
+	.vf-key:active { transform: translateY(1px); }
+	.vf-key.is-pressed { animation: vf-press 0.45s var(--v-ease); }
+	@keyframes vf-press { 0% { background: var(--v-accent-fill); color: var(--v-on-accent); transform: translateY(1px); } }
+
+	/* Story */
+	.vf-story { max-width: var(--v-max); margin: 0 auto; padding: var(--v-section) var(--v-gutter) calc(var(--v-section) * 0.6); }
+	.vf-story-grid {
+		display: grid;
+		grid-template-columns: minmax(0, 3.9fr) minmax(0, 7fr);
+		gap: clamp(40px, 4.5vw, 72px);
+		align-items: start;
+	}
+	.vf-story-head { padding-bottom: 8vh; }
+	.vf-story-head p { margin: 18px 0 0; max-width: 40ch; font-size: 18px; }
+	.vf-beat {
+		min-height: 82vh;
+		display: flex;
+		flex-direction: column;
+		justify-content: center;
+		padding: 40px 0;
+		transition: opacity 0.4s var(--v-ease);
+	}
+	.vf-beat-short { min-height: 64vh; }
+	.vf.is-live .vf-beat:not(.is-active) { opacity: 0.32; }
+	.vf-beat h3 { font-size: clamp(24px, 2.3vw, 32px); letter-spacing: -0.025em; line-height: 1.1; }
+	.vf-beat-body { margin: 14px 0 0; max-width: 42ch; }
+	.vf-limit { margin: 12px 0 0; font-size: var(--v-fs-small); color: var(--v-grey); max-width: 44ch; }
+	.vf-limit::before { content: "Alpha: "; color: var(--v-accent); }
+	.vf-art {
+		margin: 26px 0 0;
+		background: var(--v-raised);
+		border-radius: var(--v-radius-lg);
+		padding: 14px 18px 16px;
+		max-width: 100%;
+		overflow: hidden;
+	}
+	.vf-art figcaption { font-family: var(--v-mono); font-size: 12px; color: var(--v-grey); margin-bottom: 10px; }
+	.vf-art pre {
+		margin: 0;
+		font-family: var(--v-mono);
+		font-size: 11.5px;
+		line-height: 1.65;
+		color: var(--v-fg);
+		white-space: pre;
+		overflow-x: auto;
+	}
+	.vf-art .row, .vf-code .row { display: block; min-height: 1.6em; }
+
+	/* The rows of a beat's artifact come in one by one, the first time it's read. */
+	@media (prefers-reduced-motion: no-preference) {
+		.vf.is-live .vf-beat:not(.is-seen) .vf-art .row { opacity: 0; transform: translateY(6px); }
+		.vf.is-live .vf-beat.is-seen .vf-art .row {
+			animation: vf-row 0.5s var(--v-ease) both;
+			animation-delay: calc(var(--i) * 45ms + 120ms);
+		}
+	}
+	@keyframes vf-row { from { opacity: 0; transform: translateY(6px); } }
+
+	.vf-dock-col { position: relative; height: 100%; }
+	.vf-dock { position: sticky; top: max(84px, calc(50vh - 300px)); z-index: 3; }
+	.vf-chapters, .vf-dock-bar { opacity: var(--dock-in, 1); transition: opacity 0.2s; }
+	.vf-chapters {
+		list-style: none;
+		margin: 0 0 14px;
+		padding: 0;
+		display: flex;
+		gap: 4px;
+		flex-wrap: wrap;
+	}
+	.vf-chapters button {
+		all: unset;
+		cursor: pointer;
+		position: relative;
+		font-size: 14px;
+		padding: 6px 12px;
+		border-radius: var(--v-radius);
+		color: var(--v-grey);
+		transition: color 0.2s, background 0.2s;
+	}
+	.vf-chapters button:hover { color: var(--v-bright); }
+	.vf-chapters .is-past { color: var(--v-fg); }
+	.vf-chapters .is-past::before { content: "✓ "; color: var(--v-ok); }
+	.vf .vf-chapters .is-on { background: var(--v-accent-fill); color: var(--v-on-accent); font-weight: 600; }
+	.vf-chapters button:focus-visible { outline: 2px solid var(--v-accent); outline-offset: 2px; }
+	.vf-anchor { position: relative; }
+	.vf-fly { transform-origin: 100% 0; }
+	.vf-dock-bar {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 16px;
+		margin-top: 14px;
+		font-size: var(--v-fs-small);
+		color: var(--v-grey);
+	}
+	.vf-dock-bar p { margin: 0; transition: color 0.2s; }
+	.vf.is-driving .vf-dock-bar p { color: var(--v-accent); }
+
+	/* Your Workflow */
+	.vf-yours { background: var(--v-raised); }
+	.vf-yours-in {
+		max-width: var(--v-max);
+		margin: 0 auto;
+		padding: var(--v-section) var(--v-gutter);
+		display: grid;
+		grid-template-columns: minmax(0, 6fr) minmax(0, 6fr);
+		gap: clamp(40px, 6vw, 96px);
+		align-items: start;
+	}
+	.vf-yours-copy > p { margin: 22px 0 0; max-width: 50ch; }
+	.vf-split { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; margin-top: 44px; }
+	.vf-split ul { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 10px; font-size: 15.5px; }
+	.vf-split li { padding-left: 18px; position: relative; }
+	.vf-split li::before { content: "·"; position: absolute; left: 4px; color: var(--v-accent); font-weight: 700; }
+	.vf-starters { background: var(--v-bg); border-radius: var(--v-radius-lg); padding: clamp(20px, 2.4vw, 32px); }
+	.vf-starters-lede { margin: 0; font-size: 18px; color: var(--v-bright); font-weight: 500; }
+	.vf-tabs { display: flex; gap: 6px; margin-top: 18px; }
+	.vf-tabs button {
+		all: unset;
+		cursor: pointer;
+		font-family: var(--v-mono);
+		font-size: 13px;
+		padding: 6px 12px;
+		border-radius: var(--v-radius);
+		color: var(--v-fg);
+		background: var(--v-raised);
+		transition: background 0.15s, color 0.15s;
+	}
+	.vf-tabs button:hover { color: var(--v-bright); }
+	.vf .vf-tabs [aria-selected="true"] { background: var(--v-bright); color: var(--v-bg); }
+	.vf-tabs button:focus-visible { outline: 2px solid var(--v-accent); outline-offset: 2px; }
+	.vf-wf-blurb { margin: 16px 0 0; font-size: 15px; color: var(--v-grey); min-height: 3em; }
+	.vf-wf-after { margin: 18px 0 0; font-size: var(--v-fs-small); color: var(--v-grey); }
+	.vf-wf-steps { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 2px; }
+	.vf-wf-steps li {
+		display: grid;
+		grid-template-columns: minmax(0, 9.5em) 3.6em minmax(0, 1fr);
+		gap: 12px;
+		align-items: baseline;
+		padding: 6px 10px;
+		margin: 0 -10px;
+		border-radius: var(--v-radius);
+		font-size: 15px;
+		transition: background 0.15s;
+	}
+	.vf-wf-steps li:hover { background: var(--v-raised); }
+	.vf-wf-steps .n { color: var(--v-bright); font-weight: 500; }
+	.vf-wf-steps .t { font-family: var(--v-mono); font-size: 12px; }
+	.vf-wf-steps .t-agent { color: var(--v-accent); }
+	.vf-wf-steps .t-shell { color: var(--v-grey); }
+	.vf-wf-steps code { font-size: 12.5px; color: var(--v-grey); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	@media (prefers-reduced-motion: no-preference) {
+		.vf-wf:not([hidden]) li { animation: vf-row 0.4s var(--v-ease) both; animation-delay: calc(var(--i) * 30ms); }
+	}
+
+	/* Install */
+	.vf-install {
+		max-width: var(--v-max);
+		margin: 0 auto;
+		padding: var(--v-section) var(--v-gutter);
+		display: grid;
+		grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+		gap: var(--v-gap);
+		align-items: start;
+	}
+	.vf-code {
+		margin: 0;
+		font-family: var(--v-mono);
+		font-size: 14px;
+		line-height: 1.9;
+		background: var(--v-t-bg);
+		color: var(--v-t-fg);
+		padding: 22px 26px;
+		border-radius: var(--v-radius-lg);
+		overflow-x: auto;
+	}
+	.vf-code .c-d { color: var(--v-t-grey); }
+	.vf-install-copy p { margin: 22px 0 0; max-width: 40ch; font-size: 18px; }
+	.vf-needs { list-style: none; margin: 26px 0 0; padding: 0; display: grid; gap: 10px; }
+	.vf-needs li { padding-left: 18px; position: relative; max-width: 60ch; }
+	.vf-needs li::before { content: "·"; position: absolute; left: 4px; color: var(--v-accent); font-weight: 700; }
+
+	/* Footer */
+	.vf-foot { max-width: var(--v-max); margin: 0 auto; padding: 0 var(--v-gutter) 40px; }
+	.vf-foot-word {
+		margin: 0;
+		font-family: var(--v-mono);
+		font-weight: 700;
+		font-size: clamp(96px, 41.5vw, 600px);
+		line-height: 1;
+		letter-spacing: -0.06em;
+		color: var(--v-bright);
+		margin-left: -0.04em;
+	}
+	.vf-foot-row { display: flex; justify-content: space-between; align-items: baseline; gap: 24px; margin-top: 28px; font-size: 15px; color: var(--v-grey); flex-wrap: wrap; }
+	.vf-foot-row p { margin: 0; }
+	.vf-foot-row nav { display: flex; gap: 22px; }
+	.vf-foot-row a { text-decoration: none; color: var(--v-fg); }
+	.vf-foot-row a:hover { color: var(--v-accent); }
+
+	/* Entrances */
+	@media (prefers-reduced-motion: no-preference) {
+		.vf-hero h1, .vf-hero-side, .vf-hero-bar { animation: vf-rise 0.8s var(--v-ease) backwards; }
+		.vf-hero-side { animation-delay: 0.08s; }
+		.vf-hero-bar { animation-delay: 0.3s; }
+		.vf.can-rise [data-rise] > * { opacity: 0; transform: translateY(20px); transition: opacity 0.7s var(--v-ease), transform 0.7s var(--v-ease); }
+		.vf.can-rise [data-rise].is-in > * { opacity: 1; transform: none; }
+		.vf.can-rise [data-rise].is-in > :nth-child(2) { transition-delay: 0.08s; }
+		.vf.can-rise [data-rise].is-in > :nth-child(3) { transition-delay: 0.16s; }
+	}
+	@keyframes vf-rise { from { opacity: 0; transform: translateY(14px); } }
+	@media (prefers-reduced-motion: reduce) {
+		.vf, .vf * { transition: none !important; }
+	}
+
+	/* Narrow: no flight. The TUI sits under the hero and sticks to the top
+	   while the story scrolls under it. */
+	@media (max-width: 1023px) {
+		.vf-hero-side { flex-direction: column; align-items: flex-start; gap: 24px; }
+		.vf-slot, .vf-hero-bar { display: none; }
+		.vf-story { padding-top: 32px; }
+		.vf-story-grid { grid-template-columns: minmax(0, 1fr); gap: 0; }
+		.vf-beats { display: contents; }
+		.vf-dock-col { order: -1; height: auto; position: sticky; top: 0; z-index: 3; background: var(--v-bg); padding: 10px 0 12px; margin: 0 calc(var(--v-gutter) * -1); padding-inline: var(--v-gutter); }
+		.vf-dock { position: static; }
+		.vf-story-head { padding: 48px 0 0; }
+		.vf-beat { min-height: 70vh; padding: 28px 0; }
+		.vf-beat-short { min-height: 55vh; }
+		.vf-yours-in, .vf-install { grid-template-columns: minmax(0, 1fr); }
+	}
+	@media (max-width: 640px) {
+		.vf-nav nav > a:not(.vf-btn) { display: none; }
+		.vf-hero { padding-top: 20px; }
+		.vf-hero h1 { font-size: clamp(32px, 9.2vw, 56px); }
+		.vf-chapters { margin-bottom: 8px; gap: 2px; flex-wrap: nowrap; overflow: hidden; }
+		.vf-chapters button { font-size: 12px; padding: 4px 7px; }
+		.vf-chapters .is-past::before { content: ""; }
+		.vf-dock-bar { margin-top: 8px; }
+		.vf-dock-bar p { display: none; }
+		.vf-dock-bar .vf-keys { display: grid; grid-template-columns: repeat(6, 1fr); width: 100%; gap: 6px; }
+		.vf-dock-bar .vf-key { padding: 6px 0; font-size: 13px; }
+		.vf-beat { min-height: 62vh; }
+		.vf-art { padding: 12px 14px; }
+		.vf-art pre { font-size: 10px; }
+		.vf-split { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+		.vf-wf-steps li { grid-template-columns: minmax(0, 1fr) 3.6em; }
+		.vf-wf-steps code { grid-column: 1 / -1; margin-top: -4px; }
+		.vf-code { font-size: 11.5px; padding: 16px; }
+	}
+</style>
