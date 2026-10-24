@@ -1,0 +1,430 @@
+---
+// "Your Workflow is a short file": what Vago decides and what the Workflow does, the starter Workflows in
+// tabs, real files without their comments, and beside them a second live TUI replaying the running Ticket
+// with small.toml's Steps lit from its state, and an aside on retries that can show the stuck Goal.
+// workflow-files.ts runs the tabs, the lighting and the stuck button.
+import LiveTui from "../tui/LiveTui.astro";
+import type { ReplayPlace } from "../tui/tui-replay.ts";
+import { tuiFrames } from "../tui/tui-replay.ts";
+import { starterWorkflows, workflowLineParts } from "./starter-workflows.ts";
+
+const tuiId = "workflow-tui";
+const { goal, ticket } = tuiFrames.replay;
+const stuck = tuiFrames.goals.find(({ standing }) => standing === "stuck");
+if (stuck === undefined) throw new Error("The captured frames have no stuck Goal");
+
+// Where the TUI runs, and where the stuck button sends it: the stuck Goal's failed Run.
+const replayPlace: ReplayPlace = { view: "goal", goal, ticket: Number(ticket) - 1, pane: "Ticket" };
+const stuckPlace: ReplayPlace = { view: "goal", goal: stuck.name, pane: "Run activity" };
+// The capture's stuck Ticket fails on Build, as capture/example-project.ts writes it.
+const stuckStep = "Build";
+
+const blurbs: Record<string, string> = {
+	"small.toml": "For small Tickets that are already clear. One agent builds, a fresh one reviews.",
+	"try-hard.toml":
+		"For Tickets that need thinking first: design, product and architecture passes before anything is built. The TUI runs small.toml, so nothing lights up here.",
+};
+---
+<section class="workflow" id="your-workflow" aria-labelledby="workflow-title">
+	<div class="workflow-head">
+		<h2 id="workflow-title">Your Workflow is a short file</h2>
+		<div>
+			<p class="workflow-lede">
+				Vago has opinions about how a Workflow runs and none about what it is. That part is yours, per Project,
+				in <code>.vago/workflows/</code>.
+			</p>
+			<div class="workflow-split">
+				<div>
+					<h3>Vago takes care of</h3>
+					<ul class="takes-care">
+						<li>A worktree per Goal, so your checkout stays yours</li>
+						<li>Retries that resume the agent's own session</li>
+						<li>Ticket and Run state in plain files in your repo</li>
+						<li>Picking up a stuck Ticket, or a crashed run, where it stopped</li>
+					</ul>
+				</div>
+				<div>
+					<h3>You decide</h3>
+					<ul class="you-decide">
+						<li>The Steps and their order</li>
+						<li>Every prompt an agent Step gets</li>
+						<li>Which agent and model, per Step</li>
+						<li>The scripts that branch, check and merge</li>
+					</ul>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<div class="workflow-body" data-workflow-files>
+		<div>
+			<p class="workflow-uses">
+				It ships two to start from. A solo project can merge straight to <code>main</code>, a work repo can wait
+				for reviews and checks, and an open source contribution can follow that project's rules without anything
+				personal landing in its repo. Each is a change to the file and its scripts.
+			</p>
+			<div class="tabs" role="tablist" aria-label="Starter Workflows">
+				{starterWorkflows.map(({ file }, index) => (
+					<button
+						type="button"
+						role="tab"
+						id={`workflow-tab-${index}`}
+						aria-controls={`workflow-panel-${index}`}
+						aria-selected={index === 0 ? "true" : "false"}
+						tabindex={index === 0 ? 0 : -1}
+						data-tab
+					>{file}</button>
+				))}
+			</div>
+			{starterWorkflows.map(({ file, blocks }, index) => (
+				<div class="panel" role="tabpanel" id={`workflow-panel-${index}`} aria-labelledby={`workflow-tab-${index}`} hidden={index !== 0} data-panel>
+					<p class="panel-note"><code>.vago/workflows/{file}</code>. {blurbs[file]}</p>
+					<pre
+						class="file"
+						data-workflow-file={file}
+						data-workflow-tui={index === 0 ? tuiId : undefined}
+						aria-label={`The ${file} Workflow, without its comments`}
+					>{blocks.map(({ list, step, when, lines }) => (
+						<span class={`block block-${list}`} data-step={step} data-list={list} data-when={when}>{lines.map((line) => (
+							<span class="wf-line">{workflowLineParts(line).map(({ text, look }) => (look === "plain" ? text : <span class={look}>{text}</span>))}</span>
+						))}</span>
+					))}</pre>
+				</div>
+			))}
+		</div>
+
+		<div class="workflow-side">
+			<div class="workflow-sticky">
+				<p class="now" aria-live="polite"><span class="now-dot" aria-hidden="true"></span><span data-now data-goal={goal}>{goal}</span></p>
+				<LiveTui id={tuiId} place={replayPlace} />
+				<aside class="fails" aria-labelledby="fails-title">
+					<h3 id="fails-title">When a Step fails</h3>
+					<p>
+						A failed agent Step is retried after 1, 1 and then 5 minutes, each time resuming the agent's own session.
+						A run that crashed is picked up the same way: the next <code>vago run</code> starts at the Step it was on.
+					</p>
+					<p class="fails-limit">When the retries run out, the Ticket is stuck and it's your turn.</p>
+					<button
+						type="button"
+						class="text-button"
+						aria-pressed="false"
+						data-show-stuck={stuck.name}
+						data-stuck-step={stuckStep}
+						data-stuck-place={JSON.stringify(stuckPlace)}
+						data-replay-place={JSON.stringify(replayPlace)}
+					>Show a stuck Goal in the TUI</button>
+				</aside>
+			</div>
+		</div>
+	</div>
+</section>
+
+<style>
+	.workflow {
+		padding-top: var(--v-section);
+	}
+	.workflow-head,
+	.workflow-body {
+		display: grid;
+		grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+		gap: 72px;
+		align-items: start;
+	}
+	.workflow-body {
+		gap: 56px;
+		margin-top: 64px;
+	}
+	h2 {
+		margin: 0;
+		font-size: var(--v-fs-h2);
+		line-height: 1.04;
+		letter-spacing: var(--v-track-h2);
+		font-weight: var(--v-weight-head);
+		color: var(--v-bright);
+	}
+	h3 {
+		margin: 0;
+		font-size: 16px;
+		font-weight: var(--v-weight-head);
+		color: var(--v-bright);
+	}
+	code {
+		font-family: var(--v-mono);
+		font-size: 0.88em;
+	}
+	.workflow-lede {
+		max-width: 46ch;
+		margin: 0;
+		font-size: clamp(18px, 1.4vw, 21px);
+		line-height: 1.45;
+	}
+	.workflow-split {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+		gap: 32px;
+		margin-top: 32px;
+	}
+	ul {
+		display: grid;
+		gap: 8px;
+		margin: 12px 0 0;
+		padding: 0;
+		list-style: none;
+		font-size: 15.5px;
+		line-height: 1.45;
+	}
+	li {
+		position: relative;
+		padding-left: 20px;
+	}
+	li::before {
+		position: absolute;
+		left: 0;
+		font-family: var(--v-term);
+	}
+	.takes-care li::before {
+		content: "✓";
+		top: 1px;
+		font-size: 13px;
+		color: var(--v-ok);
+	}
+	.you-decide li::before {
+		content: "●";
+		top: 4px;
+		font-size: 10px;
+		color: var(--v-accent);
+	}
+
+	.workflow-uses {
+		max-width: 54ch;
+		margin: 0;
+		font-size: 15.5px;
+	}
+	.tabs {
+		display: flex;
+		gap: 6px;
+		margin-top: 20px;
+	}
+	.tabs button {
+		all: unset;
+		cursor: pointer;
+		padding: 6px 12px;
+		border-radius: var(--v-radius);
+		font-family: var(--v-mono);
+		font-size: 13px;
+		color: var(--v-fg);
+		background: var(--v-raised);
+		transition:
+			background 0.15s,
+			color 0.15s;
+	}
+	.tabs button:hover {
+		color: var(--v-bright);
+	}
+	.tabs button[aria-selected="true"] {
+		background: var(--v-bright);
+		color: var(--v-bg);
+	}
+	.tabs button:focus-visible {
+		outline: 2px solid var(--v-accent);
+		outline-offset: 2px;
+	}
+	.panel-note {
+		min-height: 3em;
+		margin: 14px 0 12px;
+		font-size: var(--v-fs-small);
+		color: var(--v-grey);
+	}
+
+	/* The file, a block per Step, each Step marked with how the TUI's Ticket stands on it. */
+	.file {
+		margin: 0;
+		padding: 18px 0;
+		overflow-x: auto;
+		background: var(--v-code);
+		border: 1px solid var(--v-code-line);
+		border-radius: var(--v-radius-lg);
+		font-family: var(--v-mono);
+		font-size: 13px;
+		line-height: 1.62;
+		color: var(--v-fg);
+	}
+	.block {
+		position: relative;
+		display: block;
+		width: max-content;
+		min-width: 100%;
+		padding: 6px 22px 6px 34px;
+		transition: background 0.3s var(--v-ease);
+	}
+	.block + .block {
+		margin-top: 6px;
+	}
+	.wf-line {
+		display: block;
+		white-space: pre;
+	}
+	.head {
+		color: var(--v-bright);
+	}
+	.value {
+		color: var(--v-accent);
+	}
+	.block-after_all,
+	.block[data-state="skip"] {
+		color: var(--v-grey);
+	}
+	.block-after_all .head,
+	.block-after_all .value,
+	.block[data-state="skip"] .head,
+	.block[data-state="skip"] .value {
+		color: var(--v-grey);
+	}
+	.block::before {
+		position: absolute;
+		top: 6px;
+		left: 14px;
+		width: 1ch;
+		text-align: center;
+		font-family: var(--v-term);
+	}
+	.block[data-state="pend"]::before {
+		content: "·";
+		color: var(--v-grey);
+	}
+	.block[data-state="skip"]::before {
+		content: "–";
+		color: var(--v-grey);
+	}
+	.block[data-state="cur"]::before {
+		content: "●";
+		color: var(--v-accent);
+	}
+	.block[data-state="done"]::before {
+		content: "✓";
+		color: var(--v-ok);
+	}
+	.block[data-state="bad"]::before {
+		content: "✗";
+		color: var(--v-bad);
+	}
+	.block[data-state="cur"] {
+		background: var(--v-row-hot);
+	}
+	.block[data-state="bad"] {
+		background: rgb(229 115 107 / 0.14);
+	}
+	@media (prefers-reduced-motion: no-preference) {
+		.panel:not([hidden]) .block {
+			animation: block-in 0.4s var(--v-ease) both;
+		}
+	}
+	@keyframes block-in {
+		from {
+			opacity: 0;
+			transform: translateY(4px);
+		}
+	}
+
+	.workflow-side {
+		align-self: stretch;
+		min-width: 0;
+	}
+	.workflow-sticky {
+		position: sticky;
+		top: 32px;
+	}
+	.now {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		margin: 0 0 12px;
+		font-size: var(--v-fs-small);
+	}
+	.now-dot {
+		flex: none;
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		background: var(--v-accent-fill);
+	}
+	:global([data-stuck]) .now-dot {
+		background: var(--v-bad);
+	}
+	@media (prefers-reduced-motion: no-preference) {
+		.now-dot {
+			animation: now-blink 1.6s ease-in-out infinite;
+		}
+	}
+	@keyframes now-blink {
+		50% {
+			opacity: 0.3;
+		}
+	}
+	.fails {
+		max-width: 62ch;
+		margin-top: 40px;
+	}
+	.fails p {
+		margin: 8px 0 0;
+		font-size: 15px;
+	}
+	.fails .fails-limit {
+		font-size: var(--v-fs-small);
+		color: var(--v-grey);
+	}
+	.fails-limit::before {
+		content: "Alpha: ";
+		color: var(--v-accent);
+	}
+	.text-button {
+		all: unset;
+		cursor: pointer;
+		margin-top: 14px;
+		padding-bottom: 1px;
+		border-bottom: 1px solid var(--v-accent);
+		font-size: 15px;
+		color: var(--v-bright);
+		transition: color 0.15s;
+	}
+	.text-button:hover {
+		color: var(--v-accent);
+	}
+	.text-button:focus-visible {
+		outline: 2px solid var(--v-accent);
+		outline-offset: 3px;
+	}
+
+	@media (max-width: 1023px) {
+		.workflow-head,
+		.workflow-body {
+			grid-template-columns: minmax(0, 1fr);
+			gap: 32px;
+		}
+		.workflow-sticky {
+			position: static;
+		}
+		.workflow-side {
+			order: -1;
+		}
+	}
+	@media (max-width: 640px) {
+		.workflow-split {
+			grid-template-columns: minmax(0, 1fr);
+		}
+		.file {
+			font-size: 11.5px;
+		}
+		.block {
+			padding-right: 14px;
+			padding-left: 30px;
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.block,
+		.tabs button,
+		.text-button {
+			transition: none;
+		}
+	}
+</style>

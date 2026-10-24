@@ -1,0 +1,63 @@
+---
+// The sidebar's links: Docs, Cookbook and Agents, each with its pages in order, the current one marked.
+import { docSections } from "./doc-pages.ts";
+
+type Props = { label: string };
+
+const { label } = Astro.props;
+const groups = await docSections();
+---
+<nav class="sidebar" aria-label={label}>
+	{groups.map((group) => (
+		<div class="group">
+			<p class="group-label">{group.label}</p>
+			<ul>
+				{group.pages.map((page) => (
+					<li>
+						<a href={page.path} aria-current={page.path === Astro.url.pathname ? "page" : undefined}>
+							{page.title}
+						</a>
+					</li>
+				))}
+			</ul>
+		</div>
+	))}
+</nav>
+
+<style>
+	.group + .group {
+		margin-top: 28px;
+	}
+	.group-label {
+		margin: 0 0 8px;
+		font-family: var(--v-mono);
+		font-size: 12px;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--v-grey);
+	}
+	ul {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+	a {
+		display: block;
+		padding: 5px 12px;
+		border-left: 1px solid var(--v-line);
+		font-size: 15px;
+		line-height: 1.45;
+		text-decoration: none;
+		transition: border-color 0.15s, color 0.15s;
+	}
+	a:hover {
+		border-left-color: var(--v-line-strong);
+		color: var(--v-bright);
+	}
+	a[aria-current] {
+		padding-left: 11px;
+		border-left: 2px solid var(--v-accent-fill);
+		color: var(--v-bright);
+		font-weight: 600;
+	}
+</style>

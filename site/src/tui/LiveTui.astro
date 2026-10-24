@@ -1,0 +1,357 @@
+---
+// The live TUI: Vago's real TUI replaying the example Project from captured frames, in a terminal window
+// scaled to the width it gets. Its first screen is drawn here, so it shows before any script runs; then
+// live-tui.ts plays it and takes Vago's keys while it has the focus or the pointer. A page drives it
+// through liveTui(element) from live-tui.ts, the element being the one with data-live-tui, sending it to a
+// ReplayPlace from tui-replay.ts.
+//
+// A page that scales or moves the TUI turns off its key row and replay controls, which would shrink with it,
+// and puts a LiveTuiKeys where it likes.
+//
+// With reduced motion the replay doesn't play by itself: it rests on one moment, and every key still works.
+import type { ReplayPlace } from "./tui-replay.ts";
+import { placeReplay, replayFrame, replayLabel, restingState, tuiFrames } from "./tui-replay.ts";
+import { screenRows, tuiStyleCss } from "./tui-screen.ts";
+import LiveTuiKeys from "./LiveTuiKeys.astro";
+
+type Props = {
+	/** Needed when a LiveTuiKeys apart presses this TUI's keys. */
+	id?: string;
+	/** Where it starts: the Goals list on the running Goal, at a moment of Build, unless this says. */
+	place?: ReplayPlace;
+	/** Whether the replay plays once it is on screen. Never with reduced motion. */
+	autoplay?: boolean;
+	/** Whether its key row shows under the window; false when the page puts a LiveTuiKeys elsewhere. */
+	keys?: boolean;
+	/** Whether the replay's moment and its Play button show under the window. */
+	controls?: boolean;
+	/** Whether the line saying it's a replay shows under it; false only where the page says so itself. */
+	caption?: boolean;
+	class?: string;
+};
+
+const {
+	id,
+	place = {},
+	autoplay = true,
+	keys = true,
+	controls = true,
+	caption = true,
+	class: className = "",
+} = Astro.props;
+const start = placeReplay(restingState, place);
+const { frame, help } = replayFrame(start);
+const rows = screenRows(frame, help);
+const { width, height } = tuiFrames.size;
+---
+<div
+	class={`vtui ${className}`}
+	id={id}
+	data-live-tui
+	data-place={JSON.stringify(place)}
+	data-autoplay={String(autoplay)}
+>
+	<style is:inline set:html={tuiStyleCss(".vtui-screen")}></style>
+	<div class="vtui-window" data-window>
+		<div class="vtui-chrome" aria-hidden="true">
+			<span><b>vago</b> ~/code/{tuiFrames.project}</span>
+			<span class="vtui-hint">click it, then use its keys</span>
+		</div>
+		<div class="vtui-scroll">
+			<div
+				class="vtui-screen"
+				data-screen
+				tabindex="0"
+				role="application"
+				aria-roledescription="terminal replay"
+				aria-label="A replay of Vago's TUI on an example Project. Up and down move, Enter opens a Goal, Escape goes back to the Goals, where Tab leaves the replay. Brackets switch Goals, Tab and 1 to 4 move between panes, question mark shows the keys."
+				style={`--cols:${width};--rows:${height}`}
+			>
+				{rows.map((row) => <div class="row" data-row set:html={row} />)}
+				<i class="vtui-spot" data-spot aria-hidden="true"></i>
+			</div>
+		</div>
+		<p class="vtui-toast" data-toast role="status" aria-live="polite"></p>
+	</div>
+	{(keys || controls) && (
+		<div class="vtui-under">
+			{keys && <LiveTuiKeys />}
+			{controls && (
+				<div class="vtui-replay">
+					<span class="vtui-meter" data-meter aria-hidden="true"></span>
+					<span data-status>{replayLabel(start)}</span>
+					<button type="button" class="vtui-play" data-play aria-pressed="false">Play</button>
+				</div>
+			)}
+		</div>
+	)}
+	{caption && (
+		<p class="vtui-caption">
+			A replay of Vago's TUI on an example Project. The TUI drew every frame itself, from {tuiFrames.project},
+			a Project invented for this page, so nothing here is running.
+		</p>
+	)}
+</div>
+
+<script>
+	import { liveTui } from "./live-tui.ts";
+
+	for (const root of document.querySelectorAll<HTMLElement>("[data-live-tui]")) liveTui(root);
+</script>
+
+<style is:global>
+	.vtui {
+		min-width: 0;
+	}
+	.vtui-window {
+		position: relative;
+		background: var(--v-t-bg);
+		border: 1px solid var(--v-t-line);
+		border-radius: var(--v-radius-lg);
+		box-shadow: var(--v-t-shadow);
+		overflow: hidden;
+		transition: box-shadow 0.3s var(--v-ease);
+	}
+	.vtui-window:hover,
+	.vtui-window:focus-within {
+		box-shadow:
+			var(--v-t-shadow),
+			0 0 0 1px rgb(255 138 61 / 0.4);
+	}
+	.vtui-chrome {
+		display: flex;
+		justify-content: space-between;
+		gap: 12px;
+		padding: 9px 16px;
+		font-family: var(--v-mono);
+		font-size: 12px;
+		line-height: 1.4;
+		color: var(--v-t-grey);
+		border-bottom: 1px solid var(--v-t-line);
+	}
+	.vtui-chrome b {
+		margin-right: 8px;
+		font-weight: 400;
+		color: var(--v-t-fg);
+	}
+	.vtui-window:hover .vtui-hint,
+	.vtui-window:focus-within .vtui-hint {
+		color: var(--v-accent-fill);
+	}
+	/* The screen's 120 columns scale to the width the window gets, down to a phone's. */
+	.vtui-scroll {
+		container-type: inline-size;
+		padding: clamp(8px, 1.4vw, 18px);
+		overflow: hidden;
+	}
+	.vtui-screen {
+		position: relative;
+		width: max-content;
+		font-family: var(--v-term);
+		font-size: clamp(3px, calc(100cqw / (var(--cols) * 0.602)), 17px);
+		/* One row's height, which the rows, the box lines and the spotlight all take. */
+		--row-height: 1.17em;
+		line-height: 1.17;
+		color: var(--v-t-fg);
+		font-variant-ligatures: none;
+		cursor: default;
+		outline: none;
+	}
+	.vtui-screen:focus-visible {
+		outline: 2px solid var(--v-accent-fill);
+		outline-offset: 4px;
+	}
+	.vtui-screen .row {
+		height: var(--row-height);
+		white-space: pre;
+	}
+	.vtui-screen i {
+		font-style: normal;
+	}
+	.vtui-screen .g {
+		display: inline-block;
+		width: 1ch;
+		overflow: hidden;
+		text-align: center;
+		vertical-align: top;
+	}
+	.vtui-screen .h,
+	.vtui-screen .b {
+		position: relative;
+		display: inline-block;
+		height: var(--row-height);
+		vertical-align: top;
+	}
+	.vtui-screen .b {
+		width: 1ch;
+	}
+	.vtui-screen .h::before,
+	.vtui-screen .b::before,
+	.vtui-screen .b::after {
+		content: "";
+		position: absolute;
+		background: currentColor;
+	}
+	.vtui-screen .h::before {
+		left: 0;
+		right: 0;
+		top: calc(50% - 0.5px);
+		height: 1px;
+	}
+	.vtui-screen .h.heavy::before {
+		top: calc(50% - 0.12em);
+		height: 0.24em;
+	}
+	.vtui-screen .b::before {
+		top: calc(50% - 0.5px);
+		height: 1px;
+		left: 50%;
+		right: 50%;
+	}
+	.vtui-screen .b::after {
+		left: calc(50% - 0.5px);
+		width: 1px;
+		top: 50%;
+		bottom: 50%;
+	}
+	.vtui-screen .b.l::before {
+		left: 0;
+	}
+	.vtui-screen .b.r::before {
+		right: 0;
+	}
+	.vtui-screen .b.u::after {
+		top: 0;
+	}
+	.vtui-screen .b.d::after {
+		bottom: 0;
+	}
+	.vtui-screen .b.full::before {
+		inset: 0;
+		height: auto;
+	}
+	.vtui-screen .b.top::before {
+		inset: 0 0 50% 0;
+		height: auto;
+	}
+	.vtui-screen .b.full::after,
+	.vtui-screen .b.top::after {
+		display: none;
+	}
+	/* The spotlight, laid in the screen's own cells so it follows any scale; the shadow dims the rest. */
+	.vtui-spot {
+		position: absolute;
+		top: calc(var(--spot-row, 0) * var(--row-height) - 0.2em);
+		left: calc(var(--spot-column, 0) * 1ch - 0.3ch);
+		width: calc(var(--spot-columns, 0) * 1ch + 0.6ch);
+		height: calc(var(--spot-rows, 0) * var(--row-height) + 0.4em);
+		border-radius: var(--v-radius);
+		box-shadow:
+			0 0 0 2px var(--v-accent-fill),
+			0 0 0 300em rgb(8 8 8 / 0.62);
+		pointer-events: none;
+		opacity: 0;
+		transition:
+			opacity 0.35s var(--v-ease),
+			top 0.55s var(--v-ease),
+			left 0.55s var(--v-ease),
+			width 0.55s var(--v-ease),
+			height 0.55s var(--v-ease);
+	}
+	.vtui-spot.is-on {
+		opacity: 1;
+	}
+	.vtui-toast {
+		position: absolute;
+		left: 50%;
+		bottom: 14%;
+		max-width: min(90%, 60ch);
+		margin: 0;
+		padding: 8px 14px;
+		font-family: var(--v-mono);
+		font-size: 12.5px;
+		line-height: 1.5;
+		color: var(--v-t-fg);
+		background: var(--v-t-raised);
+		border: 1px solid #3a3a3a;
+		border-radius: var(--v-radius);
+		opacity: 0;
+		pointer-events: none;
+		transform: translate(-50%, 8px);
+		transition:
+			opacity 0.2s,
+			transform 0.2s var(--v-ease);
+	}
+	.vtui-toast.is-on {
+		opacity: 1;
+		transform: translate(-50%, 0);
+	}
+	.vtui-under {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: space-between;
+		align-items: center;
+		gap: 16px;
+		margin-top: 14px;
+	}
+	.vtui-replay {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		font-family: var(--v-mono);
+		font-size: 12.5px;
+		color: var(--v-grey);
+	}
+	.vtui-meter {
+		position: relative;
+		flex: none;
+		width: 72px;
+		height: 2px;
+		overflow: hidden;
+		background: var(--v-line);
+	}
+	.vtui-meter::after {
+		content: "";
+		position: absolute;
+		inset: 0;
+		background: var(--v-accent-fill);
+		transform-origin: left;
+		transform: scaleX(var(--time, 0));
+		transition: transform 0.6s var(--v-ease);
+	}
+	.vtui-play {
+		all: unset;
+		cursor: pointer;
+		color: var(--v-fg);
+		border-bottom: 1px solid var(--v-line-strong);
+	}
+	.vtui-play:focus-visible {
+		outline: 2px solid var(--v-accent);
+		outline-offset: 2px;
+	}
+	.vtui-caption {
+		max-width: 70ch;
+		margin: 18px 0 0;
+		font-size: var(--v-fs-small);
+		color: var(--v-grey);
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.vtui,
+		.vtui * {
+			transition: none !important;
+			animation: none !important;
+		}
+	}
+	@media (max-width: 640px) {
+		.vtui-hint {
+			display: none;
+		}
+		.vtui-scroll {
+			padding: 8px;
+		}
+		.vtui-under {
+			flex-direction: column;
+			align-items: stretch;
+		}
+	}
+</style>

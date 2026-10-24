@@ -1,0 +1,148 @@
+---
+// Install and the honest limits: the commands that build and set up Vago, a first Goal's commands, and
+// what it needs and doesn't do yet, beside them.
+import { repoUrl } from "../site.ts";
+
+const clone = `git clone ${repoUrl.replace("https://github.com/", "git@github.com:")}.git`;
+const install = [clone, "cd vago && bun install && bun run reinstall", "cd ~/code/your-project && vago init"];
+const firstGoal = [
+	"vago goal new search --workflow small --body-file goal.md",
+	"vago ticket add search index --body-file index.md",
+	"vago run search",
+];
+---
+<section class="install" id="install" aria-labelledby="install-title">
+	<div class="install-head">
+		<h2 id="install-title">Try it on a small Goal</h2>
+		<p>
+			Pick something you'd finish in an afternoon. Write the Goal, split it into two or three Tickets and run it
+			with the small Workflow.
+		</p>
+	</div>
+	<div class="install-grid">
+		<div>
+			<h3>Install</h3>
+			<pre class="commands">{install.map((command) => <span class="command"><span class="prompt">$ </span>{command}</span>)}</pre>
+			<p class="note">
+				<code>reinstall</code> builds <code>vago</code> into <code>~/.local/bin</code>, which has to be on your
+				<code>PATH</code>. <code>init</code> copies the starter Workflows, prompts and scripts into
+				<code>.vago/</code>.
+			</p>
+		</div>
+		<div>
+			<h3>First Goal</h3>
+			<pre class="commands">{firstGoal.map((command) => <span class="command"><span class="prompt">$ </span>{command}</span>)}</pre>
+			<p class="note">Then run <code>vago</code> on its own to watch it, and go do something else.</p>
+		</div>
+	</div>
+	<ul class="limits">
+		<li>It's an Alpha. When the retries run out, it's your turn.</li>
+		<li>You need Bun to build it, Claude Code or Codex for agent Steps, and <code>gh</code> for the PR.</li>
+		<li>The starter Workflows are the ones I use. Change them, or write your own. MIT licensed.</li>
+	</ul>
+</section>
+
+<style>
+	.install {
+		padding-top: var(--v-section);
+	}
+	.install-head {
+		display: grid;
+		grid-template-columns: minmax(0, 6fr) minmax(0, 5fr);
+		gap: 72px;
+		align-items: end;
+	}
+	h2 {
+		margin: 0;
+		font-size: var(--v-fs-h2);
+		line-height: 1.04;
+		letter-spacing: var(--v-track-h2);
+		font-weight: var(--v-weight-head);
+		color: var(--v-bright);
+	}
+	.install-head p {
+		max-width: 46ch;
+		margin: 0;
+	}
+	.install-grid {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+		gap: 32px;
+		margin-top: 48px;
+	}
+	h3 {
+		margin: 0;
+		font-size: var(--v-fs-h3);
+		font-weight: var(--v-weight-head);
+		color: var(--v-bright);
+	}
+	code {
+		font-family: var(--v-mono);
+		font-size: 0.88em;
+	}
+	.commands {
+		margin: 14px 0 0;
+		padding: 20px 24px;
+		overflow-x: auto;
+		background: var(--v-code);
+		border: 1px solid var(--v-code-line);
+		border-radius: var(--v-radius-lg);
+		font-family: var(--v-mono);
+		font-size: 13.5px;
+		line-height: 1.85;
+		color: var(--v-bright);
+	}
+	.command {
+		display: block;
+		white-space: pre;
+	}
+	.prompt {
+		color: var(--v-grey);
+		user-select: none;
+	}
+	.note {
+		max-width: 56ch;
+		margin: 14px 0 0;
+		font-size: 15px;
+	}
+	.limits {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 32px;
+		margin: 48px 0 0;
+		padding: 24px 0 0;
+		border-top: 1px solid var(--v-line);
+		list-style: none;
+		font-size: 15px;
+	}
+	.limits li {
+		position: relative;
+		padding-left: 16px;
+	}
+	.limits li::before {
+		content: "·";
+		position: absolute;
+		left: 2px;
+		font-weight: 700;
+		color: var(--v-accent);
+	}
+	@media (max-width: 1023px) {
+		.install-head {
+			grid-template-columns: minmax(0, 1fr);
+			gap: 24px;
+		}
+	}
+	@media (max-width: 640px) {
+		.install-grid,
+		.limits {
+			grid-template-columns: minmax(0, 1fr);
+		}
+		.limits {
+			gap: 16px;
+		}
+		.commands {
+			padding: 16px;
+			font-size: 11.5px;
+		}
+	}
+</style>

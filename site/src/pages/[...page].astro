@@ -1,0 +1,19 @@
+---
+// Every docs, cookbook and agents page, rendered from its Markdown in src/content/ inside the docs layout. An
+// MDX page can embed the live TUI as <DocsTui />, and the agent snippet as <AgentSnippet />, with no import.
+import { render } from "astro:content";
+import AgentSnippet from "../agents/AgentSnippet.astro";
+import DocsLayout from "../docs/DocsLayout.astro";
+import DocsTui from "../docs/DocsTui.astro";
+import { type DocPage, docPageRoutes } from "../docs/doc-pages.ts";
+
+export const getStaticPaths = docPageRoutes;
+
+type Props = { page: DocPage };
+
+const { page } = Astro.props;
+const { Content } = await render(page.entry);
+---
+<DocsLayout page={page}>
+	<Content components={{ AgentSnippet, DocsTui }} />
+</DocsLayout>

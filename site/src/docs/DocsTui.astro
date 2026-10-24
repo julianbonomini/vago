@@ -1,0 +1,21 @@
+---
+// The live TUI inside a docs page, at the screen the page describes, as wide as the page's column allows
+// so its text stays legible. Its props are where the replay starts. The page's Markdown copy shows that
+// screen as text in its place (doc-pages.ts). Search leaves the screen's text out.
+import LiveTui from "../tui/LiveTui.astro";
+import type { ReplayPlace } from "../tui/tui-replay.ts";
+
+type Props = ReplayPlace;
+
+// The replay's clock moves the running Goal's Ticket, which the planning view doesn't show.
+const controls = Astro.props.view !== "planning";
+---
+<div class="docs-tui prose-wide" data-pagefind-ignore>
+	<LiveTui place={Astro.props} controls={controls} />
+</div>
+
+<style>
+	.docs-tui {
+		margin: 28px 0 0;
+	}
+</style>
