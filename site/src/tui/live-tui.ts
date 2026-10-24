@@ -13,6 +13,7 @@ import {
 	type ReplayPlace,
 	replayFrame,
 	replayLabel,
+	replayStep,
 	replayTime,
 	restingState,
 	tuiFrames,
@@ -33,6 +34,8 @@ export type LiveTuiState = {
 	time: number;
 	/** What the replayed Ticket is doing then, such as "Ticket 03 · Build". */
 	label: string;
+	/** The Step the replayed Ticket is on then, such as "Build"; undefined once it's merged. */
+	step?: string;
 	playing: boolean;
 };
 
@@ -100,6 +103,7 @@ function mount(root: HTMLElement): LiveTui {
 		help: state.help,
 		time: replayTime(state),
 		label: replayLabel(state),
+		step: replayStep(state),
 		playing,
 	});
 

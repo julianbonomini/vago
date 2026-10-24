@@ -3,11 +3,11 @@
 // The Goal and its Tickets come from the example Project the frames are captured from, and the Workflow from
 // the starter's small.toml; the times and costs are the frames', which test/story.test.ts checks.
 
-import smallWorkflow from "../../../starter/workflows/small.toml?raw";
 import { exampleGoals } from "../../capture/acme-shop.ts";
 import type { TuiPaneName } from "../tui/tui-frames.ts";
 import type { ReplayPlace } from "../tui/tui-replay.ts";
 import { tuiFrames } from "../tui/tui-replay.ts";
+import { starterWorkflows, workflowLineParts } from "./starter-workflows.ts";
 
 /** A pane the spotlight walks, the screen that shows it, and the line that names it. */
 export type PaneStop = { name: TuiPaneName; place: ReplayPlace; text: string };
@@ -135,35 +135,104 @@ const ticketFiles: StoryArtifact = {
 };
 
 // small.toml without its comments, from the top down to its Checks Step.
-const workflowLines = smallWorkflow
-	.split("\n")
-	.filter((line) => !line.startsWith("#"))
-	.map((line) => line.replace(/\s+#.*$/, ""))
-	.join("\n")
-	.replace(/\n{3,}/g, "\n\n")
-	.trim()
-	.split("\n");
-const lastShownStep = workflowLines.findIndex((line) =>
-	line.endsWith('"Checks"'),
-);
-if (lastShownStep < 0)
+const small = starterWorkflows.find(({ file }) => file === "small.toml");
+const lastShownStep =
+	small?.blocks.findIndex(({ step }) => step === "Checks") ?? -1;
+if (small === undefined || lastShownStep < 0)
 	throw new Error("starter/workflows/small.toml has no Checks Step");
 const workflowFile: StoryArtifact = {
 	caption: ".vago/workflows/small.toml",
 	lines: [
-		...workflowLines
-			.slice(0, workflowLines.indexOf("", lastShownStep))
-			.map((line) => {
-				if (line.startsWith("[[")) return [bright(line)];
-				const value = line.match(/^(.*= )(".*")$/);
-				return value === null
-					? [plain(line)]
-					: [plain(value[1] ?? ""), accent(value[2] ?? "")];
-			}),
+		...small.blocks
+			.slice(0, lastShownStep + 1)
+			.flatMap(({ lines }, index) => [
+				...(index === 0 ? [] : [[]]),
+				...lines.map((line) =>
+					workflowLineParts(line).map(({ text, look }) =>
+						look === "head"
+							? bright(text)
+							: look === "value"
+								? accent(text)
+								: plain(text),
+					),
+				),
+			]),
 		[],
 		[dim("# then Review, Goal review, Squash merge")],
 	],
 };
+
+/** A Step of the replayed Ticket's Workflow as `vago run` reports it: when it started and ended, what it
+ *  took and cost, or that it was skipped. */
+export type ReplayedStep = {
+	name: string;
+	type: "agent" | "shell";
+	started: string;
+	ended: string;
+	took: string;
+	cost: string;
+	skipped?: boolean;
+};
+
+/** The replayed Ticket's Steps in the order they ran, with the frames' times and costs. */
+export const replayedSteps: ReplayedStep[] = [
+	{
+		name: "New branch",
+		type: "shell",
+		started: "2026-10-21T14:20:00",
+		ended: "2026-10-21T14:20:00",
+		took: "0.1s",
+		cost: "",
+	},
+	{
+		name: "Build",
+		type: "agent",
+		started: "2026-10-21T14:20:00",
+		ended: "2026-10-21T14:29:12",
+		took: "9m12s",
+		cost: "$0.86",
+	},
+	{
+		name: "Checks",
+		type: "shell",
+		started: "2026-10-21T14:29:12",
+		ended: "2026-10-21T14:30:50",
+		took: "1m38s",
+		cost: "",
+	},
+	{
+		name: "Review",
+		type: "agent",
+		started: "2026-10-21T14:30:51",
+		ended: "2026-10-21T14:34:25",
+		took: "3m34s",
+		cost: "$0.31",
+	},
+	{
+		name: "Goal review",
+		type: "agent",
+		started: "2026-10-21T14:34:25",
+		ended: "2026-10-21T14:34:25",
+		took: "",
+		cost: "",
+		skipped: true,
+	},
+	{
+		name: "Squash merge",
+		type: "shell",
+		started: "2026-10-21T14:34:25",
+		ended: "2026-10-21T14:34:32",
+		took: "6.7s",
+		cost: "",
+	},
+];
+
+/** The Goal branch's commits once the replayed Ticket is merged, newest first. */
+export const goalCommits: { hash: string; message: string }[] = [
+	{ hash: "4e0c2d8", message: "03 balance page" },
+	{ hash: "9679a1b", message: "02 redeem at checkout" },
+	{ hash: "bd49572", message: "01 gift card codes" },
+];
 
 // A line of `vago run`: when, how long and what it cost, the Step and how it ended.
 const stepLine = (
@@ -192,7 +261,6 @@ export const storyBeats: StoryBeat[] = [
 		id: "tickets",
 		title: "You split it into Tickets",
 		body: `Write them yourself, or plan them with an agent in the TUI and accept what it proposes. A Ticket can wait on another: ${ticket} starts once 01 is done.`,
-		limit: "Tickets run one at a time. Separate Goals can run side by side.",
 		chapter: "Tickets",
 		place: { view: "goal", goal, pane: "Tickets" },
 		artifact: ticketFiles,
@@ -217,17 +285,15 @@ export const storyBeats: StoryBeat[] = [
 			caption: `vago run ${goal}`,
 			lines: [
 				[bright("03-balance-page")],
-				stepLine("2026-10-21T14:20:00", "New branch", dim("started")),
-				stepLine("2026-10-21T14:20:00", "New branch", ok("ok"), "0.1s"),
-				stepLine("2026-10-21T14:20:00", "Build", dim("started")),
-				stepLine("2026-10-21T14:29:12", "Build", ok("ok"), "9m12s", "$0.86"),
-				stepLine("2026-10-21T14:29:12", "Checks", dim("started")),
-				stepLine("2026-10-21T14:30:50", "Checks", ok("ok"), "1m38s"),
-				stepLine("2026-10-21T14:30:51", "Review", dim("started")),
-				stepLine("2026-10-21T14:34:25", "Review", ok("ok"), "3m34s", "$0.31"),
-				stepLine("2026-10-21T14:34:25", "Goal review", dim("skipped")),
-				stepLine("2026-10-21T14:34:25", "Squash merge", dim("started")),
-				stepLine("2026-10-21T14:34:32", "Squash merge", ok("ok"), "6.7s"),
+				...replayedSteps.flatMap(
+					({ name, started, ended, took, cost, skipped }) =>
+						skipped
+							? [stepLine(started, name, dim("skipped"))]
+							: [
+									stepLine(started, name, dim("started")),
+									stepLine(ended, name, ok("ok"), took, cost),
+								],
+				),
 			],
 		},
 	},
@@ -240,9 +306,11 @@ export const storyBeats: StoryBeat[] = [
 		artifact: {
 			caption: `git log --oneline vago/${goal}`,
 			lines: [
-				[accent("4e0c2d8 "), bright("03 balance page")],
-				[dim("9679a1b "), plain("02 redeem at checkout")],
-				[dim("bd49572 "), plain("01 gift card codes")],
+				...goalCommits.map(({ hash, message }, index) =>
+					index === 0
+						? [accent(`${hash} `), bright(message)]
+						: [dim(`${hash} `), plain(message)],
+				),
 			],
 		},
 	},

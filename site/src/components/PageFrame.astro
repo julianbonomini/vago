@@ -19,15 +19,28 @@ const {
 	title,
 	description = "Vago runs your Workflow on a Goal in your repo, one Ticket at a time, and leaves you a PR.",
 } = Astro.props;
+const pageTitle = title ? `${title} · Vago` : "Vago";
+const pageUrl = new URL(Astro.url.pathname, siteUrl);
 ---
 <!doctype html>
 <html lang="en">
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<title>{title ? `${title} · Vago` : "Vago"}</title>
+		<title>{pageTitle}</title>
 		<meta name="description" content={description} />
-		<link rel="canonical" href={new URL(Astro.url.pathname, siteUrl)} />
+		<link rel="canonical" href={pageUrl} />
+		{/* The link preview a chat or social post shows: the wordmark on the band, 1200 by 630. */}
+		<meta property="og:type" content="website" />
+		<meta property="og:site_name" content="Vago" />
+		<meta property="og:title" content={pageTitle} />
+		<meta property="og:description" content={description} />
+		<meta property="og:url" content={pageUrl} />
+		<meta property="og:image" content={new URL("/social-preview.png", siteUrl)} />
+		<meta property="og:image:width" content="1200" />
+		<meta property="og:image:height" content="630" />
+		<meta property="og:image:alt" content="The vago wordmark under the line Set the Goal. Go do something else." />
+		<meta name="twitter:card" content="summary_large_image" />
 		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 		{/* Before paint, so a dark page never flashes light. Until the visitor picks a theme it follows the
 		    system, also when that changes. Storage can be blocked; then the system decides. */}

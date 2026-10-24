@@ -124,11 +124,18 @@ export function isLastPhase(state: ReplayState): boolean {
 
 /** What the replayed Ticket is doing at `state`'s moment, such as "Ticket 03 · Build". */
 export function replayLabel(state: ReplayState): string {
-	const { ticket, next, phases } = tuiFrames.replay;
-	const label = phases[state.phase] ?? "";
-	return label === "Done"
+	const { ticket, next } = tuiFrames.replay;
+	const step = replayStep(state);
+	return step === undefined
 		? `Ticket ${ticket} merged, ${next} starts`
-		: `Ticket ${ticket} · ${label}`;
+		: `Ticket ${ticket} · ${step}`;
+}
+
+/** The Step of its Workflow the replayed Ticket is on at `state`'s moment, by the name the Workflow gives
+ *  it, such as "Build"; undefined once the Ticket is merged. */
+export function replayStep(state: ReplayState): string | undefined {
+	const label = tuiFrames.replay.phases[state.phase];
+	return label === "Done" ? undefined : label;
 }
 
 /** The frame `state` shows, and the help laid over it when the help is open. */

@@ -62,8 +62,9 @@ test("the story opens with its statement, then its beats in order", () => {
 	]);
 });
 
-test("the landing carries one live TUI, which the story drives", () => {
-	expect(landing.match(/data-live-tui/g)?.length).toBe(1);
+test("the hero and the story carry one live TUI, which the story drives", () => {
+	const heroAndStory = landing.split('id="pipeline"')[0] ?? "";
+	expect(heroAndStory.match(/data-live-tui/g)?.length).toBe(1);
 	expect(landing).toMatch(/data-drive[^>]*>Scrolling drives it/);
 });
 

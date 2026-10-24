@@ -1,4 +1,5 @@
-// No built page links to a file the site doesn't serve, or to a #fragment the target page doesn't have.
+// No built page links to a file the site doesn't serve, or to a #fragment the target page doesn't have, and no
+// fragment has two targets.
 import { expect, test } from "bun:test";
 import { builtDocuments, servedAt } from "./built-site.ts";
 
@@ -19,4 +20,16 @@ test("every internal link and asset in the build resolves, with its fragment", (
 		}
 	}
 	expect(broken).toEqual([]);
+});
+
+test("no built page uses an id twice, so every fragment has one target", () => {
+	const repeated: string[] = [];
+	for (const { path, html } of builtDocuments()) {
+		const seen = new Set<string>();
+		for (const [, id = ""] of html.matchAll(/\sid="([^"]*)"/g)) {
+			if (seen.has(id)) repeated.push(`${path}#${id}`);
+			seen.add(id);
+		}
+	}
+	expect(repeated).toEqual([]);
 });
