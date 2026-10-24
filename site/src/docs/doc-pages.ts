@@ -2,6 +2,7 @@
 // the path layout (`src/content/docs/install.md`, or `.mdx`, is served at `/docs/install/`, `.../index.md`
 // at its folder), where a page's Markdown copy is served (`/docs/install.md`), and what the copy holds.
 import { type CollectionEntry, getCollection } from "astro:content";
+import { agentSnippet } from "../agents/agent-snippet.ts";
 import {
 	placeReplay,
 	type ReplayPlace,
@@ -78,7 +79,7 @@ export async function docPageRoutes(): Promise<
 
 /** The Markdown copy of a page: its title as the `# ` heading, its description, then its source, each live
  *  TUI it embeds (`<DocsTui view="goal" ... />`, on a line of its own) as the text of the screen it starts
- *  on. */
+ *  on, and the agent snippet (`<AgentSnippet />`, on a line of its own) as a fenced Markdown block. */
 export function pageMarkdown(page: DocPage): string {
 	const body = (page.entry.body ?? "")
 		.trim()
@@ -87,7 +88,11 @@ export function pageMarkdown(page: DocPage): string {
 				placeReplay(restingState, tuiPlace(attributes)),
 			);
 			return `\`\`\`text\n${screenText(frame)}\n\`\`\``;
-		});
+		})
+		.replace(
+			/^<AgentSnippet \/>$/gm,
+			() => `\`\`\`markdown\n${agentSnippet}\n\`\`\``,
+		);
 	return `# ${page.title}\n\n${page.description}\n\n${body}\n`;
 }
 

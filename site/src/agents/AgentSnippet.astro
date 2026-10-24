@@ -1,0 +1,59 @@
+---
+// The agent snippet on a page, with a button that copies it. The page's Markdown copy shows the snippet in a
+// fenced block in its place (doc-pages.ts).
+import { agentSnippet } from "./agent-snippet.ts";
+---
+<div class="snippet">
+	<button type="button" data-copy-snippet>Copy</button>
+	<pre><code>{agentSnippet}</code></pre>
+</div>
+
+<script>
+	for (const button of document.querySelectorAll<HTMLButtonElement>("[data-copy-snippet]")) {
+		const text = button.parentElement?.querySelector("code")?.textContent ?? "";
+		button.addEventListener("click", async () => {
+			// The clipboard API is refused outside a secure context or without permission; then the visitor
+			// selects the text themselves.
+			try {
+				await navigator.clipboard.writeText(text);
+				button.textContent = "Copied";
+			} catch {
+				button.textContent = "Select it to copy";
+			}
+			setTimeout(() => {
+				button.textContent = "Copy";
+			}, 2000);
+		});
+	}
+</script>
+
+<style>
+	.snippet {
+		position: relative;
+		margin: 24px 0 0;
+	}
+	.snippet pre {
+		margin: 0;
+		padding-top: 52px;
+		background: var(--v-code);
+		color: var(--v-fg);
+		white-space: pre-wrap;
+	}
+	button {
+		position: absolute;
+		top: 12px;
+		right: 12px;
+		padding: 6px 12px;
+		border: 1px solid var(--v-code-line);
+		border-radius: var(--v-radius);
+		background: var(--v-bg);
+		color: var(--v-bright);
+		font-family: var(--v-mono);
+		font-size: 13px;
+		cursor: pointer;
+		transition: border-color 0.15s;
+	}
+	button:hover {
+		border-color: var(--v-accent);
+	}
+</style>

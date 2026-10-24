@@ -71,6 +71,7 @@ const [firstDocPage] = await docPages();
 				<a class="v-word" href="/" aria-label="Vago, home">vago</a>
 				<nav aria-label="Main">
 					{firstDocPage && <a href={firstDocPage.path}>Docs</a>}
+					<a href="/agents/">For agents</a>
 					<a href={repoUrl}>GitHub</a>
 					<ThemeToggle />
 				</nav>
@@ -170,6 +171,7 @@ const [firstDocPage] = await docPages();
 		font-size: 15px;
 	}
 	nav a {
+		white-space: nowrap;
 		text-decoration: none;
 		transition: color 0.15s;
 	}
@@ -234,6 +236,14 @@ const [firstDocPage] = await docPages();
 		}
 	}
 	@media (max-width: 640px) {
+		/* Three links and the toggle beside the wordmark fit a 390px phone only this close together. */
+		.v-top-in,
+		.v-top nav {
+			gap: 12px;
+		}
+		.v-top nav {
+			font-size: 14px;
+		}
 		.v-foot-row {
 			flex-direction: column;
 			align-items: flex-start;
