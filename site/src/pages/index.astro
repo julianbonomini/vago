@@ -6,11 +6,13 @@ import PrototypeSwitcher from "../components/PrototypeSwitcher.astro";
 import VariantA from "../variants/VariantA.astro";
 import VariantB from "../variants/VariantB.astro";
 import VariantC from "../variants/VariantC.astro";
+import VariantD from "../variants/VariantD.astro";
 
 const variants = [
   { key: "A", name: "Session transcript" },
   { key: "B", name: "Engineer's notebook" },
   { key: "C", name: "Away from desk" },
+  { key: "D", name: "Live TUI (round 2)" },
 ];
 ---
 <html lang="en">
@@ -27,6 +29,7 @@ const variants = [
     <div data-variant="A"><VariantA /></div>
     <div data-variant="B" hidden><VariantB /></div>
     <div data-variant="C" hidden><VariantC /></div>
+    <div data-variant="D" hidden><VariantD /></div>
     <PrototypeSwitcher variants={variants} />
   </body>
 </html>

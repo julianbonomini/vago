@@ -1,0 +1,833 @@
+---
+// PROTOTYPE, variant D (round 2): C's structure with the real TUI as a live,
+// keyboard-driven hero. The frames come from src/tui rendered headless (see
+// d/frames.json); the page only picks which one shows.
+import "@fontsource-variable/geist";
+import "@fontsource/jetbrains-mono/400.css";
+import "@fontsource/jetbrains-mono/700.css";
+import frames from "./d/frames.json";
+import { failMoments, realSteps } from "./d/run-output.ts";
+
+// The TUI's own colours, one class per style the capture found.
+const styleCss = (frames.styles as string[])
+	.map((s, i) => {
+		const [fg, bg, bold] = s.split("|");
+		return `.vd .vd-screen .s${i}{color:${fg};${bg ? `background:${bg};` : ""}${bold === "1" ? "font-weight:700;" : ""}}`;
+	})
+	.join("");
+
+// The rail: one loop where Ticket 01 goes through the Steps and lands as a
+// commit. Each stage lights when the fill reaches it.
+const cycle = 15;
+const pct = (s: number) => `${((s / cycle) * 100).toFixed(2)}%`;
+const stepAt = (i: number) => 2.4 + i * 1.8;
+const landed = stepAt(realSteps.length);
+const stageAt = [0, 1.2, stepAt(0), landed, landed + 1.2];
+const railCss = [
+	`@keyframes vd-fill { 0% { transform: scaleX(0) } ${stageAt.map((t, i) => `${pct(t + 0.35)} { transform: scaleX(${(i / 4).toFixed(3)}) }`).join(" ")} 93% { transform: scaleX(1) } 100% { transform: scaleX(1) } }`,
+	`@keyframes vd-fill-y { 0% { transform: scaleY(0) } ${stageAt.map((t, i) => `${pct(t + 0.35)} { transform: scaleY(${(i / 4).toFixed(3)}) }`).join(" ")} 93% { transform: scaleY(1) } 100% { transform: scaleY(1) } }`,
+	...stageAt.map(
+		(t, i) =>
+			`@keyframes vd-node-${i} { 0%, ${pct(t + 0.3)} { background: var(--bg); border-color: var(--line-strong) } ${pct(t + 0.45)}, 96% { background: var(--accent-fill); border-color: var(--accent-fill) } 100% { background: var(--bg); border-color: var(--line-strong) } }
+.vd .vd-pipe.is-on .vd-stage:nth-child(${i + 1}) .vd-node { animation: vd-node-${i} ${cycle}s linear infinite }`,
+	),
+	...realSteps.map((_, i) => {
+		const start = stepAt(i);
+		const done = start + 1.8;
+		return `@keyframes vd-pend-${i} { 0%, ${pct(start)} { opacity: 1 } ${pct(start + 0.05)}, 96% { opacity: 0 } 100% { opacity: 1 } }
+@keyframes vd-cur-${i} { 0%, ${pct(start)} { opacity: 0 } ${pct(start + 0.05)}, ${pct(done)} { opacity: 1 } ${pct(done + 0.05)}, 100% { opacity: 0 } }
+@keyframes vd-done-${i} { 0%, ${pct(done)} { opacity: 0 } ${pct(done + 0.05)}, 94% { opacity: 1 } 97%, 100% { opacity: 0 } }
+@keyframes vd-row-${i} { 0%, ${pct(start)} { background: transparent } ${pct(start + 0.05)}, ${pct(done)} { background: var(--row-hot) } ${pct(done + 0.1)}, 100% { background: transparent } }
+.vd .vd-pipe.is-on [data-step="${i}"] { animation: vd-row-${i} ${cycle}s linear infinite }
+.vd .vd-pipe.is-on [data-step="${i}"] .m-pend { animation: vd-pend-${i} ${cycle}s linear infinite }
+.vd .vd-pipe.is-on [data-step="${i}"] .m-cur { animation: vd-cur-${i} ${cycle}s linear infinite }
+.vd .vd-pipe.is-on [data-step="${i}"] .m-done, .vd .vd-pipe.is-on [data-step="${i}"] .meta { animation: vd-done-${i} ${cycle}s linear infinite }`;
+	}),
+	`@keyframes vd-landed { 0%, ${pct(landed)} { opacity: 0; transform: translateY(-6px) } ${pct(landed + 0.4)}, 94% { opacity: 1; transform: none } 97%, 100% { opacity: 0 } }
+@keyframes vd-t-run { 0%, ${pct(stageAt[1] ?? 0)} { opacity: 0 } ${pct((stageAt[1] ?? 0) + 0.05)}, ${pct(landed)} { opacity: 1 } ${pct(landed + 0.05)}, 100% { opacity: 0 } }
+@keyframes vd-t-wait { 0%, ${pct(stageAt[1] ?? 0)} { opacity: 1 } ${pct((stageAt[1] ?? 0) + 0.05)}, 96% { opacity: 0 } 100% { opacity: 1 } }
+@keyframes vd-t-done { 0%, ${pct(landed)} { opacity: 0 } ${pct(landed + 0.05)}, 94% { opacity: 1 } 97%, 100% { opacity: 0 } }
+@keyframes vd-pr-old { 0%, ${pct(landed + 1.2)} { opacity: 1 } ${pct(landed + 1.3)}, 96% { opacity: 0 } 100% { opacity: 1 } }
+@keyframes vd-pr-new { 0%, ${pct(landed + 1.2)} { opacity: 0 } ${pct(landed + 1.3)}, 94% { opacity: 1 } 97%, 100% { opacity: 0 } }
+.vd .vd-pipe.is-on .vd-rail-fill { animation: vd-fill ${cycle}s cubic-bezier(0.23, 1, 0.32, 1) infinite }
+.vd .vd-pipe.is-on .vd-landed { animation: vd-landed ${cycle}s ease-out infinite }
+.vd .vd-pipe.is-on .t-run { animation: vd-t-run ${cycle}s linear infinite }
+.vd .vd-pipe.is-on .t-wait { animation: vd-t-wait ${cycle}s linear infinite }
+.vd .vd-pipe.is-on .t-done { animation: vd-t-done ${cycle}s linear infinite }
+.vd .vd-pipe.is-on .pr-old { animation: vd-pr-old ${cycle}s linear infinite }
+.vd .vd-pipe.is-on .pr-new { animation: vd-pr-new ${cycle}s linear infinite }
+@media (max-width: 1023px) { .vd .vd-pipe.is-on .vd-rail-fill { animation-name: vd-fill-y } }`,
+].join("\n");
+
+const tickets = [
+	"01-planning-items",
+	"02-planning-chat",
+	"03-proposal-preview",
+	"04-accept-proposal",
+	"05-background-planning",
+	"06-codex-picker",
+	"07-planning-status-cost",
+];
+const commits = [
+	["31a2feb", "07 planning status cost"],
+	["c70f100", "06 codex picker"],
+	["f836b45", "05 background planning"],
+	["4e2a0d4", "04 accept proposal"],
+	["cb628f6", "03 proposal preview"],
+];
+const stripKeys = [
+	["ArrowUp", "↑"],
+	["ArrowDown", "↓"],
+	["Enter", "Enter"],
+	["Escape", "Esc"],
+	["[", "["],
+	["]", "]"],
+	["Tab", "Tab"],
+	["?", "?"],
+];
+---
+<div class="vd" data-theme="light">
+	<style is:inline set:html={styleCss + railCss}></style>
+
+	<header class="vd-nav">
+		<a class="vd-word" href="#">vago</a>
+		<nav aria-label="Main">
+			<a href="#vd-how">How it works</a>
+			<a href="#vd-install">Install</a>
+			<a href="#">Docs</a>
+			<a href="#">GitHub</a>
+			<button type="button" class="vd-theme" data-theme-toggle aria-label="Switch colour theme">
+				<span class="vd-theme-opt" data-opt="light">Light</span><span class="vd-theme-opt" data-opt="dark">Dark</span>
+			</button>
+		</nav>
+	</header>
+
+	<section class="vd-hero">
+		<div class="vd-hero-copy">
+			<h1>Set the Goal.<br />Go do something else.</h1>
+			<div class="vd-hero-side">
+				<p class="vd-sub">Vago runs your Workflow on a Goal in your repo, one Ticket at a time, and leaves you a PR.</p>
+				<div class="vd-ctas">
+					<a class="vd-btn" href="#vd-install">Install</a>
+					<a class="vd-link" href="#vd-how">How it works</a>
+				</div>
+			</div>
+		</div>
+
+		<div class="vd-tui" data-tui>
+			<div class="vd-window" data-frame>
+				<div class="vd-chrome">
+					<span><b>vago</b> ~/code/vago</span>
+					<span class="vd-chrome-hint">click, then use its keys</span>
+				</div>
+				<div class="vd-scroll">
+					<div
+						class="vd-screen"
+						data-screen
+						tabindex="0"
+						role="application"
+						aria-roledescription="terminal replay"
+						aria-label="A replay of the Vago TUI. Up and down move, Enter opens a Goal, Escape goes back, brackets switch Goals, Tab moves between panes, question mark shows the keys."
+						style={`--cols:${frames.size.width};--rows:${frames.size.height}`}
+					></div>
+				</div>
+				<p class="vd-toast" data-toast role="status" aria-live="polite"></p>
+			</div>
+			<div class="vd-under">
+				<div class="vd-keys" role="group" aria-label="Keys">
+					{stripKeys.map(([k, label]) => <button type="button" class="vd-key" data-key={k}>{label}</button>)}
+				</div>
+				<div class="vd-replay">
+					<span class="vd-meter" data-meter aria-hidden="true"></span>
+					<span data-status>Ticket 06</span>
+					<button type="button" class="vd-play" data-play aria-pressed="false">Pause</button>
+				</div>
+			</div>
+			<p class="vd-caption">
+				A replay, not a recording. Every frame was drawn by Vago's own TUI from this repo's Goals.
+				pick-up-from-failure plays as if Ticket 06 were running again, with its real logs streaming in.
+			</p>
+		</div>
+	</section>
+
+	<section class="vd-how" id="vd-how">
+		<h2>What happens after you leave</h2>
+		<p class="vd-lede">
+			Each Ticket goes through your Workflow's Steps on its own branch and lands as one commit on the Goal's branch. The Goal becomes one PR. This is plan-goals-in-vago, a Goal Vago built in its own repo.
+		</p>
+
+		<ol class="vd-pipe" data-pipe>
+			<span class="vd-rail" aria-hidden="true"><span class="vd-rail-fill"></span></span>
+			<li class="vd-stage">
+				<span class="vd-node" aria-hidden="true"></span>
+				<h3>Goal</h3>
+				<p>You write what you want, what's in scope and what's out.</p>
+				<pre class="vd-art"><span class="c-d">goal.md</span>
+<span class="c-x"># A new Goal can be
+# planned and accepted
+# inside Vago</span></pre>
+			</li>
+			<li class="vd-stage">
+				<span class="vd-node" aria-hidden="true"></span>
+				<h3>Tickets</h3>
+				<p>You split it, or plan them with an agent in the TUI.</p>
+				<pre class="vd-art">{tickets.map((t, i) => i === 0
+					? <span class="row"><span class="swap"><span class="t-wait c-d">○</span><span class="t-run c-a">●</span><span class="t-done c-o">✓</span></span> <span class="c-x">{t}</span></span>
+					: <span class="row"><span class="c-d">○</span> {t}</span>)}</pre>
+			</li>
+			<li class="vd-stage vd-stage-wide">
+				<span class="vd-node" aria-hidden="true"></span>
+				<h3>Steps</h3>
+				<p>Your Workflow, one short TOML file. Some Steps run an agent, some a shell command.</p>
+				<pre class="vd-art">{realSteps.map((s, i) => (
+					<span class="row" data-step={i}><span class="swap"><span class="m-pend c-d">·</span><span class="m-cur c-a">●</span><span class="m-done c-o">✓</span></span> {s.id.padEnd(13)}<span class="c-d">{s.type.padEnd(6)}</span><span class="meta c-d">{s.took.padStart(6)} {s.cost.padStart(5)}</span></span>
+				))}</pre>
+			</li>
+			<li class="vd-stage">
+				<span class="vd-node" aria-hidden="true"></span>
+				<h3>Commits</h3>
+				<p>One per Ticket, squash-merged onto <code>vago/plan-goals-in-vago</code>.</p>
+				<pre class="vd-art"><span class="row vd-landed"><span class="c-a">96af3f3</span> 01 planning items</span>{commits.map(([h, m]) => <span class="row"><span class="c-d">{h}</span> {m}</span>)}</pre>
+			</li>
+			<li class="vd-stage">
+				<span class="vd-node" aria-hidden="true"></span>
+				<h3>PR</h3>
+				<p>The Goal report becomes its description. You review it and merge.</p>
+				<pre class="vd-art"><span class="c-x">plan-goals-in-vago #39</span>
+<span class="c-d">Workflow small</span>
+<span class="swap"><span class="pr-old">6 Tickets, 47 Runs</span><span class="pr-new">7 Tickets, 53 Runs</span></span>
+4h59m, $63.69</pre>
+			</li>
+		</ol>
+
+		<div class="vd-fail" data-fail>
+			<div class="vd-fail-copy">
+				<h3 class="vd-h3">When a Step fails</h3>
+				<p>An agent Step that fails resumes its own session and tries again, after 1, 1 and 5 minutes. When all three retries fail, the Ticket stops and waits for you.</p>
+				<ol class="vd-timeline" role="list">
+					{failMoments.map((m, i) => (
+						<li class={`tone-${m.tone}`} data-moment={i}>
+							<button type="button" data-goto={i} aria-current={i === 0 ? "step" : undefined}>
+								<span class="vd-dot" aria-hidden="true">{m.mark}</span>
+								<span class="vd-mtext"><b>{m.label}</b> {m.text}</span>
+							</button>
+						</li>
+					))}
+				</ol>
+				<div class="vd-stepper">
+					<button type="button" class="vd-step-btn" data-prev disabled>Back</button>
+					<button type="button" class="vd-step-btn is-primary" data-next>Next</button>
+					<span class="vd-step-count" data-count>1 of {failMoments.length}</span>
+				</div>
+			</div>
+			<figure class="vd-out">
+				<pre data-out>{failMoments.map((m, i) => m.lines.map((l) => <span class="row" data-at={i} set:html={l || " "} />))}</pre>
+				<figcaption>Example <code>vago run</code> output for a Ticket whose agent Step keeps failing.</figcaption>
+			</figure>
+		</div>
+	</section>
+
+	<section class="vd-install" id="vd-install">
+		<div class="vd-install-main">
+			<h2>Try it on a small Goal</h2>
+			<pre class="vd-code"><span class="c-d">$</span> git clone git@github.com:julianbonomini/vago.git
+<span class="c-d">$</span> cd vago && bun install && bun run reinstall
+<span class="c-d">$</span> cd ~/code/your-project && vago init</pre>
+		</div>
+		<ul class="vd-limits">
+			<li><b>It's an Alpha.</b> Past three retries it's your turn.</li>
+			<li><b>One Ticket at a time.</b> Goals can run side by side, Tickets can't.</li>
+			<li><b>You need</b> Bun to build it, Claude Code or Codex, and <code>gh</code>.</li>
+			<li><b>A personal project,</b> MIT. <i>Vago</i> is Spanish for lazy.</li>
+		</ul>
+	</section>
+</div>
+
+<script>
+	import { mountTui } from "./d/tui-player.ts";
+
+	const root = document.querySelector<HTMLElement>(".vd");
+	if (root) {
+		const tui = root.querySelector<HTMLElement>("[data-tui]");
+		if (tui) mountTui(tui);
+
+		// Theme: the nav toggle and `t` while the TUI doesn't have the keys.
+		const setTheme = (t: string) => {
+			root.dataset.theme = t;
+			try {
+				localStorage.setItem("vd-theme", t);
+			} catch {}
+		};
+		try {
+			const saved = localStorage.getItem("vd-theme");
+			if (saved === "dark" || saved === "light") root.dataset.theme = saved;
+		} catch {}
+		root.querySelector("[data-theme-toggle]")?.addEventListener("click", () =>
+			setTheme(root.dataset.theme === "dark" ? "light" : "dark"),
+		);
+		document.addEventListener("keydown", (e) => {
+			if (e.key !== "t" || e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
+			if (root.closest("[hidden]")) return;
+			const target = e.target as HTMLElement | null;
+			if (target?.closest("input, textarea, [contenteditable], [data-screen]")) return;
+			if (tui?.classList.contains("is-hot")) return;
+			setTheme(root.dataset.theme === "dark" ? "light" : "dark");
+		});
+
+		// The rail plays only while it's on screen.
+		const pipe = root.querySelector<HTMLElement>("[data-pipe]");
+		if (pipe && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+			new IntersectionObserver((es) => pipe.classList.toggle("is-on", es.some((e) => e.isIntersecting)), {
+				threshold: 0.2,
+			}).observe(pipe);
+		}
+
+		// The failure timeline, one moment at a time.
+		const fail = root.querySelector<HTMLElement>("[data-fail]");
+		if (fail) {
+			const rows = [...fail.querySelectorAll<HTMLElement>("[data-at]")];
+			const items = [...fail.querySelectorAll<HTMLElement>("[data-moment]")];
+			const prev = fail.querySelector<HTMLButtonElement>("[data-prev]");
+			const next = fail.querySelector<HTMLButtonElement>("[data-next]");
+			const count = fail.querySelector<HTMLElement>("[data-count]");
+			const last = items.length - 1;
+			let at = 0;
+			const go = (to: number) => {
+				const from = at;
+				at = Math.max(0, Math.min(last, to));
+				let fresh = 0;
+				for (const r of rows) {
+					const i = Number(r.dataset.at);
+					const was = r.classList.contains("is-shown");
+					r.classList.toggle("is-shown", i <= at);
+					r.classList.toggle("is-current", i === at);
+					if (i <= at && !was && to > from) {
+						r.style.setProperty("--d", String(fresh++));
+						r.classList.remove("is-new");
+						void r.offsetWidth;
+						r.classList.add("is-new");
+					}
+				}
+				items.forEach((li, i) => {
+					li.classList.toggle("is-past", i < at);
+					li.classList.toggle("is-now", i === at);
+					li.classList.toggle("is-future", i > at);
+					li.querySelector("button")?.toggleAttribute("aria-current", i === at);
+				});
+				if (prev) prev.disabled = at === 0;
+				if (next) next.textContent = at === last ? "Start over" : "Next";
+				if (count) count.textContent = `${at + 1} of ${items.length}`;
+			};
+			next?.addEventListener("click", () => go(at === last ? 0 : at + 1));
+			prev?.addEventListener("click", () => go(at - 1));
+			for (const b of fail.querySelectorAll<HTMLElement>("[data-goto]")) {
+				b.addEventListener("click", () => go(Number(b.dataset.goto)));
+			}
+			go(0);
+		}
+	}
+</script>
+
+<style is:global>
+	.vd {
+		--bg: #f2f1ee;
+		--raised: #e8e6e1;
+		--fg: #2b2a27;
+		--bright: #121212;
+		--grey: #6a6863;
+		--line: #d6d3cc;
+		--line-strong: #9c9890;
+		--accent: #a8481a;
+		--accent-fill: #ff8a3d;
+		--ok: #4c7a47;
+		--bad: #b4433a;
+		--row-hot: rgb(255 138 61 / 0.14);
+		--btn-bg: #a8481a;
+		--btn-hover: #8f3c14;
+		--sans: "Geist Variable", system-ui, sans-serif;
+		--mono: "JetBrains Mono", ui-monospace, monospace;
+		--term: Menlo, "SF Mono", "DejaVu Sans Mono", Consolas, monospace;
+		--t-bg: #141414;
+		--t-fg: #d6d6d6;
+		--t-grey: #7a7a7a;
+		--t-line: #2a2a2a;
+		--ease: cubic-bezier(0.23, 1, 0.32, 1);
+		min-height: 100vh;
+		background: var(--bg);
+		color: var(--fg);
+		font-family: var(--sans);
+		font-size: 17px;
+		line-height: 1.55;
+		overflow-x: clip;
+		-webkit-font-smoothing: antialiased;
+		transition: background-color 0.3s var(--ease), color 0.3s var(--ease);
+	}
+	.vd[data-theme="dark"] {
+		--bg: #0f0f0f;
+		--raised: #1b1b1b;
+		--fg: #d6d6d6;
+		--bright: #f0f0f0;
+		--grey: #8a8a8a;
+		--line: #2a2a2a;
+		--line-strong: #5c5c5c;
+		--accent: #ff8a3d;
+		--ok: #8fae8b;
+		--bad: #e5736b;
+		--row-hot: rgb(255 138 61 / 0.1);
+		--btn-bg: #a8481a;
+		--btn-hover: #b9521f;
+		--t-bg: #121212;
+		--t-line: #262626;
+	}
+	.vd * { box-sizing: border-box; }
+	.vd a { color: inherit; }
+	.vd code { font-family: var(--mono); font-size: 0.86em; color: var(--bright); }
+	.vd button { font: inherit; color: inherit; }
+
+	.vd .c-d { color: var(--grey); }
+	.vd .c-x { color: var(--bright); }
+	.vd .c-a { color: var(--accent); }
+	.vd .c-o { color: var(--ok); }
+
+	/* Nav */
+	.vd-nav {
+		max-width: 1320px;
+		margin: 0 auto;
+		padding: 20px 24px;
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 16px;
+	}
+	.vd-word { font-family: var(--mono); font-weight: 700; color: var(--bright); letter-spacing: -0.02em; text-decoration: none; font-size: 18px; }
+	.vd-nav nav { display: flex; gap: 22px; font-size: 14px; color: var(--grey); align-items: center; }
+	.vd-nav nav a { text-decoration: none; transition: color 0.15s; }
+	.vd-nav nav a:hover { color: var(--bright); }
+	.vd-theme {
+		all: unset;
+		cursor: pointer;
+		display: inline-flex;
+		border: 1px solid var(--line);
+		border-radius: 4px;
+		padding: 2px;
+		font-family: var(--mono);
+		font-size: 12px;
+	}
+	.vd-theme-opt { padding: 3px 8px; border-radius: 2px; color: var(--grey); transition: background 0.2s, color 0.2s; }
+	.vd[data-theme="light"] .vd-theme-opt[data-opt="light"],
+	.vd[data-theme="dark"] .vd-theme-opt[data-opt="dark"] { background: var(--bright); color: var(--bg); }
+	.vd-theme:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+	/* Hero */
+	.vd-hero { max-width: 1320px; margin: 0 auto; padding: 48px 24px 0; }
+	.vd-hero-copy {
+		display: grid;
+		grid-template-columns: minmax(0, 7fr) minmax(0, 4fr);
+		gap: 48px;
+		align-items: end;
+	}
+	.vd-hero h1 {
+		font-size: clamp(40px, 5.6vw, 84px);
+		line-height: 0.98;
+		letter-spacing: -0.045em;
+		font-weight: 600;
+		color: var(--bright);
+		margin: 0;
+	}
+	.vd-sub { font-size: clamp(17px, 1.4vw, 19px); color: var(--grey); margin: 0; max-width: 36ch; }
+	.vd-ctas { display: flex; gap: 26px; align-items: center; margin-top: 24px; }
+	.vd-btn {
+		background: var(--btn-bg);
+		color: #fff;
+		text-decoration: none;
+		font-weight: 600;
+		padding: 11px 22px;
+		border-radius: 4px;
+		transition: transform 0.15s var(--ease), background 0.15s;
+	}
+	.vd-btn:hover { background: var(--btn-hover); }
+	.vd-btn:active { transform: scale(0.97); }
+	.vd-link { text-decoration: none; border-bottom: 1px solid var(--line-strong); padding-bottom: 2px; }
+	.vd-link:hover { border-color: var(--accent); }
+
+	@media (prefers-reduced-motion: no-preference) {
+		.vd-hero h1, .vd-hero-side, .vd-tui { animation: vd-rise 0.8s var(--ease) both; }
+		.vd-hero-side { animation-delay: 0.08s; }
+		.vd-tui { animation-delay: 0.16s; }
+	}
+	@keyframes vd-rise { from { opacity: 0; transform: translateY(12px); } }
+
+	/* The TUI */
+	.vd-tui { margin-top: 48px; }
+	.vd-window {
+		position: relative;
+		background: var(--t-bg);
+		border: 1px solid var(--t-line);
+		border-radius: 8px;
+		box-shadow: 0 30px 80px -30px rgb(20 18 14 / 0.45), 0 2px 6px rgb(20 18 14 / 0.08);
+		transition: box-shadow 0.3s var(--ease), border-color 0.3s;
+		overflow: hidden;
+	}
+	.vd[data-theme="dark"] .vd-window { box-shadow: 0 40px 120px -40px rgb(0 0 0 / 0.9), 0 0 0 1px rgb(255 255 255 / 0.02); }
+	.vd-tui.is-hot .vd-window { border-color: #4a3426; box-shadow: 0 30px 80px -30px rgb(20 18 14 / 0.5), 0 0 0 1px rgb(255 138 61 / 0.35); }
+	.vd-chrome {
+		display: flex;
+		justify-content: space-between;
+		padding: 9px 16px;
+		font-family: var(--mono);
+		font-size: 12px;
+		color: var(--t-grey);
+		border-bottom: 1px solid var(--t-line);
+	}
+	.vd-chrome b { color: var(--t-fg); font-weight: 400; margin-right: 8px; }
+	.vd-chrome-hint { transition: color 0.2s; }
+	.vd-tui.is-hot .vd-chrome-hint { color: #ff8a3d; }
+	.vd-scroll { container-type: inline-size; padding: clamp(8px, 1.4vw, 18px); overflow: hidden; }
+	/* The fontsource JetBrains Mono has no box-drawing glyphs, so the screen
+	   uses a system mono that does, at a line height where they join. */
+	.vd-screen {
+		--fs: clamp(4px, calc(100cqw / (var(--cols) * 0.602)), 17px);
+		position: relative;
+		font-family: var(--term);
+		font-size: var(--fs);
+		line-height: 1.17;
+		color: var(--t-fg);
+		width: max-content;
+		min-height: calc(var(--rows) * 1.17em);
+		outline: none;
+		cursor: default;
+		font-variant-ligatures: none;
+	}
+	.vd-screen .row { white-space: pre; height: 1.17em; }
+	.vd-screen .g { display: inline-block; width: 1ch; text-align: center; font-style: normal; overflow: hidden; vertical-align: top; }
+	.vd-screen .h, .vd-screen .b { display: inline-block; height: 1.17em; vertical-align: top; position: relative; }
+	.vd-screen .b { width: 1ch; }
+	.vd-screen .h::before {
+		content: "";
+		position: absolute;
+		left: 0;
+		right: 0;
+		top: calc(50% - 0.5px);
+		height: 1px;
+		background: currentColor;
+	}
+	.vd-screen .h.heavy::before { top: calc(50% - 0.12em); height: 0.24em; }
+	.vd-screen .b::before, .vd-screen .b::after { content: ""; position: absolute; background: currentColor; }
+	.vd-screen .b::before { top: calc(50% - 0.5px); height: 1px; left: 50%; right: 50%; }
+	.vd-screen .b::after { left: calc(50% - 0.5px); width: 1px; top: 50%; bottom: 50%; }
+	.vd-screen .b.l::before { left: 0; }
+	.vd-screen .b.r::before { right: 0; }
+	.vd-screen .b.u::after { top: 0; }
+	.vd-screen .b.d::after { bottom: 0; }
+	.vd-screen .b.full::before { inset: 0; height: auto; }
+	.vd-screen .b.top::before { inset: 0 0 50% 0; height: auto; }
+	.vd-screen .b.full::after, .vd-screen .b.top::after { display: none; }
+	.vd-screen .overlay {
+		position: absolute;
+		top: calc(var(--r) * 1.17em);
+		left: calc(var(--c) * 1ch);
+		background: var(--t-bg);
+		box-shadow: 0 10px 40px rgb(0 0 0 / 0.6);
+	}
+	@media (prefers-reduced-motion: no-preference) {
+		.vd-screen .overlay:not([hidden]) { animation: vd-pop 0.16s var(--ease); }
+	}
+	@keyframes vd-pop { from { opacity: 0; transform: scale(0.98); } }
+	.vd-screen .fk {
+		all: unset;
+		cursor: pointer;
+		color: #f0f0f0;
+		border-radius: 2px;
+		transition: background 0.12s;
+	}
+	.vd-screen .fk:hover { background: #a8481a; color: #fff; }
+	.vd-screen .fk:focus-visible { outline: 1px solid #ff8a3d; }
+	.vd-screen .fl { color: #7a7a7a; }
+	.vd-toast {
+		position: absolute;
+		left: 50%;
+		bottom: 14%;
+		margin: 0;
+		transform: translate(-50%, 8px);
+		opacity: 0;
+		pointer-events: none;
+		background: #1b1b1b;
+		border: 1px solid #3a3a3a;
+		color: #d6d6d6;
+		font-family: var(--mono);
+		font-size: 12.5px;
+		padding: 8px 14px;
+		border-radius: 4px;
+		max-width: min(90%, 60ch);
+		transition: opacity 0.2s, transform 0.2s var(--ease);
+	}
+	.vd-toast.is-on { opacity: 1; transform: translate(-50%, 0); }
+
+	.vd-under {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 16px;
+		margin-top: 14px;
+		flex-wrap: wrap;
+	}
+	.vd-keys { display: flex; gap: 6px; flex-wrap: wrap; }
+	.vd-key {
+		all: unset;
+		cursor: pointer;
+		font-family: var(--mono);
+		font-size: 12.5px;
+		min-width: 18px;
+		text-align: center;
+		padding: 5px 9px;
+		border: 1px solid var(--line);
+		border-bottom-width: 2px;
+		border-radius: 4px;
+		color: var(--fg);
+		background: var(--bg);
+		transition: transform 0.1s var(--ease), border-color 0.15s, background 0.15s;
+	}
+	.vd-key:hover { border-color: var(--line-strong); }
+	.vd-key:active { transform: translateY(1px); }
+	.vd-key:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+	.vd-key.is-pressed { animation: vd-press 0.45s var(--ease); }
+	@keyframes vd-press {
+		0% { background: var(--accent-fill); border-color: var(--accent-fill); color: #121212; transform: translateY(1px); }
+		100% { }
+	}
+	.vd-replay { display: flex; align-items: center; gap: 12px; font-family: var(--mono); font-size: 12.5px; color: var(--grey); }
+	.vd-meter { width: 72px; height: 2px; background: var(--line); position: relative; overflow: hidden; }
+	.vd-meter::after {
+		content: "";
+		position: absolute;
+		inset: 0;
+		background: var(--accent-fill);
+		transform-origin: left;
+		transform: scaleX(var(--p, 0));
+		transition: transform 0.6s var(--ease);
+	}
+	.vd-play {
+		all: unset;
+		cursor: pointer;
+		border-bottom: 1px solid var(--line-strong);
+		color: var(--fg);
+	}
+	.vd-play:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+	.vd-caption { font-size: 14px; color: var(--grey); max-width: 70ch; margin: 18px 0 0; }
+
+	/* How it works */
+	.vd-how { max-width: 1320px; margin: 0 auto; padding: 150px 24px 120px; }
+	.vd-how h2, .vd-install h2 {
+		font-size: clamp(32px, 3.8vw, 52px);
+		letter-spacing: -0.035em;
+		line-height: 1.05;
+		font-weight: 600;
+		color: var(--bright);
+		margin: 0;
+	}
+	.vd-lede { color: var(--grey); max-width: 60ch; margin: 18px 0 0; }
+
+	.vd-pipe {
+		position: relative;
+		list-style: none;
+		margin: 64px 0 0;
+		padding: 0;
+		display: grid;
+		grid-template-columns: 0.95fr 1.15fr 1.45fr 1.15fr 0.95fr;
+	}
+	.vd-rail { position: absolute; left: 0; right: 0; top: 0; height: 1px; background: var(--line-strong); }
+	.vd-rail-fill {
+		position: absolute;
+		inset: -0.5px 0;
+		background: var(--accent-fill);
+		transform-origin: left;
+		transform: scaleX(0);
+	}
+	.vd-stage { position: relative; padding: 30px 22px 0 0; }
+	.vd-node {
+		position: absolute;
+		top: -5px;
+		left: 0;
+		width: 11px;
+		height: 11px;
+		background: var(--bg);
+		border: 1px solid var(--line-strong);
+		border-radius: 50%;
+	}
+	.vd-stage h3 { margin: 0; font-size: 19px; font-weight: 600; color: var(--bright); letter-spacing: -0.01em; }
+	.vd-stage p { margin: 6px 0 18px; font-size: 14.5px; color: var(--grey); line-height: 1.5; max-width: 30ch; }
+	.vd-art {
+		margin: 0;
+		font-family: var(--mono);
+		font-size: 12.5px;
+		line-height: 1.6;
+		color: var(--fg);
+		white-space: pre;
+		overflow-x: auto;
+	}
+	.vd-art .row { display: block; border-radius: 2px; margin-left: -4px; padding-left: 4px; }
+	.vd-art .swap { display: inline-grid; width: 1ch; justify-items: center; }
+	.vd-art .swap > * { grid-area: 1 / 1; }
+	/* At rest, without the loop, each mark shows its end state. */
+	.vd .m-pend, .vd .m-cur, .vd .t-wait, .vd .t-run, .vd .pr-old { opacity: 0; }
+
+	/* Failure */
+	.vd-fail {
+		margin-top: 130px;
+		display: grid;
+		grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+		gap: 64px;
+		align-items: start;
+	}
+	.vd-h3 { font-size: clamp(26px, 2.6vw, 36px); letter-spacing: -0.03em; font-weight: 600; color: var(--bright); margin: 0; }
+	.vd-fail-copy > p { color: var(--grey); margin: 14px 0 0; max-width: 46ch; }
+	.vd-timeline { list-style: none; padding: 0; margin: 28px 0 0; position: relative; }
+	.vd-timeline::before {
+		content: "";
+		position: absolute;
+		left: 10px;
+		top: 14px;
+		bottom: 14px;
+		border-left: 1px solid var(--line);
+	}
+	.vd-timeline button {
+		all: unset;
+		cursor: pointer;
+		position: relative;
+		display: grid;
+		grid-template-columns: 21px 1fr;
+		gap: 14px;
+		padding: 7px 8px 7px 0;
+		width: 100%;
+		font-size: 15px;
+		color: var(--grey);
+		transition: color 0.2s, opacity 0.25s;
+	}
+	.vd-timeline button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+	.vd-timeline .is-future button { opacity: 0.45; }
+	.vd-timeline .is-now button { color: var(--fg); }
+	.vd-timeline b { font-family: var(--mono); font-weight: 400; font-size: 13.5px; color: var(--fg); margin-right: 8px; }
+	.vd-dot {
+		font-family: var(--mono);
+		font-size: 13px;
+		width: 21px;
+		height: 21px;
+		display: grid;
+		place-items: center;
+		background: var(--bg);
+		color: var(--grey);
+		border: 1px solid transparent;
+		border-radius: 50%;
+		transition: border-color 0.2s, color 0.2s;
+	}
+	.vd-timeline .tone-bad:not(.is-future) .vd-dot, .vd-timeline .tone-bad:not(.is-future) b { color: var(--bad); }
+	.vd-timeline .tone-ok:not(.is-future) .vd-dot, .vd-timeline .tone-ok:not(.is-future) b { color: var(--ok); }
+	.vd-timeline .tone-wait:not(.is-future) .vd-dot { color: var(--accent); }
+	.vd-timeline .is-now .vd-dot { border-color: currentColor; }
+	.vd-stepper { display: flex; gap: 10px; align-items: center; margin-top: 22px; }
+	.vd-step-btn {
+		all: unset;
+		cursor: pointer;
+		font-size: 14px;
+		font-weight: 500;
+		padding: 7px 16px;
+		border: 1px solid var(--line-strong);
+		border-radius: 4px;
+		transition: transform 0.15s var(--ease), background 0.15s, opacity 0.15s;
+	}
+	.vd-step-btn.is-primary { background: var(--btn-bg); border-color: var(--btn-bg); color: #fff; }
+	.vd-step-btn.is-primary:hover { background: var(--btn-hover); }
+	.vd-step-btn:active { transform: scale(0.97); }
+	.vd-step-btn:disabled { opacity: 0.35; cursor: default; }
+	.vd-step-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+	.vd-step-count { font-family: var(--mono); font-size: 12.5px; color: var(--grey); margin-left: 6px; }
+
+	.vd-out { margin: 0; min-width: 0; }
+	.vd-out pre {
+		margin: 0;
+		background: var(--t-bg);
+		color: var(--t-fg);
+		border: 1px solid var(--t-line);
+		border-radius: 8px;
+		padding: 22px 24px;
+		font-family: var(--mono);
+		font-size: 12.5px;
+		line-height: 1.65;
+		overflow-x: auto;
+		min-height: calc(30 * 1.65em + 44px);
+	}
+	.vd-out .row { display: none; white-space: pre; }
+	.vd-out .row.is-shown { display: block; }
+	.vd-out .row:not(.is-current) { opacity: 0.55; }
+	.vd-out .o-d { color: #7a7a7a; }
+	.vd-out .o-p { color: #7a7a7a; }
+	.vd-out .o-ok { color: #8fae8b; }
+	.vd-out .o-bad { color: #e5736b; }
+	@media (prefers-reduced-motion: no-preference) {
+		.vd-out .row.is-new { animation: vd-line 0.35s var(--ease) both; animation-delay: calc(var(--d) * 70ms); }
+		.vd-out .row { transition: opacity 0.3s; }
+	}
+	@keyframes vd-line { from { opacity: 0; transform: translateX(-6px); } }
+	.vd-out figcaption { margin-top: 12px; font-size: 13.5px; color: var(--grey); }
+
+	/* Install */
+	.vd-install {
+		max-width: 1320px;
+		margin: 0 auto;
+		padding: 40px 24px 140px;
+		display: grid;
+		grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+		gap: 64px;
+		align-items: end;
+		border-top: 1px solid var(--line);
+		padding-top: 72px;
+	}
+	.vd-code {
+		margin: 28px 0 0;
+		font-family: var(--mono);
+		font-size: 13.5px;
+		line-height: 1.8;
+		background: var(--raised);
+		color: var(--fg);
+		padding: 18px 22px;
+		border-radius: 8px;
+		overflow-x: auto;
+	}
+	.vd-limits { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; font-size: 15px; color: var(--grey); }
+	.vd-limits b { color: var(--fg); font-weight: 600; }
+
+	@media (prefers-reduced-motion: reduce) {
+		.vd .m-done, .vd .t-done, .vd .pr-new, .vd .vd-landed { opacity: 1; }
+		.vd .vd-rail-fill { transform: none; }
+		.vd .vd-node { background: var(--accent-fill); border-color: var(--accent-fill); }
+		.vd, .vd * { transition: none !important; }
+	}
+
+	@media (max-width: 1023px) {
+		.vd-hero-copy { grid-template-columns: minmax(0, 1fr); gap: 22px; }
+		.vd-pipe { grid-template-columns: minmax(0, 1fr); margin-top: 44px; }
+		.vd-rail { top: 0; bottom: 0; left: 0; right: auto; width: 1px; height: auto; }
+		.vd-rail-fill { inset: 0 -0.5px; transform-origin: top; transform: scaleY(0); }
+		.vd-stage { padding: 0 0 40px 30px; }
+		.vd-stage:last-child { padding-bottom: 0; }
+		.vd-node { top: 6px; left: -5px; }
+		.vd-stage p { max-width: 46ch; }
+		.vd-fail { grid-template-columns: minmax(0, 1fr); gap: 36px; }
+		.vd-install { grid-template-columns: minmax(0, 1fr); gap: 32px; }
+	}
+	@media (max-width: 640px) {
+		.vd-nav, .vd-hero, .vd-how, .vd-install { padding-left: 16px; padding-right: 16px; }
+		.vd-nav nav a:not([href="#vd-install"]) { display: none; }
+		.vd-hero { padding-top: 24px; }
+		.vd-tui { margin-top: 32px; }
+		.vd-chrome-hint { display: none; }
+		.vd-scroll { padding: 8px; }
+		.vd-under { flex-direction: column; align-items: stretch; }
+		.vd-keys { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+		.vd-key { padding: 10px 0; font-size: 14px; }
+		.vd-how { padding-top: 100px; padding-bottom: 90px; }
+		.vd-out pre { padding: 14px; font-size: 10.5px; min-height: 0; }
+		.vd-install { padding-bottom: 96px; }
+		.vd-code { font-size: 11.5px; }
+	}
+</style>
