@@ -33,6 +33,17 @@ export const gitIdentity = [
 	"commit.gpgsign=false",
 ];
 
+// Runs `git args` in `cwd`, and throws with git's error when it fails, so a
+// test doesn't go on with a repo that isn't there.
+function runGit(cwd: string, args: string[]): void {
+	const result = Bun.spawnSync(["git", ...args], { cwd });
+	if (result.exitCode !== 0) {
+		throw new Error(
+			`git ${args.join(" ")} failed in ${cwd}:\n${result.stderr.toString()}`,
+		);
+	}
+}
+
 /**
  * Makes a git repo in a fresh temp directory, with one empty commit on
  * `main`, holding `files` untracked, keyed by path relative to the repo root,
@@ -42,21 +53,17 @@ export async function makeProject(
 	files: Record<string, string>,
 ): Promise<string> {
 	const root = await mkdtemp(join(tmpdir(), "vago-test-"));
-	Bun.spawnSync(["git", "init", "--quiet", "-b", "main"], { cwd: root });
+	runGit(root, ["init", "--quiet", "-b", "main"]);
 	// A Goal's worktree is cut from a commit, and the test must not depend on
 	// the human's git config.
-	Bun.spawnSync(
-		[
-			"git",
-			...gitIdentity,
-			"commit",
-			"--quiet",
-			"--allow-empty",
-			"-m",
-			"start",
-		],
-		{ cwd: root },
-	);
+	runGit(root, [
+		...gitIdentity,
+		"commit",
+		"--quiet",
+		"--allow-empty",
+		"-m",
+		"start",
+	]);
 	for (const [path, text] of Object.entries(files)) {
 		await mkdir(dirname(join(root, path)), { recursive: true });
 		await Bun.write(join(root, path), text);
