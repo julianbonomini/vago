@@ -8,9 +8,11 @@ const docPages = builtDocuments().filter(({ path }) =>
 	/^\/(docs|cookbook|agents)(\/|$)/.test(path),
 );
 const llms = servedAt("/llms.txt") ?? "";
+const install = servedAt("/docs/install/") ?? "";
+const sidebar =
+	install.match(/<nav[^>]*aria-label="Docs"[\s\S]*?<\/nav>/)?.[0] ?? "";
 
 test("the docs start with Install, written from the README", () => {
-	const install = servedAt("/docs/install/") ?? "";
 	expect(install).toContain("<h1");
 	expect(install).toContain("bun run reinstall");
 	expect(install).toContain("vago --help");
@@ -33,9 +35,6 @@ test("every docs, cookbook and agents page has its Markdown copy and an llms.txt
 });
 
 test("the sidebar groups the pages under Docs, Cookbook and Agents", () => {
-	const install = servedAt("/docs/install/") ?? "";
-	const sidebar =
-		install.match(/<nav[^>]*aria-label="Docs"[\s\S]*?<\/nav>/)?.[0] ?? "";
 	const groups = [
 		...sidebar.matchAll(/class="group-label"[^>]*>([^<]+)</g),
 	].map(([, label]) => label);
@@ -46,4 +45,21 @@ test("the sidebar groups the pages under Docs, Cookbook and Agents", () => {
 test("search finds a page by a word on it, and leaves the landing page out", async () => {
 	expect(await searchBuiltSite("reinstall")).toContain("/docs/install/");
 	expect(await searchBuiltSite("babysitting")).toEqual([]);
+});
+
+test("the first-Project pages follow Install, linking commands to the CLI reference and terms to the glossary", () => {
+	const docsPaths = [...sidebar.matchAll(/href="(\/docs\/[^"]+)"/g)].map(
+		([, path]) => path,
+	);
+	const firstProject = [
+		"/docs/set-up-a-project/",
+		"/docs/your-first-goal/",
+		"/docs/goals-and-tickets/",
+	];
+	expect(docsPaths.slice(0, 4)).toEqual(["/docs/install/", ...firstProject]);
+	for (const path of firstProject) {
+		const html = servedAt(path) ?? "";
+		expect(html).toContain('href="/docs/cli-reference/#');
+		expect(html).toContain('href="/docs/glossary/#');
+	}
 });
