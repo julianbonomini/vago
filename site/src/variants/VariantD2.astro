@@ -1,0 +1,430 @@
+---
+// PROTOTYPE, variant D2 (round 3): variant D rebuilt on the shared pieces in
+// src/shared: LiveTui (the replay, now of an invented Project, acme-shop),
+// tokens.css and ThemeToggle. Proves the pieces before the round 3 layouts.
+// The failure story is a small part of "how it works" here.
+import "../shared/tokens.css";
+import LiveTui from "../shared/LiveTui.astro";
+import ThemeToggle from "../shared/ThemeToggle.astro";
+
+// Ticket 03 of the example Goal gift-cards, as the replay shows it.
+const steps = [
+	{ id: "New branch", type: "shell", took: "0.1s", cost: "" },
+	{ id: "Build", type: "agent", took: "9m12s", cost: "$0.86" },
+	{ id: "Checks", type: "shell", took: "1m38s", cost: "" },
+	{ id: "Review", type: "agent", took: "3m34s", cost: "$0.31" },
+	{ id: "Squash merge", type: "shell", took: "5.2s", cost: "" },
+];
+const tickets = [
+	"01-gift-card-codes",
+	"02-redeem-at-checkout",
+	"03-balance-page",
+	"04-staff-issue-cards",
+	"05-refunds-to-card",
+];
+const commits = [
+	["7c41e0a", "02 redeem at checkout"],
+	["e19b3f2", "01 gift card codes"],
+];
+// The rail: one loop where Ticket 03 goes through the Steps and lands as a
+// commit. Each stage lights when the fill reaches it.
+const cycle = 15;
+const pct = (s: number) => `${((s / cycle) * 100).toFixed(2)}%`;
+const stepAt = (i: number) => 2.4 + i * 1.8;
+const landed = stepAt(steps.length);
+const stageAt = [0, 1.2, stepAt(0), landed, landed + 1.2];
+const on = ".d2 .d2-pipe.is-on";
+const railCss = [
+	`@keyframes d2-fill { 0% { transform: scaleX(0) } ${stageAt.map((t, i) => `${pct(t + 0.35)} { transform: scaleX(${(i / 4).toFixed(3)}) }`).join(" ")} 93%, 100% { transform: scaleX(1) } }`,
+	`@keyframes d2-fill-y { 0% { transform: scaleY(0) } ${stageAt.map((t, i) => `${pct(t + 0.35)} { transform: scaleY(${(i / 4).toFixed(3)}) }`).join(" ")} 93%, 100% { transform: scaleY(1) } }`,
+	...stageAt.map(
+		(t, i) =>
+			`@keyframes d2-node-${i} { 0%, ${pct(t + 0.3)} { background: var(--v-bg); border-color: var(--v-line-strong) } ${pct(t + 0.45)}, 96% { background: var(--v-accent-fill); border-color: var(--v-accent-fill) } 100% { background: var(--v-bg); border-color: var(--v-line-strong) } }
+${on} .d2-stage:nth-child(${i + 1}) .d2-node { animation: d2-node-${i} ${cycle}s linear infinite }`,
+	),
+	...steps.map((_, i) => {
+		const start = stepAt(i);
+		const done = start + 1.8;
+		return `@keyframes d2-pend-${i} { 0%, ${pct(start)} { opacity: 1 } ${pct(start + 0.05)}, 96% { opacity: 0 } 100% { opacity: 1 } }
+@keyframes d2-cur-${i} { 0%, ${pct(start)} { opacity: 0 } ${pct(start + 0.05)}, ${pct(done)} { opacity: 1 } ${pct(done + 0.05)}, 100% { opacity: 0 } }
+@keyframes d2-done-${i} { 0%, ${pct(done)} { opacity: 0 } ${pct(done + 0.05)}, 94% { opacity: 1 } 97%, 100% { opacity: 0 } }
+@keyframes d2-row-${i} { 0%, ${pct(start)} { background: transparent } ${pct(start + 0.05)}, ${pct(done)} { background: var(--v-row-hot) } ${pct(done + 0.1)}, 100% { background: transparent } }
+${on} [data-step="${i}"] { animation: d2-row-${i} ${cycle}s linear infinite }
+${on} [data-step="${i}"] .m-pend { animation: d2-pend-${i} ${cycle}s linear infinite }
+${on} [data-step="${i}"] .m-cur { animation: d2-cur-${i} ${cycle}s linear infinite }
+${on} [data-step="${i}"] .m-done, ${on} [data-step="${i}"] .meta { animation: d2-done-${i} ${cycle}s linear infinite }`;
+	}),
+	`@keyframes d2-landed { 0%, ${pct(landed)} { opacity: 0; transform: translateY(-6px) } ${pct(landed + 0.4)}, 94% { opacity: 1; transform: none } 97%, 100% { opacity: 0 } }
+@keyframes d2-t-run { 0%, ${pct(stageAt[1] ?? 0)} { opacity: 0 } ${pct((stageAt[1] ?? 0) + 0.05)}, ${pct(landed)} { opacity: 1 } ${pct(landed + 0.05)}, 100% { opacity: 0 } }
+@keyframes d2-t-wait { 0%, ${pct(stageAt[1] ?? 0)} { opacity: 1 } ${pct((stageAt[1] ?? 0) + 0.05)}, 96% { opacity: 0 } 100% { opacity: 1 } }
+@keyframes d2-t-done { 0%, ${pct(landed)} { opacity: 0 } ${pct(landed + 0.05)}, 94% { opacity: 1 } 97%, 100% { opacity: 0 } }
+@keyframes d2-pr-old { 0%, ${pct(landed + 1.2)} { opacity: 1 } ${pct(landed + 1.3)}, 96% { opacity: 0 } 100% { opacity: 1 } }
+@keyframes d2-pr-new { 0%, ${pct(landed + 1.2)} { opacity: 0 } ${pct(landed + 1.3)}, 94% { opacity: 1 } 97%, 100% { opacity: 0 } }
+${on} .d2-rail-fill { animation: d2-fill ${cycle}s cubic-bezier(0.23, 1, 0.32, 1) infinite }
+${on} .d2-landed { animation: d2-landed ${cycle}s ease-out infinite }
+${on} .t-run { animation: d2-t-run ${cycle}s linear infinite }
+${on} .t-wait { animation: d2-t-wait ${cycle}s linear infinite }
+${on} .t-done { animation: d2-t-done ${cycle}s linear infinite }
+${on} .pr-old { animation: d2-pr-old ${cycle}s linear infinite }
+${on} .pr-new { animation: d2-pr-new ${cycle}s linear infinite }
+@media (max-width: 1023px) { ${on} .d2-rail-fill { animation-name: d2-fill-y } }`,
+].join("\n");
+
+// `vago run` on the example's stuck Goal, in the columns of src/progress.ts.
+const line = (at: string, step: string, outcome: string, took = "", cost = "", cls = "") => {
+	const cells = [`2026-10-22T${at}Z`, took.padStart(6), cost.padStart(6)].join("  ");
+	return { cells, step, outcome, cls };
+};
+const failLog = [
+	line("10:02:11", "Build", "exit 1", "3m10s", "$0.16", "o-bad"),
+	line("10:02:11", "Build", "retries in 1m00s"),
+	line("10:05:20", "Build", "exit 1", "2m09s", "$0.21", "o-bad"),
+	line("10:05:20", "Build", "retries in 1m00s"),
+	line("10:08:02", "Build", "exit 1", "1m42s", "$0.12", "o-bad"),
+	line("10:08:02", "Build", "retries in 5m00s"),
+	line("10:15:47", "Build", "exit 1", "2m45s", "$0.19", "o-bad"),
+];
+---
+<div class="vago-page d2" data-theme="light">
+	<style is:inline set:html={railCss}></style>
+
+	<header class="d2-nav">
+		<a class="d2-word" href="#">vago</a>
+		<nav aria-label="Main">
+			<a href="#d2-how">How it works</a>
+			<a href="#d2-install">Install</a>
+			<a href="#">Docs</a>
+			<a href="#">GitHub</a>
+			<ThemeToggle />
+		</nav>
+	</header>
+
+	<section class="d2-hero">
+		<div class="d2-hero-copy">
+			<h1>Set the Goal.<br />Go do something else.</h1>
+			<div class="d2-hero-side">
+				<p class="d2-sub">Vago runs your Workflow on a Goal in your repo, one Ticket at a time, and leaves you a PR.</p>
+				<div class="d2-ctas">
+					<a class="d2-btn" href="#d2-install">Install</a>
+					<a class="d2-link" href="#d2-how">How it works</a>
+				</div>
+			</div>
+		</div>
+		<LiveTui id="d2-tui" class="d2-tui" />
+	</section>
+
+	<section class="d2-how" id="d2-how">
+		<h2>What happens after you leave</h2>
+		<p class="d2-lede">
+			Each Ticket goes through your Workflow's Steps on its own branch and lands as one commit on the Goal's branch. The Goal becomes one PR. Here, Ticket 03 of gift-cards, the Goal running in the example above.
+		</p>
+
+		<ol class="d2-pipe" data-pipe>
+			<span class="d2-rail" aria-hidden="true"><span class="d2-rail-fill"></span></span>
+			<li class="d2-stage">
+				<span class="d2-node" aria-hidden="true"></span>
+				<h3>Goal</h3>
+				<p>You write what you want, what's in scope and what's out.</p>
+				<pre class="d2-art"><span class="c-d">goal.md</span>
+<span class="c-x"># Customers can pay
+# with a gift card</span></pre>
+			</li>
+			<li class="d2-stage">
+				<span class="d2-node" aria-hidden="true"></span>
+				<h3>Tickets</h3>
+				<p>You split it, or plan them with an agent in the TUI.</p>
+				<pre class="d2-art">{tickets.map((t, i) => (
+					<span class="row">{i === 2 ? (
+						<span class="swap"><span class="t-wait c-d">○</span><span class="t-run c-a">●</span><span class="t-done c-o">✓</span></span>
+					) : (
+						<span class={i < 2 ? "c-o" : "c-d"}>{i < 2 ? "✓" : "○"}</span>
+					)} <span class={i === 2 ? "c-x" : ""}>{t}</span></span>
+				))}</pre>
+			</li>
+			<li class="d2-stage d2-stage-wide">
+				<span class="d2-node" aria-hidden="true"></span>
+				<h3>Steps</h3>
+				<p>Your Workflow, one short TOML file. Some Steps run an agent, some a shell command.</p>
+				<pre class="d2-art">{steps.map((s, i) => (
+					<span class="row" data-step={i}><span class="swap"><span class="m-pend c-d">·</span><span class="m-cur c-a">●</span><span class="m-done c-o">✓</span></span> {s.id.padEnd(13)}<span class="c-d">{s.type.padEnd(6)}</span><span class="meta c-d">{s.took.padStart(6)} {s.cost.padStart(5)}</span></span>
+				))}</pre>
+			</li>
+			<li class="d2-stage">
+				<span class="d2-node" aria-hidden="true"></span>
+				<h3>Commits</h3>
+				<p>One per Ticket, squash-merged onto <code>vago/gift-cards</code>.</p>
+				<pre class="d2-art"><span class="row d2-landed"><span class="c-a">a83d5c1</span> 03 balance page</span>{commits.map(([h, m]) => <span class="row"><span class="c-d">{h}</span> {m}</span>)}</pre>
+			</li>
+			<li class="d2-stage">
+				<span class="d2-node" aria-hidden="true"></span>
+				<h3>PR</h3>
+				<p>The Goal report becomes its description. You review it and merge.</p>
+				<pre class="d2-art"><span class="c-x">gift-cards #37</span>
+<span class="c-d">Workflow small</span>
+<span class="swap"><span class="pr-old">2 of 5 Tickets</span><span class="pr-new">3 of 5 Tickets</span></span>
+<span class="swap"><span class="pr-old">33m, $2.01</span><span class="pr-new">48m, $3.18</span></span></pre>
+			</li>
+		</ol>
+
+		<div class="d2-fail">
+			<div class="d2-fail-copy">
+				<h3>When a Step fails</h3>
+				<p>
+					An agent Step that fails resumes its own session and tries again after 1, 1 and 5 minutes. If all three fail, the Ticket stops and waits for you. Fix what you need and <code>vago run</code> again: it picks up at the Step that failed, on the same branch.
+				</p>
+				<button type="button" class="d2-text-btn" data-show-stuck>Show the stuck Goal in the TUI</button>
+			</div>
+			<pre class="d2-out" aria-label="Example vago run output for a stuck Ticket"><span class="o-p">$</span> vago run order-export
+02-date-range-filter
+{failLog.map((l) => <span class={l.cls ? "row" : "row o-d"}>  {l.cells}  {l.step} <span class={l.cls}>{l.outcome}</span></span>)}<span class="o-bad">02-date-range-filter is stuck after Build: exit 1</span>
+  again:  vago run order-export</pre>
+		</div>
+	</section>
+
+	<section class="d2-install" id="d2-install">
+		<div class="d2-install-main">
+			<h2>Try it on a small Goal</h2>
+			<pre class="d2-code"><span class="c-d">$</span> git clone git@github.com:julianbonomini/vago.git
+<span class="c-d">$</span> cd vago && bun install && bun run reinstall
+<span class="c-d">$</span> cd ~/code/your-project && vago init</pre>
+		</div>
+		<ul class="d2-limits">
+			<li><b>It's an Alpha.</b> Past three retries it's your turn.</li>
+			<li><b>One Ticket at a time.</b> Goals can run side by side, Tickets can't.</li>
+			<li><b>You need</b> Bun to build it, Claude Code or Codex, and <code>gh</code>.</li>
+			<li><b>A personal project,</b> MIT. <i>Vago</i> is Spanish for lazy.</li>
+		</ul>
+	</section>
+</div>
+
+<script>
+	const root = document.querySelector<HTMLElement>(".d2");
+	if (root) {
+		// The rail plays only while it's on screen.
+		const pipe = root.querySelector<HTMLElement>("[data-pipe]");
+		if (pipe && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+			new IntersectionObserver((es) => pipe.classList.toggle("is-on", es.some((e) => e.isIntersecting)), {
+				threshold: 0.2,
+			}).observe(pipe);
+		}
+		// The failure paragraph sends the hero TUI to the stuck Goal.
+		const tui = root.querySelector<HTMLElement>("#d2-tui");
+		root.querySelector("[data-show-stuck]")?.addEventListener("click", () => {
+			if (!tui) return;
+			tui.dispatchEvent(new CustomEvent("vago-tui:goto", { detail: { moment: "stuck", pane: 3 } }));
+			const smooth = !matchMedia("(prefers-reduced-motion: reduce)").matches;
+			tui.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "center" });
+		});
+	}
+</script>
+
+<style is:global>
+	.d2 { min-height: 100vh; }
+	.d2 a { color: inherit; }
+	.d2 code { font-family: var(--v-mono); font-size: 0.86em; color: var(--v-bright); }
+	.d2 button { font: inherit; color: inherit; }
+	.d2 .c-d { color: var(--v-grey); }
+	.d2 .c-x { color: var(--v-bright); }
+	.d2 .c-a { color: var(--v-accent); }
+	.d2 .c-o { color: var(--v-ok); }
+
+	/* Nav */
+	.d2-nav {
+		max-width: var(--v-max);
+		margin: 0 auto;
+		padding: 20px var(--v-gutter);
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 16px;
+	}
+	.d2-word { font-family: var(--v-mono); font-weight: 700; color: var(--v-bright); letter-spacing: -0.02em; text-decoration: none; font-size: 18px; }
+	.d2-nav nav { display: flex; gap: 22px; font-size: var(--v-fs-small); color: var(--v-grey); align-items: center; }
+	.d2-nav nav a { text-decoration: none; transition: color 0.15s; }
+	.d2-nav nav a:hover { color: var(--v-bright); }
+
+	/* Hero */
+	.d2-hero { max-width: var(--v-max); margin: 0 auto; padding: 48px var(--v-gutter) 0; }
+	.d2-hero-copy {
+		display: grid;
+		grid-template-columns: minmax(0, 7fr) minmax(0, 4fr);
+		gap: var(--v-gap);
+		align-items: end;
+	}
+	.d2-hero h1 {
+		font-size: var(--v-fs-display);
+		line-height: var(--v-lh-display);
+		letter-spacing: var(--v-track-display);
+		font-weight: var(--v-weight-head);
+		color: var(--v-bright);
+		margin: 0;
+	}
+	.d2-sub { font-size: clamp(17px, 1.4vw, 19px); color: var(--v-fg); margin: 0; max-width: 36ch; }
+	.d2-ctas { display: flex; gap: 26px; align-items: center; margin-top: 24px; }
+	.d2-btn {
+		background: var(--v-accent-fill);
+		color: var(--v-on-accent);
+		text-decoration: none;
+		font-weight: 600;
+		padding: 11px 22px;
+		border-radius: var(--v-radius);
+		transition: transform 0.15s var(--v-ease), background 0.15s;
+	}
+	.d2 .d2-btn { color: var(--v-on-accent); }
+	.d2-btn:hover { background: var(--v-accent-hover); }
+	.d2-btn:active { transform: scale(0.97); }
+	.d2-btn:focus-visible, .d2-link:focus-visible, .d2-text-btn:focus-visible { outline: 2px solid var(--v-accent); outline-offset: 3px; }
+	.d2-link { text-decoration: none; border-bottom: 1px solid var(--v-line-strong); padding-bottom: 2px; }
+	.d2-link:hover { border-color: var(--v-accent); }
+	.d2-tui { margin-top: 48px; }
+
+	@media (prefers-reduced-motion: no-preference) {
+		.d2-hero h1, .d2-hero-side, .d2-tui { animation: d2-rise 0.8s var(--v-ease) both; }
+		.d2-hero-side { animation-delay: 0.08s; }
+		.d2-tui { animation-delay: 0.16s; }
+	}
+	@keyframes d2-rise { from { opacity: 0; transform: translateY(12px); } }
+
+	/* How it works */
+	.d2-how { max-width: var(--v-max); margin: 0 auto; padding: var(--v-section) var(--v-gutter) 120px; }
+	.d2-how h2, .d2-install h2 {
+		font-size: var(--v-fs-h2);
+		letter-spacing: var(--v-track-h2);
+		line-height: 1.05;
+		font-weight: var(--v-weight-head);
+		color: var(--v-bright);
+		margin: 0;
+	}
+	.d2-lede { color: var(--v-fg); max-width: 60ch; margin: 18px 0 0; }
+
+	.d2-pipe {
+		position: relative;
+		list-style: none;
+		margin: 64px 0 0;
+		padding: 0;
+		display: grid;
+		grid-template-columns: 0.95fr 1.15fr 1.45fr 1.15fr 0.95fr;
+	}
+	.d2-rail { position: absolute; left: 0; right: 0; top: 0; height: 1px; background: var(--v-line-strong); }
+	.d2-rail-fill { position: absolute; inset: -0.5px 0; background: var(--v-accent-fill); transform-origin: left; transform: scaleX(0); }
+	.d2-stage { position: relative; padding: 30px 22px 0 0; min-width: 0; }
+	.d2-node {
+		position: absolute;
+		top: -5px;
+		left: 0;
+		width: 11px;
+		height: 11px;
+		background: var(--v-bg);
+		border: 1px solid var(--v-line-strong);
+		border-radius: 50%;
+	}
+	.d2-stage h3 { margin: 0; font-size: var(--v-fs-h3); font-weight: 600; color: var(--v-bright); letter-spacing: -0.01em; }
+	.d2-stage p { margin: 6px 0 18px; font-size: 14.5px; color: var(--v-grey); line-height: 1.5; max-width: 30ch; }
+	.d2-art {
+		margin: 0;
+		font-family: var(--v-mono);
+		font-size: var(--v-fs-code);
+		line-height: 1.6;
+		color: var(--v-fg);
+		white-space: pre;
+		overflow-x: auto;
+	}
+	.d2-art .row { display: block; border-radius: 2px; margin-left: -4px; padding-left: 4px; }
+	.d2-art .swap { display: inline-grid; justify-items: start; }
+	.d2-art .row > .swap { width: 1ch; justify-items: center; }
+	.d2-art .swap > * { grid-area: 1 / 1; }
+	/* At rest, without the loop, each mark shows its end state. */
+	.d2 .m-pend, .d2 .m-cur, .d2 .t-wait, .d2 .t-run, .d2 .pr-old { opacity: 0; }
+
+	/* Failure, a small part of how it works */
+	.d2-fail {
+		margin-top: 88px;
+		padding-top: 36px;
+		border-top: 1px solid var(--v-line);
+		display: grid;
+		grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+		gap: var(--v-gap);
+		align-items: start;
+	}
+	.d2-fail h3 { margin: 0; font-size: var(--v-fs-h3); font-weight: 600; color: var(--v-bright); letter-spacing: -0.01em; }
+	.d2-fail-copy p { color: var(--v-fg); font-size: 15px; margin: 8px 0 0; max-width: 46ch; }
+	.d2-text-btn {
+		all: unset;
+		cursor: pointer;
+		margin-top: 14px;
+		font-size: 15px;
+		color: var(--v-bright);
+		border-bottom: 1px solid var(--v-accent);
+		padding-bottom: 1px;
+	}
+	.d2-text-btn:hover { color: var(--v-accent); }
+	.d2-out {
+		margin: 0;
+		background: var(--v-t-bg);
+		color: var(--v-t-fg);
+		border-radius: var(--v-radius-lg);
+		padding: 18px 22px;
+		font-family: var(--v-mono);
+		font-size: 12px;
+		line-height: 1.65;
+		overflow-x: auto;
+		min-width: 0;
+	}
+	.d2-out .row { display: block; }
+	.d2-out .o-d, .d2-out .o-p { color: var(--v-t-grey); }
+	.d2-out .o-bad { color: var(--v-t-bad); }
+
+	/* Install */
+	.d2-install {
+		max-width: var(--v-max);
+		margin: 0 auto;
+		padding: 72px var(--v-gutter) 140px;
+		display: grid;
+		grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+		gap: 64px;
+		align-items: end;
+		border-top: 1px solid var(--v-line);
+	}
+	.d2-code {
+		margin: 28px 0 0;
+		font-family: var(--v-mono);
+		font-size: 13.5px;
+		line-height: 1.8;
+		background: var(--v-raised);
+		color: var(--v-fg);
+		padding: 18px 22px;
+		border-radius: var(--v-radius-lg);
+		overflow-x: auto;
+	}
+	.d2-limits { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; font-size: 15px; color: var(--v-grey); }
+	.d2-limits b { color: var(--v-fg); font-weight: 600; }
+
+	@media (prefers-reduced-motion: reduce) {
+		.d2 .m-done, .d2 .t-done, .d2 .pr-new, .d2 .d2-landed { opacity: 1; }
+		.d2 .d2-rail-fill { transform: none; }
+		.d2 .d2-node { background: var(--v-accent-fill); border-color: var(--v-accent-fill); }
+		.d2, .d2 * { transition: none !important; }
+	}
+
+	@media (max-width: 1023px) {
+		.d2-hero-copy { grid-template-columns: minmax(0, 1fr); gap: 22px; }
+		.d2-pipe { grid-template-columns: minmax(0, 1fr); margin-top: 44px; }
+		.d2-rail { top: 0; bottom: 0; left: 0; right: auto; width: 1px; height: auto; }
+		.d2-rail-fill { inset: 0 -0.5px; transform-origin: top; transform: scaleY(0); }
+		.d2-stage { padding: 0 0 40px 30px; }
+		.d2-stage:last-child { padding-bottom: 0; }
+		.d2-node { top: 6px; left: -5px; }
+		.d2-stage p { max-width: 46ch; }
+		.d2-fail { grid-template-columns: minmax(0, 1fr); gap: 24px; margin-top: 64px; }
+		.d2-install { grid-template-columns: minmax(0, 1fr); gap: 32px; }
+	}
+	@media (max-width: 640px) {
+		.d2-nav nav a:not([href="#d2-install"]) { display: none; }
+		.d2-hero { padding-top: 24px; }
+		.d2-tui { margin-top: 32px; }
+		.d2-how { padding-top: 100px; padding-bottom: 90px; }
+		.d2-out { padding: 14px; font-size: 10px; }
+		.d2-install { padding-bottom: 96px; }
+		.d2-code { font-size: 11.5px; }
+	}
+</style>

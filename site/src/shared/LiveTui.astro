@@ -1,0 +1,324 @@
+---
+/*
+PROTOTYPE: the live TUI replay, variant D's hero, as one component.
+
+Every frame was drawn by Vago's real TUI (src/tui) against an invented
+Project, acme-shop, and saved in tui-frames.json. Goal gift-cards plays as if
+`vago run` were on Ticket 03: New branch, Build, Checks, Review, Squash merge,
+then Ticket 04 starts. The page picks which frame shows. Use it inside a
+`.vago-page` root (tokens.css), which gives it its colours and fonts.
+
+Props
+  autoplay  boolean, default true. The replay clock plays and the tour runs
+            the first time the TUI is a quarter on screen. With false it
+            rests on a Build moment until a visitor or the page moves it.
+  tour      boolean, default = autoplay. The tour presses ↓ ↓ ↑ ↑ Enter on
+            the key row so the visitor sees which keys work.
+  moment    LiveTuiMoment the TUI starts on, default "project".
+  time      number 0-1, the replay time it starts on.
+  keys      boolean, default true. The key row under the frame.
+  controls  boolean, default true. The meter, the status and Pause/Play.
+  caption   string, or false for none. Default says it's a replay of an
+            example Project.
+  path      the folder in the window's title bar, default "~/code/acme-shop".
+  id, class passed to the root.
+
+Driving it from the page (the root is the element with [data-live-tui]):
+  el.dispatchEvent(new CustomEvent("vago-tui:goto", { detail }))
+    detail: {
+      moment?: "project" | "goal-running" | "ticket-steps" | "runs"
+             | "run-activity" | "help" | "stuck" | "ready" | "done",
+      time?: number,          // 0-1 through the replay; pauses the clock
+      goal?: string | number, // a Goal by name ("gift-cards") or row
+      ticket?: number,        // a row of the Tickets pane, from 0
+      pane?: number,          // 0 Tickets, 1 Ticket, 2 Runs, 3 Run activity
+      help?: boolean,         // the keys overlay
+      play?: boolean,         // run the clock after the jump
+    }
+    Applied in that order. "goal-running" opens gift-cards on Ticket 03;
+    "ticket-steps", "runs" and "run-activity" do too, with that pane
+    focused; "help" lays the keys over whatever shows; "stuck", "ready" and
+    "done" open a Goal in that state. Any goto stops the tour.
+  el.dispatchEvent(new CustomEvent("vago-tui:pause"))
+  el.dispatchEvent(new CustomEvent("vago-tui:play"))
+  el.dispatchEvent(new CustomEvent("vago-tui:key", { detail: { key: "Enter" } }))
+    presses a key as the visitor would (KeyboardEvent.key names).
+  el.addEventListener("vago-tui:change", (e) => e.detail)
+    fires (bubbling) after every frame change with
+    { view, goal, ticket, pane, help, time, phase, label, playing }.
+  el.dataset.ready is set once it's mounted.
+
+For a scroll-driven TUI: autoplay={false}, then on scroll dispatch goto with
+the moment for each section and/or time = scroll progress. With
+prefers-reduced-motion the clock never plays and the tour never runs; goto
+still works.
+
+Keys reach the TUI only while it has focus (click it) or the pointer, so it
+never takes the page's own keys. It's 120 columns scaled to the width it
+gets, so it fits a phone; under 640px the key row becomes a 4-column grid.
+*/
+import { tuiProject, tuiSize, tuiStyleCss } from "./tui-player.ts";
+import type { LiveTuiMoment } from "./tui-player.ts";
+
+type Props = {
+	autoplay?: boolean;
+	tour?: boolean;
+	moment?: LiveTuiMoment;
+	time?: number;
+	keys?: boolean;
+	controls?: boolean;
+	caption?: string | false;
+	path?: string;
+	id?: string;
+	class?: string;
+};
+const {
+	autoplay = true,
+	tour = autoplay,
+	moment = "project",
+	time,
+	keys = true,
+	controls = true,
+	caption = `A replay, not a recording. Every frame was drawn by Vago's own TUI from an example Project, ${tuiProject}. Its Goal gift-cards plays as if Ticket 03 were running, with its Run activity streaming in.`,
+	path = `~/code/${tuiProject}`,
+	id,
+	class: className = "",
+} = Astro.props;
+
+const stripKeys = [
+	["ArrowUp", "↑"],
+	["ArrowDown", "↓"],
+	["Enter", "Enter"],
+	["Escape", "Esc"],
+	["[", "["],
+	["]", "]"],
+	["Tab", "Tab"],
+	["?", "?"],
+];
+---
+<div
+	class={`vtui ${className}`}
+	id={id}
+	data-live-tui
+	data-autoplay={String(autoplay)}
+	data-tour={String(tour)}
+	data-moment={moment}
+	data-time={time === undefined ? undefined : String(time)}
+>
+	<style is:inline set:html={tuiStyleCss(".vtui .vtui-screen")}></style>
+	<div class="vtui-window" data-frame>
+		<div class="vtui-chrome">
+			<span><b>vago</b> {path}</span>
+			<span class="vtui-hint">click, then use its keys</span>
+		</div>
+		<div class="vtui-scroll">
+			<div
+				class="vtui-screen"
+				data-screen
+				tabindex="0"
+				role="application"
+				aria-roledescription="terminal replay"
+				aria-label="A replay of the Vago TUI on an example Project. Up and down move, Enter opens a Goal, Escape goes back, brackets switch Goals, Tab moves between panes, question mark shows the keys."
+				style={`--cols:${tuiSize.width};--rows:${tuiSize.height}`}
+			></div>
+		</div>
+		<p class="vtui-toast" data-toast role="status" aria-live="polite"></p>
+	</div>
+	{(keys || controls) && (
+		<div class="vtui-under">
+			{keys && (
+				<div class="vtui-keys" data-keys role="group" aria-label="Keys">
+					{stripKeys.map(([k, label]) => <button type="button" class="vtui-key" data-key={k}>{label}</button>)}
+				</div>
+			)}
+			{controls && (
+				<div class="vtui-replay">
+					<span class="vtui-meter" data-meter aria-hidden="true"></span>
+					<span data-status>Ticket 03</span>
+					<button type="button" class="vtui-play" data-play aria-pressed="false">Pause</button>
+				</div>
+			)}
+		</div>
+	)}
+	{caption && <p class="vtui-caption">{caption}</p>}
+</div>
+
+<script>
+	import { mountLiveTui } from "./tui-player.ts";
+	import type { LiveTuiMoment } from "./tui-player.ts";
+
+	for (const el of document.querySelectorAll<HTMLElement>("[data-live-tui]")) {
+		if (el.dataset.ready !== undefined) continue;
+		const time = el.dataset.time;
+		mountLiveTui(el, {
+			autoplay: el.dataset.autoplay !== "false",
+			tour: el.dataset.tour !== "false",
+			moment: (el.dataset.moment ?? "project") as LiveTuiMoment,
+			time: time === undefined ? undefined : Number(time),
+		});
+	}
+</script>
+
+<style is:global>
+	.vtui { min-width: 0; }
+	.vtui-window {
+		position: relative;
+		background: var(--v-t-bg);
+		border: 1px solid var(--v-t-line);
+		border-radius: var(--v-radius-lg);
+		box-shadow: var(--v-t-shadow);
+		transition: box-shadow 0.3s var(--v-ease), border-color 0.3s;
+		overflow: hidden;
+	}
+	.vtui.is-hot .vtui-window { border-color: #4a3426; box-shadow: var(--v-t-shadow), 0 0 0 1px rgb(255 138 61 / 0.35); }
+	.vtui-chrome {
+		display: flex;
+		justify-content: space-between;
+		gap: 12px;
+		padding: 9px 16px;
+		font-family: var(--v-mono);
+		font-size: 12px;
+		line-height: 1.4;
+		color: var(--v-t-grey);
+		border-bottom: 1px solid var(--v-t-line);
+	}
+	.vtui-chrome b { color: var(--v-t-fg); font-weight: 400; margin-right: 8px; }
+	.vtui-hint { transition: color 0.2s; }
+	.vtui.is-hot .vtui-hint { color: var(--v-accent-fill); }
+	.vtui-scroll { container-type: inline-size; padding: clamp(8px, 1.4vw, 18px); overflow: hidden; }
+	.vtui-screen {
+		--fs: clamp(4px, calc(100cqw / (var(--cols) * 0.602)), 17px);
+		position: relative;
+		font-family: var(--v-term);
+		font-size: var(--fs);
+		line-height: 1.17;
+		color: var(--v-t-fg);
+		width: max-content;
+		min-height: calc(var(--rows) * 1.17em);
+		outline: none;
+		cursor: default;
+		font-variant-ligatures: none;
+	}
+	.vtui-screen .row { white-space: pre; height: 1.17em; }
+	.vtui-screen .g { display: inline-block; width: 1ch; text-align: center; font-style: normal; overflow: hidden; vertical-align: top; }
+	.vtui-screen .h, .vtui-screen .b { display: inline-block; height: 1.17em; vertical-align: top; position: relative; }
+	.vtui-screen .b { width: 1ch; }
+	.vtui-screen .h::before {
+		content: "";
+		position: absolute;
+		left: 0;
+		right: 0;
+		top: calc(50% - 0.5px);
+		height: 1px;
+		background: currentColor;
+	}
+	.vtui-screen .h.heavy::before { top: calc(50% - 0.12em); height: 0.24em; }
+	.vtui-screen .b::before, .vtui-screen .b::after { content: ""; position: absolute; background: currentColor; }
+	.vtui-screen .b::before { top: calc(50% - 0.5px); height: 1px; left: 50%; right: 50%; }
+	.vtui-screen .b::after { left: calc(50% - 0.5px); width: 1px; top: 50%; bottom: 50%; }
+	.vtui-screen .b.l::before { left: 0; }
+	.vtui-screen .b.r::before { right: 0; }
+	.vtui-screen .b.u::after { top: 0; }
+	.vtui-screen .b.d::after { bottom: 0; }
+	.vtui-screen .b.full::before { inset: 0; height: auto; }
+	.vtui-screen .b.top::before { inset: 0 0 50% 0; height: auto; }
+	.vtui-screen .b.full::after, .vtui-screen .b.top::after { display: none; }
+	.vtui-screen .overlay {
+		position: absolute;
+		top: calc(var(--r) * 1.17em);
+		left: calc(var(--c) * 1ch);
+		background: var(--v-t-bg);
+		box-shadow: 0 10px 40px rgb(0 0 0 / 0.6);
+	}
+	.vtui-screen .fk {
+		all: unset;
+		cursor: pointer;
+		color: var(--v-t-bright);
+		border-radius: 2px;
+		transition: background 0.12s, color 0.12s;
+	}
+	.vtui-screen .fk:hover { background: var(--v-accent-fill); color: var(--v-on-accent); }
+	.vtui-screen .fl { color: var(--v-t-grey); }
+	.vtui-toast {
+		position: absolute;
+		left: 50%;
+		bottom: 14%;
+		margin: 0;
+		transform: translate(-50%, 8px);
+		opacity: 0;
+		pointer-events: none;
+		background: var(--v-t-raised);
+		border: 1px solid #3a3a3a;
+		color: var(--v-t-fg);
+		font-family: var(--v-mono);
+		font-size: 12.5px;
+		line-height: 1.5;
+		padding: 8px 14px;
+		border-radius: var(--v-radius);
+		max-width: min(90%, 60ch);
+		transition: opacity 0.2s, transform 0.2s var(--v-ease);
+	}
+	.vtui-toast.is-on { opacity: 1; transform: translate(-50%, 0); }
+
+	.vtui-under {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 16px;
+		margin-top: 14px;
+		flex-wrap: wrap;
+	}
+	.vtui-keys { display: flex; gap: 6px; flex-wrap: wrap; }
+	.vtui-key {
+		all: unset;
+		cursor: pointer;
+		font-family: var(--v-mono);
+		font-size: 12.5px;
+		line-height: 1.5;
+		min-width: 18px;
+		text-align: center;
+		padding: 5px 9px;
+		border: 1px solid var(--v-line);
+		border-bottom-width: 2px;
+		border-radius: var(--v-radius);
+		color: var(--v-fg);
+		background: var(--v-bg);
+		transition: transform 0.1s var(--v-ease), border-color 0.15s, background 0.15s;
+	}
+	.vtui-key:hover { border-color: var(--v-line-strong); }
+	.vtui-key:active { transform: translateY(1px); }
+	.vtui-key:focus-visible, .vtui-play:focus-visible, .vtui-screen:focus-visible { outline: 2px solid var(--v-accent); outline-offset: 2px; }
+	.vtui-key.is-pressed { animation: vtui-press 0.45s var(--v-ease); }
+	@keyframes vtui-press {
+		0% { background: var(--v-accent-fill); border-color: var(--v-accent-fill); color: var(--v-on-accent); transform: translateY(1px); }
+	}
+	.vtui-replay { display: flex; align-items: center; gap: 12px; font-family: var(--v-mono); font-size: 12.5px; color: var(--v-grey); }
+	.vtui-meter { width: 72px; height: 2px; background: var(--v-line); position: relative; overflow: hidden; flex: none; }
+	.vtui-meter::after {
+		content: "";
+		position: absolute;
+		inset: 0;
+		background: var(--v-accent-fill);
+		transform-origin: left;
+		transform: scaleX(var(--p, 0));
+		transition: transform 0.6s var(--v-ease);
+	}
+	.vtui-play { all: unset; cursor: pointer; border-bottom: 1px solid var(--v-line-strong); color: var(--v-fg); }
+	.vtui-caption { font-size: var(--v-fs-small); color: var(--v-grey); max-width: 70ch; margin: 18px 0 0; }
+
+	@media (prefers-reduced-motion: no-preference) {
+		.vtui-screen .overlay:not([hidden]) { animation: vtui-pop 0.16s var(--v-ease); }
+	}
+	@keyframes vtui-pop { from { opacity: 0; transform: scale(0.98); } }
+	@media (prefers-reduced-motion: reduce) {
+		.vtui *, .vtui { transition: none !important; animation: none !important; }
+	}
+
+	@media (max-width: 640px) {
+		.vtui-hint { display: none; }
+		.vtui-scroll { padding: 8px; }
+		.vtui-under { flex-direction: column; align-items: stretch; }
+		.vtui-keys { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+		.vtui-key { padding: 10px 0; font-size: 14px; }
+	}
+</style>

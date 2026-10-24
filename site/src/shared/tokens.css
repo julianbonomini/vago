@@ -1,0 +1,152 @@
+/* PROTOTYPE: variant D's colour, type and spacing tokens for both themes,
+   shared by the round 3 layouts. A layout puts them on its root:
+
+     <div class="vago-page" data-theme="light"> ... </div>
+
+   and reads them as var(--v-...). ThemeToggle.astro flips data-theme and
+   remembers it. Nothing here touches :root or body.
+
+   Orange: --v-accent-fill (#ff8a3d) is the one orange for fills in both
+   themes (buttons, the pressed key, rails, meters), always with
+   --v-on-accent text. --v-accent is orange used as text or a thin mark on
+   the page's ground: a darker #a8481a in light, the bright one in dark.
+
+   WCAG contrast of every text/background pair defined here
+   (4.5:1 needed for body text, 3:1 for large):
+
+   Light, on --v-bg #f2f1ee / on --v-raised #e8e6e1
+     --v-fg       #2b2a27  12.71 / 11.51
+     --v-bright   #121212  16.59 / 15.02
+     --v-grey     #63615c   5.48 /  4.96
+     --v-accent   #a8481a   5.15 /  4.67
+     --v-ok       #44703f   5.11 /  4.63
+     --v-bad      #a83d34   5.50 /  4.98
+     --v-bg on --v-bright (selected theme option)  16.59
+     --v-on-accent #121212 on --v-accent-fill #ff8a3d   7.99
+     --v-on-accent #121212 on --v-accent-hover #ff9d5c  9.13
+
+   Dark, on --v-bg #0f0f0f / on --v-raised #1b1b1b
+     --v-fg       #d6d6d6  13.19 / 11.85
+     --v-bright   #f0f0f0  16.82 / 15.11
+     --v-grey     #8a8a8a   5.55 /  4.99
+     --v-accent   #ff8a3d   8.17 /  7.34
+     --v-ok       #8fae8b   7.85 /  7.05
+     --v-bad      #e5736b   6.39 /  5.74
+     --v-bg on --v-bright (selected theme option)  16.82
+     --v-on-accent #121212 on --v-accent-fill #ff8a3d   7.99
+     --v-on-accent #121212 on --v-accent-hover #ff9d5c  9.13
+
+   Terminal, both themes, on --v-t-bg #141414
+     --v-t-fg     #d6d6d6  12.68
+     --v-t-bright #f0f0f0  16.17
+     --v-t-grey   #8a8a8a   5.34
+     --v-t-ok     #8fae8b   7.54
+     --v-t-bad    #e5736b   6.14
+     --v-t-fg on the toast #1b1b1b  11.85
+
+   The colours inside the TUI's screen are the ones Vago's own renderer drew
+   and aren't redefined here. */
+
+@import "@fontsource-variable/geist";
+@import "@fontsource/jetbrains-mono/400.css";
+@import "@fontsource/jetbrains-mono/700.css";
+
+.vago-page {
+	/* Type */
+	--v-sans: "Geist Variable", system-ui, sans-serif;
+	--v-mono: "JetBrains Mono", ui-monospace, monospace;
+	/* The fontsource JetBrains Mono has no box-drawing glyphs, so the TUI's
+	   screen uses a system mono that does. */
+	--v-term: Menlo, "SF Mono", "DejaVu Sans Mono", Consolas, monospace;
+	--v-fs-display: clamp(40px, 5.6vw, 84px);
+	--v-fs-h2: clamp(32px, 3.8vw, 52px);
+	--v-fs-h3: 19px;
+	--v-fs-body: 17px;
+	--v-fs-small: 14px;
+	--v-fs-code: 12.5px;
+	--v-lh-display: 0.98;
+	--v-lh-body: 1.55;
+	--v-track-display: -0.045em;
+	--v-track-h2: -0.035em;
+	--v-weight-head: 600;
+
+	/* Space */
+	--v-max: 1320px;
+	--v-gutter: 24px;
+	--v-section: clamp(100px, 11vw, 150px);
+	--v-gap: 48px;
+	--v-radius: 4px;
+	--v-radius-lg: 8px;
+	--v-ease: cubic-bezier(0.23, 1, 0.32, 1);
+
+	/* Colour, light */
+	--v-bg: #f2f1ee;
+	--v-raised: #e8e6e1;
+	--v-fg: #2b2a27;
+	--v-bright: #121212;
+	--v-grey: #63615c;
+	--v-line: #d6d3cc;
+	--v-line-strong: #9c9890;
+	--v-accent: #a8481a;
+	--v-accent-fill: #ff8a3d;
+	--v-accent-hover: #ff9d5c;
+	--v-on-accent: #121212;
+	--v-ok: #44703f;
+	--v-bad: #a83d34;
+	--v-row-hot: rgb(255 138 61 / 0.16);
+
+	/* The terminal is dark in both themes. */
+	--v-t-bg: #141414;
+	--v-t-raised: #1b1b1b;
+	--v-t-fg: #d6d6d6;
+	--v-t-bright: #f0f0f0;
+	--v-t-grey: #8a8a8a;
+	--v-t-ok: #8fae8b;
+	--v-t-bad: #e5736b;
+	--v-t-line: #2a2a2a;
+	--v-t-shadow: 0 30px 80px -30px rgb(20 18 14 / 0.45), 0 2px 6px rgb(20 18 14 / 0.08);
+
+	background: var(--v-bg);
+	color: var(--v-fg);
+	font-family: var(--v-sans);
+	font-size: var(--v-fs-body);
+	line-height: var(--v-lh-body);
+	-webkit-font-smoothing: antialiased;
+	overflow-x: clip;
+	transition: background-color 0.3s var(--v-ease), color 0.3s var(--v-ease);
+}
+
+.vago-page[data-theme="dark"] {
+	--v-bg: #0f0f0f;
+	--v-raised: #1b1b1b;
+	--v-fg: #d6d6d6;
+	--v-bright: #f0f0f0;
+	--v-grey: #8a8a8a;
+	--v-line: #2a2a2a;
+	--v-line-strong: #5c5c5c;
+	--v-accent: #ff8a3d;
+	--v-ok: #8fae8b;
+	--v-bad: #e5736b;
+	--v-row-hot: rgb(255 138 61 / 0.12);
+	--v-t-line: #262626;
+	--v-t-shadow: 0 40px 120px -40px rgb(0 0 0 / 0.9), 0 0 0 1px rgb(255 255 255 / 0.02);
+}
+
+@media (max-width: 640px) {
+	.vago-page {
+		--v-gutter: 16px;
+		--v-gap: 28px;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.vago-page {
+		transition: none;
+	}
+}
+
+.vago-page *,
+.vago-page *::before,
+.vago-page *::after {
+	box-sizing: border-box;
+}

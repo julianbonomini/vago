@@ -1,0 +1,82 @@
+---
+// PROTOTYPE: the Light/Dark switch for a page that uses tokens.css. Put it
+// anywhere inside the `.vago-page` root; it flips that root's data-theme,
+// remembers the choice in localStorage ("vago-theme", guarded, so a blocked
+// storage only forgets it) and also answers the `t` key while no LiveTui
+// has the keys and no field has focus. With nothing saved, the root keeps
+// the data-theme the layout gave it.
+type Props = { class?: string };
+const { class: className = "" } = Astro.props;
+---
+<button type="button" class={`v-theme ${className}`} data-theme-toggle aria-label="Switch colour theme">
+	<span class="v-theme-opt" data-opt="light">Light</span><span class="v-theme-opt" data-opt="dark">Dark</span>
+</button>
+
+<script>
+	const KEY = "vago-theme";
+	const read = () => {
+		try {
+			const saved = localStorage.getItem(KEY);
+			return saved === "dark" || saved === "light" ? saved : null;
+		} catch {
+			return null;
+		}
+	};
+	const setTheme = (root: HTMLElement, t: string) => {
+		root.dataset.theme = t;
+		try {
+			localStorage.setItem(KEY, t);
+		} catch {}
+	};
+	const flip = (root: HTMLElement) => setTheme(root, root.dataset.theme === "dark" ? "light" : "dark");
+
+	const roots = new Set<HTMLElement>();
+	for (const btn of document.querySelectorAll<HTMLElement>("[data-theme-toggle]")) {
+		const root = btn.closest<HTMLElement>(".vago-page");
+		if (!root) continue;
+		roots.add(root);
+		btn.addEventListener("click", () => flip(root));
+	}
+	const saved = read();
+	if (saved) for (const root of roots) root.dataset.theme = saved;
+
+	document.addEventListener("keydown", (e) => {
+		if (e.key !== "t" || e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
+		const target = e.target as HTMLElement | null;
+		if (target?.closest("input, textarea, select, [contenteditable], [data-screen]")) return;
+		for (const root of roots) {
+			if (root.closest("[hidden]")) continue;
+			if (root.querySelector("[data-live-tui].is-hot")) continue;
+			flip(root);
+		}
+	});
+</script>
+
+<style is:global>
+	.v-theme {
+		all: unset;
+		cursor: pointer;
+		display: inline-flex;
+		border: 1px solid var(--v-line);
+		border-radius: var(--v-radius);
+		padding: 2px;
+		font-family: var(--v-mono);
+		font-size: 12px;
+		line-height: 1.4;
+	}
+	.v-theme-opt {
+		padding: 3px 8px;
+		border-radius: 2px;
+		color: var(--v-grey);
+		transition: background 0.2s, color 0.2s;
+	}
+	.vago-page[data-theme="light"] .v-theme-opt[data-opt="light"],
+	.vago-page[data-theme="dark"] .v-theme-opt[data-opt="dark"] {
+		background: var(--v-bright);
+		color: var(--v-bg);
+	}
+	.v-theme:focus-visible {
+		outline: 2px solid var(--v-accent);
+		outline-offset: 2px;
+	}
+</style>
