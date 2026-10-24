@@ -36,6 +36,15 @@
      --v-on-accent #121212 on --v-accent-fill #ff8a3d   7.99
      --v-on-accent #121212 on --v-accent-hover #ff9d5c  9.13
 
+   The band (--v-band), a soft shade for a header or footer: a step darker
+   than the page in light, a step lighter in dark. --v-band-word is a quiet
+   tone of the page's ink for big decorative type on it, never for text
+   that has to be read.
+   Light, on --v-band #e6e4de: --v-fg 11.29, --v-bright 14.73,
+     --v-grey 4.87, --v-accent 4.58. --v-band-word #cbc7be 1.33 (decorative)
+   Dark, on --v-band #181818: --v-fg 12.22, --v-bright 15.58,
+     --v-grey 5.14, --v-accent 7.57. --v-band-word #303030 1.4 (decorative)
+
    Terminal, both themes, on --v-t-bg #141414
      --v-t-fg     #d6d6d6  12.68
      --v-t-bright #f0f0f0  16.17
@@ -94,6 +103,8 @@
 	--v-ok: #44703f;
 	--v-bad: #a83d34;
 	--v-row-hot: rgb(255 138 61 / 0.16);
+	--v-band: #e6e4de;
+	--v-band-word: #cbc7be;
 
 	/* The terminal is dark in both themes. */
 	--v-t-bg: #141414;
@@ -128,6 +139,8 @@
 	--v-ok: #8fae8b;
 	--v-bad: #e5736b;
 	--v-row-hot: rgb(255 138 61 / 0.12);
+	--v-band: #181818;
+	--v-band-word: #303030;
 	--v-t-line: #262626;
 	--v-t-shadow: 0 40px 120px -40px rgb(0 0 0 / 0.9), 0 0 0 1px rgb(255 255 255 / 0.02);
 }

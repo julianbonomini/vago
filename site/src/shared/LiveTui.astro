@@ -46,6 +46,10 @@ Driving it from the page (the root is the element with [data-live-tui]):
   el.addEventListener("vago-tui:change", (e) => e.detail)
     fires (bubbling) after every frame change with
     { view, goal, ticket, pane, help, time, phase, label, playing }.
+  el.addEventListener("vago-tui:visitor", () => ...)
+    fires (bubbling) when a visitor moves it from inside: clicks the
+    screen, presses one of its keys, or clicks a key in its footer or key
+    row. Never for the page's own goto or key events, nor for the tour.
   el.dataset.ready is set once it's mounted.
 
 For a scroll-driven TUI: autoplay={false}, then on scroll dispatch goto with

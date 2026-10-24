@@ -402,7 +402,12 @@ export function mountLiveTui(root: HTMLElement, options: LiveTuiOptions): void {
 	});
 	frameEl.addEventListener("focusin", () => root.classList.add("is-hot"));
 	frameEl.addEventListener("focusout", () => root.classList.toggle("is-hot", hovered));
-	screen.addEventListener("pointerdown", () => screen.focus({ preventScroll: true }));
+	// Tells the page a visitor, not the page or the tour, moved the TUI.
+	const visitor = () => root.dispatchEvent(new CustomEvent("vago-tui:visitor", { bubbles: true }));
+	screen.addEventListener("pointerdown", () => {
+		screen.focus({ preventScroll: true });
+		visitor();
+	});
 
 	const ours = (e: KeyboardEvent) => {
 		if (e.metaKey || e.ctrlKey || e.altKey) return false;
@@ -420,6 +425,7 @@ export function mountLiveTui(root: HTMLElement, options: LiveTuiOptions): void {
 			if (target?.closest("input, textarea, select, [contenteditable]")) return;
 			if (press(e.key, e.shiftKey)) {
 				stopTour();
+				visitor();
 				e.preventDefault();
 				e.stopPropagation();
 			}
@@ -432,6 +438,7 @@ export function mountLiveTui(root: HTMLElement, options: LiveTuiOptions): void {
 		const b = (e.target as HTMLElement).closest<HTMLElement>("[data-key]");
 		if (!b) return;
 		stopTour();
+		visitor();
 		const key = b.dataset.key ?? "";
 		if (!press(key)) toast(`${key} works in the real TUI. The replay knows ↑↓ Enter Esc [ ] Tab and ?.`);
 		flash(key);

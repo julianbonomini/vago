@@ -11,6 +11,7 @@ import VariantD2 from "../variants/VariantD2.astro";
 import VariantE from "../variants/VariantE.astro";
 import VariantF from "../variants/VariantF.astro";
 import VariantG from "../variants/VariantG.astro";
+import VariantH from "../variants/VariantH.astro";
 
 const variants = [
   { key: "A", name: "Session transcript" },
@@ -21,6 +22,7 @@ const variants = [
   { key: "E", name: "Screen-first" },
   { key: "F", name: "Scroll drives the tool" },
   { key: "G", name: "The evening" },
+  { key: "H", name: "E + F (final)" },
 ];
 ---
 <html lang="en">
@@ -42,6 +44,7 @@ const variants = [
     <div data-variant="E" hidden><VariantE /></div>
     <div data-variant="F" hidden><VariantF /></div>
     <div data-variant="G" hidden><VariantG /></div>
+    <div data-variant="H" hidden><VariantH /></div>
     <PrototypeSwitcher variants={variants} />
   </body>
 </html>

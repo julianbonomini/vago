@@ -1,0 +1,927 @@
+---
+// PROTOTYPE, variant H: E's hero walking into F's story. The live TUI fills
+// the first screen, pulls back while a spotlight names its panes (E), then
+// glides into F's sticky column, where the story's beats drive it. One TUI
+// carries all three; h/run.ts moves it. Below: E's pipeline, E's Workflow
+// file with F's starter tabs folded in, install, and E's footer on a soft
+// shade that the header shares.
+import "../shared/tokens.css";
+import LiveTui from "../shared/LiveTui.astro";
+import ThemeToggle from "../shared/ThemeToggle.astro";
+import { beats as fBeats, chapterNames } from "./f/story.ts";
+import { starterFiles } from "./h/workflow.ts";
+
+const github = "https://github.com/julianbonomini/vago";
+
+const parts = [
+	{ name: "Goals", text: "Every Goal in the Project, with its Tickets done, what it has cost and what it's on now." },
+	{ name: "Tickets", text: "Open a Goal and its Tickets run top to bottom. Here 03 is on Build." },
+	{ name: "Ticket", text: "The running Ticket: what to build, and the Steps your Workflow gives it." },
+	{ name: "Runs", text: "Each time a Step runs is a Run, with its time and cost. A retry is another Run." },
+	{ name: "Run activity", text: "What the agent is doing in the live Run: files it writes, tests it runs, what it says." },
+];
+const keys: [string, string][] = [
+	["ArrowUp", "↑"],
+	["ArrowDown", "↓"],
+	["Enter", "Enter"],
+	["Escape", "Esc"],
+	["Tab", "Tab"],
+	["?", "?"],
+];
+// The pipeline further down says "one Ticket at a time", so the story
+// doesn't say it twice.
+const beats = fBeats.map((b) => (b.id === "tickets" ? { ...b, limit: undefined } : b));
+
+// Ticket 03 of the example Goal gift-cards, as the replay shows it.
+const steps = [
+	{ id: "New branch", type: "shell", took: "0.1s", cost: "" },
+	{ id: "Build", type: "agent", took: "9m12s", cost: "$0.86" },
+	{ id: "Checks", type: "shell", took: "1m38s", cost: "" },
+	{ id: "Review", type: "agent", took: "3m34s", cost: "$0.31" },
+	{ id: "Squash merge", type: "shell", took: "5.2s", cost: "" },
+];
+const tickets = ["01-gift-card-codes", "02-redeem-at-checkout", "03-balance-page", "04-staff-issue-cards", "05-refunds-to-card"];
+const commits = [
+	["7c41e0a", "02 redeem at checkout"],
+	["e19b3f2", "01 gift card codes"],
+];
+---
+<div class="vago-page vh" data-theme="light">
+	<header class="vh-top">
+		<div class="vh-top-in">
+			<a class="vh-word" href="#">vago</a>
+			<nav aria-label="Main">
+				<a href="#vh-how">How it works</a>
+				<a href="#vh-workflow">Workflow</a>
+				<a href="#vh-install">Install</a>
+				<a href={github}>GitHub</a>
+				<ThemeToggle />
+			</nav>
+		</div>
+	</header>
+
+	<section class="vh-stage" data-stage aria-labelledby="vh-title">
+		<div class="vh-sticky">
+			<div class="vh-copy">
+				<h1 id="vh-title">Set the Goal.<br />Go do something else.</h1>
+				<div class="vh-copy-side">
+					<p class="vh-sub">Vago runs your Workflow on a Goal in your repo, one Ticket at a time, and leaves you a PR.</p>
+					<div class="vh-ctas">
+						<a class="vh-btn" href="#vh-install">Install</a>
+						<a class="vh-link" href="#vh-how">How it works</a>
+					</div>
+				</div>
+			</div>
+
+			<div class="vh-slot" data-slot aria-hidden="true"></div>
+
+			<div class="vh-side" data-side>
+				<h2>One screen for every Goal</h2>
+				<p class="vh-side-note">A replay of Vago's TUI on an example Project, acme-shop. Nothing here is running.</p>
+				<ul class="vh-parts">
+					{parts.map((p, i) => (
+						<li>
+							<button type="button" class="vh-part" data-part={i} aria-pressed="false">
+								<span class="vh-part-name">{p.name}</span>
+								<span class="vh-part-text"><span>{p.text}</span></span>
+							</button>
+						</li>
+					))}
+				</ul>
+				<div class="vh-side-keys">
+					<p>Or drive it yourself. Click the screen and use its keys, or these.</p>
+					<div class="vh-keys" role="group" aria-label="Keys for the TUI">
+						{keys.map(([k, label]) => <button type="button" class="vh-key" data-tui-key={k}>{label}</button>)}
+					</div>
+				</div>
+			</div>
+		</div>
+	</section>
+
+	<section class="vh-story" id="vh-how" aria-labelledby="vh-story-title">
+		<div class="vh-story-grid">
+			<div class="vh-beats">
+				<header class="vh-phone-head">
+					<h2>One screen for every Goal</h2>
+					<p>A replay of Vago's TUI on an example Project, acme-shop. Nothing here is running. Scroll, and it shows you each part.</p>
+				</header>
+				{parts.map((p, i) => (
+					<article class="vh-beat vh-phone-beat" data-beat data-spot={i} data-chapter-of="-1">
+						<h3>{p.name}</h3>
+						<p class="vh-beat-body">{p.text}</p>
+					</article>
+				))}
+
+				<header class="vh-story-head" data-rise>
+					<h2 id="vh-story-title">Stop babysitting your agents</h2>
+					<p class="vh-statement">
+						You already know how agents should work on your code. You've got the skills, the prompts and the checks. What's left is the sitting: correcting a session, rebriefing the next one when the context fills up, fixing small things by hand.
+					</p>
+					<p class="vh-proof">Vago builds itself. Most of its own repo came out of Goals run through it.</p>
+					<p class="vh-cue">Here's gift-cards, one Goal in acme-shop, from the file you write to the PR you merge. Scroll, and the TUI follows along.</p>
+				</header>
+
+				{beats.map((b) => (
+					<article
+						class={b.short ? "vh-beat vh-beat-short" : "vh-beat"}
+						id={`vh-beat-${b.id}`}
+						data-beat
+						data-chapter-of={b.chapter}
+						data-goto={JSON.stringify(b.goto)}
+						data-scrub={b.scrub ? b.scrub.join(",") : undefined}
+					>
+						<h3>{b.title}</h3>
+						<p class="vh-beat-body">{b.body}</p>
+						{b.limit && <p class="vh-limit-note">{b.limit}</p>}
+						<figure class="vh-art">
+							<figcaption>{b.file}</figcaption>
+							<pre>{b.rows.map((row, r) => (
+								<span class="row" style={`--i:${r}`}>{row.map(([cls, text]) => <span class={cls ? `c-${cls}` : undefined}>{text}</span>)}</span>
+							))}</pre>
+						</figure>
+					</article>
+				))}
+			</div>
+
+			<div class="vh-dock-col" data-dock-col>
+				<div class="vh-dock" data-dock>
+					<ol class="vh-chapters" aria-label="Where the story is">
+						{chapterNames.map((name, i) => (
+							<li><button type="button" data-chapter={i}>{name}</button></li>
+						))}
+					</ol>
+					<div class="vh-anchor" data-anchor>
+						<div class="vh-fly" data-fly>
+							<LiveTui id="vh-tui" class="vh-tui" keys={false} controls={false} caption={false} />
+						</div>
+					</div>
+					<div class="vh-dock-bar">
+						<p data-drive aria-live="polite">Scrolling drives it. Click it to take over.</p>
+						<div class="vh-keys" role="group" aria-label="Keys for the TUI">
+							{keys.map(([k, label]) => <button type="button" class="vh-key" data-tui-key={k}>{label}</button>)}
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</section>
+
+	<section class="vh-how" id="vh-pipeline" aria-labelledby="vh-how-h">
+		<div class="vh-how-in">
+			<div class="vh-how-head" data-rise>
+				<h2 id="vh-how-h">What happens after you leave</h2>
+				<p>
+					All of gift-cards on one line. You write the Goal and its Tickets, Vago runs the rest, and you come back to a PR. Scroll, and Ticket 03 goes through.
+				</p>
+			</div>
+
+			<ol class="vh-pipe" data-pipe>
+				<span class="vh-rail" aria-hidden="true"><span class="vh-rail-fill"></span></span>
+				<li class="vh-stage-i is-lit" data-stage-i>
+					<span class="vh-node" aria-hidden="true"></span>
+					<h3>Goal</h3>
+					<p>You write it.</p>
+					<pre class="vh-pre"><span class="row c-d">goal.md</span><span class="row c-x"># Customers can pay</span><span class="row c-x"># with a gift card</span></pre>
+				</li>
+				<li class="vh-stage-i is-lit" data-stage-i>
+					<span class="vh-node" aria-hidden="true"></span>
+					<h3>Tickets</h3>
+					<p>You split it, or plan them with an agent.</p>
+					<pre class="vh-pre">{tickets.map((t, i) => (
+						<span class="row">{i === 2 ? (
+							<span class="mark" data-t03 data-state="done"><span class="m-pend c-d">○</span><span class="m-cur c-a">●</span><span class="m-done c-o">✓</span></span>
+						) : (
+							<span class={i < 2 ? "c-o" : "c-d"}>{i < 2 ? "✓" : "○"}</span>
+						)} <span class={i === 2 ? "c-x" : ""}>{t}</span></span>
+					))}</pre>
+				</li>
+				<li class="vh-stage-i vh-stage-wide is-lit" data-stage-i>
+					<span class="vh-node" aria-hidden="true"></span>
+					<h3>Steps</h3>
+					<p>Your Workflow, on the Ticket's own branch.</p>
+					<pre class="vh-pre">{steps.map((s, i) => (
+						<span class="row" data-step={i} data-state="done"><span class="mark"><span class="m-pend c-d">·</span><span class="m-cur c-a">●</span><span class="m-done c-o">✓</span></span> {s.id.padEnd(13)}<span class="c-d">{s.type.padEnd(6)}</span><span class="meta c-d">{s.took.padStart(6)} {s.cost.padStart(5)}</span></span>
+					))}</pre>
+				</li>
+				<li class="vh-stage-i is-lit" data-stage-i>
+					<span class="vh-node" aria-hidden="true"></span>
+					<h3>Commits</h3>
+					<p>One per Ticket, on <code>vago/gift-cards</code>.</p>
+					<pre class="vh-pre"><span class="row vh-landed" data-landed data-state="done"><span class="c-a">a83d5c1</span> 03 balance page</span>{commits.map(([h, m]) => <span class="row"><span class="c-d">{h}</span> {m}</span>)}</pre>
+				</li>
+				<li class="vh-stage-i is-lit" data-stage-i>
+					<span class="vh-node" aria-hidden="true"></span>
+					<h3>PR</h3>
+					<p>Yours to review and merge.</p>
+					<pre class="vh-pre" data-pr data-state="done"><span class="row c-x">gift-cards #37</span><span class="row c-d">Workflow small</span><span class="row"><span class="swap"><span class="v-old">2 of 5 Tickets</span><span class="v-new">3 of 5 Tickets</span></span></span><span class="row"><span class="swap"><span class="v-old">33m, $2.01</span><span class="v-new">48m, $3.18</span></span></span></pre>
+				</li>
+			</ol>
+			<p class="vh-limit">One Ticket at a time, for now. Goals can run side by side; the Tickets of one Goal can't.</p>
+		</div>
+	</section>
+
+	<section class="vh-wf" id="vh-workflow" aria-labelledby="vh-wf-h">
+		<div class="vh-wf-head" data-rise>
+			<h2 id="vh-wf-h">Your Workflow is a short file</h2>
+			<div class="vh-wf-text">
+				<p class="vh-wf-lede">
+					Vago has opinions about how a Workflow runs and none about what it is. That part is yours, per Project, in <code>.vago/workflows/</code>.
+				</p>
+				<div class="vh-wf-split">
+					<div>
+						<h3>Vago takes care of</h3>
+						<ul>
+							<li>A worktree per Goal, so your checkout stays yours</li>
+							<li>Retries that resume the agent's own session</li>
+							<li>Ticket and Run state in plain files in your repo</li>
+							<li>Picking up a stuck Ticket, or a crashed run, where it stopped</li>
+						</ul>
+					</div>
+					<div>
+						<h3>You decide</h3>
+						<ul>
+							<li>The Steps and their order</li>
+							<li>Every prompt an agent Step gets</li>
+							<li>Which agent and model, per Step</li>
+							<li>The scripts that branch, check and merge</li>
+						</ul>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<div class="vh-wf-body">
+			<div class="vh-file-wrap" data-rise>
+				<p class="vh-file-lede">
+					It ships two to start from. A solo project can commit straight to <code>main</code>, a work repo can wait for reviews and checks, and an open source contribution can follow that project's rules without anything personal landing in its repo.
+				</p>
+				<div class="vh-tabs" role="tablist" aria-label="Starter Workflows">
+					{starterFiles.map((w, i) => (
+						<button type="button" role="tab" id={`vh-tab-${i}`} aria-controls={`vh-wf-${i}`} aria-selected={i === 0 ? "true" : "false"} tabindex={i === 0 ? 0 : -1} data-tab={i}>{w.file}</button>
+					))}
+				</div>
+				{starterFiles.map((w, i) => (
+					<div class="vh-panel" role="tabpanel" id={`vh-wf-${i}`} aria-labelledby={`vh-tab-${i}`} hidden={i !== 0} data-panel={i}>
+						<p class="vh-file-name"><code>.vago/workflows/{w.file}</code>. {w.blurb}</p>
+						<pre class="vh-file" data-file={w.file} aria-label={`The ${w.file} Workflow, without its comments`}>{w.blocks.map((b) => (
+							<span class={`blk blk-${b.kind}`} data-block={(w.replayed && b.step) || undefined} data-state={w.replayed && b.kind === "step" ? "pend" : undefined}>{b.lines.map((l) => <span class="ln">{l}</span>)}{w.replayed && b.kind === "skip" && <span class="ln c-d"># skipped: 03 isn't the Goal's last Ticket</span>}</span>
+						))}</pre>
+					</div>
+				))}
+			</div>
+			<div class="vh-wf-tui">
+				<div class="vh-wf-sticky">
+					<p class="vh-now" aria-live="polite"><span class="vh-now-dot" aria-hidden="true"></span><span data-now>gift-cards, Ticket 03</span></p>
+					<LiveTui id="vh-flow-tui" class="vh-flow-tui" moment="ticket-steps" tour={false} keys={false} caption={false} />
+					<aside class="vh-fail" aria-labelledby="vh-fail-h">
+						<h3 id="vh-fail-h">When a Step fails</h3>
+						<p>
+							Each retry waits 1, 1 and then 5 minutes, and resumes the agent's own session. A run that crashed is picked up the same way: the next <code>vago run</code> starts at the Step it was on.
+						</p>
+						<button type="button" class="vh-text-btn" data-show-stuck aria-pressed="false">Show a stuck Goal in the TUI</button>
+					</aside>
+				</div>
+			</div>
+		</div>
+	</section>
+
+	<section class="vh-install" id="vh-install" aria-labelledby="vh-install-h">
+		<div class="vh-install-head" data-rise>
+			<h2 id="vh-install-h">Try it on a small Goal</h2>
+			<p>Pick something you'd finish in an afternoon, write the Goal, split it into two or three Tickets and run it with the small Workflow.</p>
+		</div>
+		<div class="vh-install-grid" data-rise>
+			<div>
+				<h3>Install</h3>
+				<pre class="vh-code"><span class="ln"><span class="c-d">$</span> git clone git@github.com:julianbonomini/vago.git</span><span class="ln"><span class="c-d">$</span> cd vago && bun install && bun run reinstall</span><span class="ln"><span class="c-d">$</span> cd ~/code/your-project && vago init</span></pre>
+				<p class="vh-install-note"><code>reinstall</code> builds <code>vago</code> into <code>~/.local/bin</code>. <code>init</code> copies the starter Workflows, prompts and scripts into <code>.vago/</code>.</p>
+			</div>
+			<div>
+				<h3>First Goal</h3>
+				<pre class="vh-code"><span class="ln"><span class="c-d">$</span> vago goal new search --workflow small --body-file goal.md</span><span class="ln"><span class="c-d">$</span> vago ticket add search index --body-file index.md</span><span class="ln"><span class="c-d">$</span> vago run search</span></pre>
+				<p class="vh-install-note">Then run <code>vago</code> on its own to watch it, and go do something else.</p>
+			</div>
+		</div>
+		<ul class="vh-limits" data-rise>
+			<li>It's an Alpha. When the retries run out, it's your turn.</li>
+			<li>You need Bun to build it, Claude Code or Codex to run agent Steps, and <code>gh</code> for the PR.</li>
+			<li>The starter Workflows are the ones I use. Change them, or write your own.</li>
+		</ul>
+	</section>
+
+	<footer class="vh-foot">
+		<div class="vh-foot-row">
+			<p><i>Vago</i> is Spanish for lazy. You're the lazy one. A personal project, MIT licensed.</p>
+			<nav aria-label="Footer">
+				<a href={github}>GitHub</a>
+				<a href="#">Docs</a>
+				<a href={`${github}/blob/main/LICENSE`}>License</a>
+				<ThemeToggle />
+			</nav>
+		</div>
+		<p class="vh-foot-word" aria-hidden="true">vago</p>
+	</footer>
+</div>
+
+<script>
+	import { mountVariantH } from "./h/page.ts";
+	const root = document.querySelector<HTMLElement>(".vh");
+	if (root) mountVariantH(root);
+</script>
+
+<style is:global>
+	.vh { min-height: 100vh; --vh-max: 1600px; }
+	@media (min-width: 1000px) { .vh { --v-gutter: 40px; } }
+	.vh a { color: inherit; }
+	.vh code { font-family: var(--v-mono); font-size: 0.86em; color: var(--v-bright); }
+	.vh button { font: inherit; color: inherit; }
+	.vh h2 {
+		font-size: var(--v-fs-h2);
+		letter-spacing: var(--v-track-h2);
+		line-height: 1.04;
+		font-weight: var(--v-weight-head);
+		color: var(--v-bright);
+		margin: 0;
+	}
+	.vh h3 { margin: 0; font-size: var(--v-fs-h3); font-weight: 600; color: var(--v-bright); letter-spacing: -0.01em; }
+	.vh .c-d { color: var(--v-grey); }
+	.vh .c-x { color: var(--v-bright); }
+	.vh .c-a { color: var(--v-accent); }
+	.vh .c-o { color: var(--v-ok); }
+	.vh .c-b { color: var(--v-bad); }
+	.vh :focus-visible { outline: 2px solid var(--v-accent); outline-offset: 3px; }
+
+	/* Header and footer share the band: a soft shade of the page, not an inversion. */
+	.vh-top { background: var(--v-band); position: relative; z-index: 4; }
+	.vh-top-in {
+		max-width: var(--vh-max);
+		margin: 0 auto;
+		padding: 16px var(--v-gutter);
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 16px;
+	}
+	.vh-word { font-family: var(--v-mono); font-weight: 700; color: var(--v-bright); letter-spacing: -0.02em; text-decoration: none; font-size: 20px; }
+	.vh-word::after {
+		content: "";
+		display: inline-block;
+		width: 0.5em;
+		height: 0.16em;
+		margin-left: 0.12em;
+		background: var(--v-accent-fill);
+		vertical-align: baseline;
+	}
+	.vh-top nav { display: flex; gap: 26px; font-size: 15px; align-items: center; }
+	.vh-top nav a { text-decoration: none; color: var(--v-fg); transition: color 0.15s; }
+	.vh-top nav a:hover { color: var(--v-accent); }
+
+	/* Hero stage: a plain layout by default; .is-pinned makes it the pull-back. */
+	.vh-sticky {
+		max-width: var(--vh-max);
+		margin: 0 auto;
+		padding: 36px var(--v-gutter) 0;
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		grid-template-areas: "copy" "slot" "side";
+	}
+	.vh-copy {
+		grid-area: copy;
+		display: grid;
+		grid-template-columns: minmax(0, 7fr) minmax(0, 4fr);
+		gap: var(--v-gap);
+		align-items: end;
+		padding-bottom: 36px;
+	}
+	.vh h1 {
+		font-size: var(--v-fs-display);
+		line-height: var(--v-lh-display);
+		letter-spacing: var(--v-track-display);
+		font-weight: var(--v-weight-head);
+		color: var(--v-bright);
+		margin: 0;
+	}
+	.vh-sub { font-size: clamp(17px, 1.4vw, 20px); color: var(--v-fg); margin: 0; max-width: 34ch; line-height: 1.45; }
+	.vh-ctas { display: flex; gap: 26px; align-items: center; margin-top: 22px; }
+	.vh-btn {
+		background: var(--v-accent-fill);
+		text-decoration: none;
+		font-weight: 600;
+		padding: 11px 22px;
+		border-radius: var(--v-radius);
+		transition: transform 0.15s var(--v-ease), background 0.15s;
+	}
+	.vh .vh-btn { color: var(--v-on-accent); }
+	.vh-btn:hover { background: var(--v-accent-hover); }
+	.vh-btn:active { transform: scale(0.97); }
+	.vh-link { text-decoration: none; border-bottom: 1px solid var(--v-line-strong); padding-bottom: 2px; transition: border-color 0.15s; }
+	.vh-link:hover { border-color: var(--v-accent); }
+
+	.vh-slot { grid-area: slot; min-width: 0; }
+	.vh-side { grid-area: side; display: flex; flex-direction: column; padding-top: 40px; }
+	.vh-side h2 { font-size: clamp(26px, 2.4vw, 34px); }
+	.vh-side-note { margin: 10px 0 0; font-size: var(--v-fs-small); color: var(--v-grey); max-width: 44ch; }
+
+	.vh-parts { list-style: none; margin: 22px 0 0; padding: 0; display: grid; gap: 2px; }
+	.vh-part {
+		all: unset;
+		box-sizing: border-box;
+		cursor: pointer;
+		display: block;
+		width: 100%;
+		padding: 10px 14px 10px 16px;
+		border-radius: var(--v-radius);
+		position: relative;
+		transition: background 0.25s var(--v-ease);
+	}
+	.vh-part::before {
+		content: "";
+		position: absolute;
+		left: 0;
+		top: 12px;
+		bottom: 12px;
+		width: 3px;
+		border-radius: 2px;
+		background: var(--v-accent-fill);
+		transform: scaleY(0);
+		transition: transform 0.35s var(--v-ease);
+	}
+	.vh-part:hover { background: var(--v-raised); }
+	.vh-part:focus-visible { outline: 2px solid var(--v-accent); outline-offset: 2px; }
+	.vh-part-name { display: block; font-weight: 600; color: var(--v-grey); font-size: 17px; transition: color 0.2s; }
+	.vh-part-text {
+		display: grid;
+		grid-template-rows: 0fr;
+		font-size: 15px;
+		line-height: 1.45;
+		color: var(--v-fg);
+		opacity: 0;
+		transition: grid-template-rows 0.4s var(--v-ease), opacity 0.3s, margin 0.4s var(--v-ease);
+	}
+	.vh-part-text > span { overflow: hidden; min-height: 0; }
+	.vh-part.is-on { background: var(--v-raised); }
+	.vh-part.is-on::before { transform: scaleY(1); }
+	.vh-part.is-on .vh-part-name { color: var(--v-bright); }
+	.vh-part.is-on .vh-part-text { grid-template-rows: 1fr; opacity: 1; margin-top: 4px; }
+	/* Unpinned, every description shows and a tap moves the spotlight. */
+	.vh-stage:not(.is-pinned) .vh-part-text { grid-template-rows: 1fr; opacity: 1; margin-top: 4px; }
+	.vh-stage:not(.is-pinned) .vh-part-name { color: var(--v-bright); }
+
+	.vh-side-keys { margin-top: 24px; }
+	.vh-side-keys p { margin: 0 0 10px; font-size: var(--v-fs-small); color: var(--v-grey); }
+	.vh-keys { display: flex; gap: 6px; flex-wrap: wrap; }
+	.vh-key {
+		all: unset;
+		cursor: pointer;
+		font-family: var(--v-mono);
+		font-size: 12.5px;
+		line-height: 1.5;
+		min-width: 18px;
+		text-align: center;
+		padding: 5px 9px;
+		border-radius: var(--v-radius);
+		color: var(--v-fg);
+		background: var(--v-raised);
+		box-shadow: inset 0 -2px 0 var(--v-line);
+		transition: transform 0.1s var(--v-ease), background 0.15s;
+	}
+	.vh .vh-key:hover { background: var(--v-line); }
+	.vh-key:active { transform: translateY(1px); }
+	.vh-key:focus-visible { outline: 2px solid var(--v-accent); outline-offset: 2px; }
+	.vh-key.is-pressed { animation: vh-press 0.45s var(--v-ease); }
+	@keyframes vh-press { 0% { background: var(--v-accent-fill); color: var(--v-on-accent); transform: translateY(1px); } }
+
+	/* The spotlight, laid in the TUI's own grid. */
+	.vh .vh-spot {
+		position: absolute;
+		top: calc(var(--r, 0) * 1.17em - 0.2em);
+		left: calc(var(--c, 0) * 1ch - 0.3ch);
+		width: calc(var(--w, 120) * 1ch + 0.6ch);
+		height: calc(var(--h, 34) * 1.17em + 0.4em);
+		border-radius: 4px;
+		box-shadow: 0 0 0 2px var(--v-accent-fill), 0 0 0 300em rgb(8 8 8 / 0.62);
+		pointer-events: none;
+		opacity: 0;
+		transition: opacity 0.35s var(--v-ease), top 0.55s var(--v-ease), left 0.55s var(--v-ease), width 0.55s var(--v-ease), height 0.55s var(--v-ease);
+		z-index: 1;
+	}
+	.vh .vh-spot.is-on { opacity: 1; }
+
+	@media (min-width: 1000px) {
+		.vh-sticky {
+			grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
+			grid-template-areas: "copy copy" "side slot";
+			column-gap: 56px;
+		}
+		.vh-side { padding-top: 0; }
+	}
+
+	/* Pinned: the stage holds the screen while the camera pulls back. */
+	.vh-stage.is-pinned { height: var(--vh-stage-h, 400vh); }
+	.vh-stage.is-pinned .vh-sticky {
+		position: sticky;
+		top: 0;
+		height: 100vh;
+		display: block;
+		overflow: hidden;
+	}
+	.vh-stage.is-pinned .vh-side {
+		--e: 0;
+		position: absolute;
+		left: var(--v-gutter);
+		top: var(--side-top);
+		width: var(--side-w);
+		height: var(--side-h);
+		padding: 0;
+		justify-content: center;
+		opacity: var(--e);
+		transform: translate3d(calc((1 - var(--e)) * -40px), 0, 0);
+		pointer-events: none;
+	}
+	.vh-stage.is-pinned .vh-side * { pointer-events: auto; }
+	.vh-stage.is-pinned .vh-sticky { padding-top: 28px; }
+
+	/* The story: beats on the left, the docked TUI on the right. */
+	.vh-story { max-width: var(--vh-max); margin: 0 auto; padding: 120px var(--v-gutter) calc(var(--v-section) * 0.4); position: relative; z-index: 3; }
+	.vh-story-grid {
+		display: grid;
+		grid-template-columns: minmax(0, 4fr) minmax(0, 7fr);
+		column-gap: 56px;
+		align-items: start;
+	}
+	.vh-phone-head, .vh .vh-phone-beat { display: none; }
+	.vh-story-head { padding-bottom: 14vh; }
+	.vh-statement { font-size: clamp(19px, 1.55vw, 23px); line-height: 1.45; color: var(--v-fg); margin: 24px 0 0; max-width: 34ch; letter-spacing: -0.01em; }
+	.vh-proof { margin: 20px 0 0; color: var(--v-grey); max-width: 44ch; font-size: 15.5px; }
+	.vh-cue { margin: 28px 0 0; max-width: 40ch; color: var(--v-fg); padding-left: 16px; position: relative; }
+	.vh-cue::before { content: ""; position: absolute; left: 0; top: 0.35em; bottom: 0.35em; width: 3px; border-radius: 2px; background: var(--v-accent-fill); }
+	.vh-beat {
+		min-height: 82vh;
+		display: flex;
+		flex-direction: column;
+		justify-content: center;
+		padding: 40px 0;
+		transition: opacity 0.4s var(--v-ease);
+	}
+	.vh-beat-short { min-height: 64vh; }
+	.vh.is-live .vh-beat:not(.is-active) { opacity: 0.32; }
+	.vh-beat h3 { font-size: clamp(24px, 2.3vw, 32px); letter-spacing: -0.025em; line-height: 1.1; }
+	.vh-beat-body { margin: 14px 0 0; max-width: 42ch; }
+	.vh-limit-note { margin: 12px 0 0; font-size: var(--v-fs-small); color: var(--v-grey); max-width: 44ch; }
+	.vh-limit-note::before { content: "Alpha: "; color: var(--v-accent); }
+	.vh-art {
+		margin: 26px 0 0;
+		background: var(--v-raised);
+		border-radius: var(--v-radius-lg);
+		padding: 14px 18px 16px;
+		max-width: 100%;
+		overflow: hidden;
+	}
+	.vh-art figcaption { font-family: var(--v-mono); font-size: 12px; color: var(--v-grey); margin-bottom: 10px; }
+	.vh-art pre {
+		margin: 0;
+		font-family: var(--v-mono);
+		font-size: 11.5px;
+		line-height: 1.65;
+		color: var(--v-fg);
+		white-space: pre;
+		overflow-x: auto;
+	}
+	.vh-art .row { display: block; min-height: 1.6em; }
+	@media (prefers-reduced-motion: no-preference) {
+		.vh.is-live .vh-beat:not(.is-seen) .vh-art .row { opacity: 0; transform: translateY(6px); }
+		.vh.is-live .vh-beat.is-seen .vh-art .row {
+			animation: vh-row 0.5s var(--v-ease) both;
+			animation-delay: calc(var(--i) * 45ms + 120ms);
+		}
+	}
+	@keyframes vh-row { from { opacity: 0; transform: translateY(6px); } }
+
+	.vh-dock-col { position: relative; height: 100%; }
+	.vh-dock { position: sticky; top: max(28px, calc(50vh - 290px)); }
+	.vh-chapters, .vh-dock-bar { opacity: var(--dock-in, 1); transition: opacity 0.25s; }
+	.vh-chapters {
+		list-style: none;
+		margin: 0 0 14px;
+		padding: 0;
+		display: flex;
+		gap: 4px;
+		flex-wrap: wrap;
+	}
+	.vh-chapters button {
+		all: unset;
+		cursor: pointer;
+		position: relative;
+		font-size: 14px;
+		padding: 6px 12px;
+		border-radius: var(--v-radius);
+		color: var(--v-grey);
+		transition: color 0.2s, background 0.2s;
+	}
+	.vh-chapters button:hover { color: var(--v-bright); }
+	.vh-chapters .is-past { color: var(--v-fg); }
+	.vh-chapters .is-past::before { content: "✓ "; color: var(--v-ok); }
+	.vh .vh-chapters .is-on { background: var(--v-accent-fill); color: var(--v-on-accent); font-weight: 600; }
+	.vh-chapters button:focus-visible { outline: 2px solid var(--v-accent); outline-offset: 2px; }
+	.vh-anchor { position: relative; }
+	.vh-fly { transform-origin: 100% 0; }
+	.vh-dock-bar {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 16px;
+		margin-top: 14px;
+		font-size: var(--v-fs-small);
+		color: var(--v-grey);
+	}
+	.vh-dock-bar p { margin: 0; transition: color 0.2s; }
+	.vh.is-driving .vh-dock-bar p { color: var(--v-accent); }
+
+	/* What happens after you leave */
+	.vh-how { padding: var(--v-section) 0 0; }
+	.vh-how-in { max-width: var(--vh-max); margin: 0 auto; padding: 0 var(--v-gutter); }
+	.vh-how-head { display: grid; grid-template-columns: minmax(0, 6fr) minmax(0, 5fr); gap: 72px; align-items: end; }
+	.vh-how-head p { margin: 0; max-width: 52ch; }
+	.vh-pipe {
+		--fill: 1;
+		position: relative;
+		list-style: none;
+		margin: 72px 0 0;
+		padding: 0;
+		display: grid;
+		grid-template-columns: 0.95fr 1.15fr 1.45fr 1.15fr 0.95fr;
+	}
+	.vh-rail { position: absolute; left: 0; right: 0; top: 0; height: 2px; background: var(--v-line); border-radius: 2px; }
+	.vh-rail-fill { position: absolute; inset: 0; background: var(--v-accent-fill); transform-origin: left; transform: scaleX(var(--fill)); border-radius: 2px; }
+	.vh-stage-i { position: relative; padding: 32px 22px 0 0; min-width: 0; }
+	.vh-node {
+		position: absolute;
+		top: -5px;
+		left: 0;
+		width: 12px;
+		height: 12px;
+		background: var(--v-line);
+		border-radius: 50%;
+		transition: background 0.3s, transform 0.3s var(--v-ease);
+	}
+	.vh-stage-i.is-lit .vh-node { background: var(--v-accent-fill); transform: scale(1.15); }
+	.vh-stage-i h3, .vh-stage-i p, .vh-stage-i .vh-pre { transition: opacity 0.4s var(--v-ease); }
+	.vh-stage-i:not(.is-lit) h3, .vh-stage-i:not(.is-lit) p, .vh-stage-i:not(.is-lit) .vh-pre { opacity: 0.4; }
+	.vh-stage-i p { margin: 6px 0 18px; font-size: 15px; color: var(--v-fg); line-height: 1.5; max-width: 30ch; }
+	.vh-pre {
+		margin: 0;
+		font-family: var(--v-mono);
+		font-size: var(--v-fs-code);
+		line-height: 1.6;
+		color: var(--v-fg);
+		white-space: pre;
+		overflow-x: auto;
+	}
+	.vh-pre .row { display: block; border-radius: 2px; margin-left: -4px; padding-left: 4px; transition: background 0.3s; }
+	.vh-pre .row[data-state="cur"] { background: var(--v-row-hot); }
+	.vh-pre .mark, .vh-pre .swap { display: inline-grid; justify-items: start; }
+	.vh-pre .mark { width: 1ch; justify-items: center; }
+	.vh-pre .mark > *, .vh-pre .swap > * { grid-area: 1 / 1; transition: opacity 0.2s; }
+	.vh .m-pend, .vh .m-cur, .vh .m-done, .vh .meta, .vh .v-old, .vh .v-new { opacity: 0; }
+	.vh [data-state="pend"] > .m-pend, .vh [data-state="pend"] > .mark > .m-pend { opacity: 1; }
+	.vh [data-state="cur"] > .m-cur, .vh [data-state="cur"] > .mark > .m-cur { opacity: 1; }
+	.vh [data-state="done"] > .m-done, .vh [data-state="done"] > .mark > .m-done, .vh [data-state="done"] > .meta { opacity: 1; }
+	.vh [data-pr][data-state="pend"] .v-old, .vh [data-pr][data-state="done"] .v-new { opacity: 1; }
+	.vh-landed { transition: opacity 0.4s, transform 0.4s var(--v-ease); }
+	.vh-landed[data-state="pend"] { opacity: 0; transform: translateY(-6px); }
+	.vh-limit { margin: 56px 0 0; color: var(--v-grey); font-size: 15px; }
+
+	/* Your Workflow is a short file */
+	.vh-wf { max-width: var(--vh-max); margin: 0 auto; padding: var(--v-section) var(--v-gutter) 0; }
+	.vh-wf-head { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 72px; align-items: start; }
+	.vh-wf-lede { margin: 0; font-size: clamp(18px, 1.4vw, 21px); line-height: 1.45; max-width: 46ch; color: var(--v-fg); }
+	.vh-wf-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 32px; margin-top: 32px; }
+	.vh-wf-split h3 { font-size: 16px; }
+	.vh-wf-split ul { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 8px; font-size: 15.5px; line-height: 1.45; }
+	.vh-wf-split li { padding-left: 20px; position: relative; }
+	.vh-wf-split li::before { content: "✓"; position: absolute; left: 0; top: 1px; font-family: var(--v-term); font-size: 13px; color: var(--v-ok); }
+	.vh-wf-split > div + div li::before { content: "●"; color: var(--v-accent); font-size: 10px; top: 4px; }
+	.vh-wf-body { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 56px; margin-top: 64px; align-items: start; }
+	.vh-wf-tui { align-self: stretch; }
+	.vh-file-lede { margin: 0; font-size: 15.5px; max-width: 54ch; }
+	.vh-tabs { display: flex; gap: 6px; margin-top: 20px; }
+	.vh-tabs button {
+		all: unset;
+		cursor: pointer;
+		font-family: var(--v-mono);
+		font-size: 13px;
+		padding: 6px 12px;
+		border-radius: var(--v-radius);
+		color: var(--v-fg);
+		background: var(--v-raised);
+		transition: background 0.15s, color 0.15s;
+	}
+	.vh-tabs button:hover { color: var(--v-bright); }
+	.vh .vh-tabs [aria-selected="true"] { background: var(--v-bright); color: var(--v-bg); }
+	.vh-tabs button:focus-visible { outline: 2px solid var(--v-accent); outline-offset: 2px; }
+	.vh-file-name { margin: 14px 0 12px; font-size: var(--v-fs-small); color: var(--v-grey); min-height: 3em; }
+	.vh-file {
+		margin: 0;
+		background: var(--v-raised);
+		border-radius: var(--v-radius-lg);
+		padding: 18px 0;
+		font-family: var(--v-mono);
+		font-size: 13px;
+		line-height: 1.62;
+		color: var(--v-fg);
+		overflow-x: auto;
+	}
+	.vh-file .blk { display: block; padding: 6px 22px 6px 34px; position: relative; transition: background 0.3s var(--v-ease), color 0.3s; }
+	.vh-file .blk + .blk { margin-top: 6px; }
+	.vh-file .ln { display: block; white-space: pre; }
+	.vh-file .blk > .ln:first-child { color: var(--v-bright); }
+	.vh-file .blk::before {
+		position: absolute;
+		left: 14px;
+		top: 6px;
+		font-family: var(--v-term);
+		width: 1ch;
+		text-align: center;
+		transition: color 0.2s;
+	}
+	.vh-file .blk[data-state="pend"]::before { content: "·"; color: var(--v-grey); }
+	.vh-file .blk[data-state="cur"]::before { content: "●"; color: var(--v-accent); }
+	.vh-file .blk[data-state="done"]::before { content: "✓"; color: var(--v-ok); }
+	.vh-file .blk[data-state="bad"]::before { content: "✗"; color: var(--v-bad); }
+	.vh-file .blk[data-state="cur"] { background: var(--v-row-hot); }
+	.vh-file .blk-skip, .vh-file .blk-after { color: var(--v-grey); }
+	.vh-file .blk-skip > .ln:first-child, .vh-file .blk-after > .ln:first-child { color: var(--v-grey); }
+	.vh-file.is-stuck .blk[data-state="bad"] { background: rgb(229 115 107 / 0.14); }
+	@media (prefers-reduced-motion: no-preference) {
+		.vh-panel:not([hidden]) .blk { animation: vh-row 0.4s var(--v-ease) both; }
+	}
+
+	.vh-wf-sticky { position: sticky; top: 32px; }
+	.vh-now { margin: 0 0 12px; font-size: var(--v-fs-small); color: var(--v-fg); display: flex; align-items: center; gap: 10px; }
+	.vh-now-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--v-accent-fill); flex: none; }
+	@media (prefers-reduced-motion: no-preference) {
+		.vh-now-dot { animation: vh-blink 1.6s ease-in-out infinite; }
+	}
+	@keyframes vh-blink { 50% { opacity: 0.3; } }
+	.vh-fail { margin-top: 40px; display: grid; grid-template-columns: minmax(0, 1fr); max-width: 62ch; }
+	.vh-fail p { margin: 8px 0 0; font-size: 15px; }
+	.vh-text-btn {
+		all: unset;
+		cursor: pointer;
+		justify-self: start;
+		margin-top: 12px;
+		font-size: 15px;
+		color: var(--v-bright);
+		border-bottom: 1px solid var(--v-accent);
+		padding-bottom: 1px;
+		transition: color 0.15s;
+	}
+	.vh-text-btn:hover { color: var(--v-accent); }
+	.vh-text-btn:focus-visible { outline: 2px solid var(--v-accent); outline-offset: 3px; }
+
+	/* Install */
+	.vh-install { max-width: var(--vh-max); margin: 0 auto; padding: var(--v-section) var(--v-gutter) 0; }
+	.vh-install-head { display: grid; grid-template-columns: minmax(0, 6fr) minmax(0, 5fr); gap: 72px; align-items: end; }
+	.vh-install-head p { margin: 0; max-width: 46ch; }
+	.vh-install-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 32px; margin-top: 48px; }
+	.vh-code {
+		margin: 14px 0 0;
+		font-family: var(--v-mono);
+		font-size: 13.5px;
+		line-height: 1.85;
+		background: var(--v-t-bg);
+		color: var(--v-t-fg);
+		padding: 20px 24px;
+		border-radius: var(--v-radius-lg);
+		overflow-x: auto;
+	}
+	.vh-code .ln { display: block; white-space: pre; }
+	.vh-code .c-d { color: var(--v-t-grey); }
+	.vh-install-note { margin: 14px 0 0; font-size: 15px; color: var(--v-fg); max-width: 56ch; }
+	.vh-limits {
+		list-style: none;
+		margin: 48px 0 0;
+		padding: 0;
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 32px;
+		font-size: 15px;
+		color: var(--v-fg);
+	}
+	.vh-limits li { padding-left: 18px; position: relative; }
+	.vh-limits li::before { content: "·"; position: absolute; left: 4px; color: var(--v-accent); font-weight: 700; }
+
+	/* Footer: the name returns at full width, on the band. */
+	.vh-foot { margin-top: var(--v-section); padding: 40px var(--v-gutter) 0; background: var(--v-band); color: var(--v-fg); overflow: hidden; }
+	.vh-foot-word {
+		margin: 0;
+		font-family: var(--v-mono);
+		font-weight: 700;
+		font-size: min(26vw, 420px);
+		line-height: 0.72;
+		letter-spacing: -0.06em;
+		color: var(--v-band-word);
+		margin-top: 0.1em;
+		padding-bottom: 0.06em;
+		margin-left: -0.05em;
+		white-space: nowrap;
+		max-width: var(--vh-max);
+		margin-inline: auto;
+	}
+	.vh-foot-word::after {
+		content: "";
+		display: inline-block;
+		width: 0.42em;
+		height: 0.52em;
+		margin-left: 0.1em;
+		vertical-align: baseline;
+		background: var(--v-accent-fill);
+	}
+	@media (prefers-reduced-motion: no-preference) {
+		.vh-foot-word::after { animation: vh-caret 1.1s steps(1) infinite; }
+	}
+	@keyframes vh-caret { 50% { opacity: 0; } }
+	.vh-foot-row { display: flex; justify-content: space-between; align-items: center; gap: 24px; flex-wrap: wrap; font-size: 15px; max-width: var(--vh-max); margin: 0 auto; }
+	.vh-foot-row p { margin: 0; }
+	.vh-foot-row nav { display: flex; gap: 22px; align-items: center; }
+	.vh-foot-row a { text-decoration: none; transition: color 0.15s; }
+	.vh-foot-row a:hover { color: var(--v-accent); }
+
+	/* Entrances */
+	.vh.vh-anim [data-rise] > * { opacity: 0; transform: translateY(24px); transition: opacity 0.8s var(--v-ease), transform 0.8s var(--v-ease); }
+	.vh.vh-anim [data-rise].is-in > * { opacity: 1; transform: none; }
+	.vh.vh-anim [data-rise].is-in > :nth-child(2) { transition-delay: 0.08s; }
+	.vh.vh-anim [data-rise].is-in > :nth-child(3) { transition-delay: 0.16s; }
+	.vh.vh-anim [data-rise].is-in > :nth-child(4) { transition-delay: 0.24s; }
+	@media (prefers-reduced-motion: no-preference) {
+		.vh-copy h1, .vh-copy-side, .vh-fly .vtui { animation: vh-rise 0.9s var(--v-ease) both; }
+		.vh-copy-side { animation-delay: 0.08s; }
+		.vh-fly .vtui { animation-delay: 0.16s; }
+	}
+	@keyframes vh-rise { from { opacity: 0; transform: translateY(16px); } }
+	@media (prefers-reduced-motion: reduce) {
+		.vh, .vh * { transition: none !important; }
+	}
+
+	@media (max-width: 1023px) {
+		.vh-how-head, .vh-wf-head, .vh-wf-body, .vh-install-head { grid-template-columns: minmax(0, 1fr); gap: 32px; }
+		.vh-pipe { grid-template-columns: minmax(0, 1fr); margin-top: 48px; }
+		.vh-rail { top: 0; bottom: 0; left: 0; right: auto; width: 2px; height: auto; }
+		.vh-rail-fill { transform-origin: top; transform: scaleY(var(--fill)); }
+		.vh-stage-i { padding: 0 0 40px 32px; }
+		.vh-stage-i:last-child { padding-bottom: 0; }
+		.vh-node { top: 6px; left: -5px; }
+		.vh-stage-i p { max-width: 46ch; }
+		.vh-wf-sticky { position: static; }
+		.vh-wf-tui { order: -1; }
+	}
+
+	/* Narrow: no flight. The hero is its copy; the TUI is a strip stuck to the
+	   top of the story, and the panes come first as beats of their own. */
+	@media (max-width: 999px) {
+		.vh-copy { grid-template-columns: minmax(0, 1fr); gap: 20px; padding-bottom: 28px; }
+		.vh-slot, .vh-side { display: none; }
+		.vh-story { padding-top: 4px; }
+		.vh-story-grid { grid-template-columns: minmax(0, 1fr); column-gap: 0; }
+		.vh-beats { display: contents; }
+		.vh-dock-col {
+			order: -1;
+			height: auto;
+			position: sticky;
+			top: 0;
+			z-index: 3;
+			background: var(--v-bg);
+			padding: 10px var(--v-gutter) 12px;
+			margin: 0 calc(var(--v-gutter) * -1);
+		}
+		.vh-dock { position: static; }
+		.vh-phone-head { display: block; padding: 40px 0 0; }
+		.vh-phone-head h2 { font-size: clamp(26px, 6vw, 34px); }
+		.vh-phone-head p { margin: 10px 0 0; font-size: 15px; color: var(--v-grey); max-width: 44ch; }
+		.vh .vh-phone-beat { display: flex; min-height: 44vh; }
+		.vh-phone-beat h3 { font-size: 22px; }
+		.vh-story-head { padding: 64px 0 0; }
+		.vh-beat { min-height: 70vh; padding: 28px 0; }
+		.vh-beat-short { min-height: 55vh; }
+	}
+	@media (max-width: 640px) {
+		.vh-top nav a:not([href="#vh-install"]) { display: none; }
+		.vh-sticky { padding-top: 24px; }
+		.vh-chapters { margin-bottom: 8px; gap: 2px; flex-wrap: nowrap; overflow: hidden; }
+		.vh-chapters button { font-size: 12px; padding: 4px 7px; }
+		.vh-chapters .is-past::before { content: ""; }
+		.vh-dock-bar { margin-top: 8px; }
+		.vh-dock-bar p { display: none; }
+		.vh-dock-bar .vh-keys { display: grid; grid-template-columns: repeat(6, 1fr); width: 100%; gap: 6px; }
+		.vh-dock-bar .vh-key { padding: 6px 0; font-size: 13px; }
+		.vh-beat { min-height: 62vh; }
+		.vh .vh-phone-beat { min-height: 40vh; }
+		.vh-art { padding: 12px 14px; }
+		.vh-art pre { font-size: 10px; }
+		.vh-wf-split, .vh-install-grid, .vh-limits { grid-template-columns: minmax(0, 1fr); }
+		.vh-file { font-size: 11.5px; }
+		.vh-file .blk { padding-left: 30px; padding-right: 14px; }
+		.vh-code { font-size: 11.5px; padding: 16px; }
+		.vh-foot-row { flex-direction: column; align-items: flex-start; }
+	}
+</style>
