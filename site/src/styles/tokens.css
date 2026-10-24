@@ -1,0 +1,111 @@
+/* Vago's colour, type and spacing tokens for both themes, read as var(--v-...).
+   The theme is the <html> element's data-theme, which the page frame sets
+   before paint from the saved choice or the system setting.
+
+   Orange: --v-accent-fill (#ff8a3d) is the one orange for fills in both
+   themes (buttons, the pressed key, rails, meters), always with
+   --v-on-accent text, never white. --v-accent is orange used as text or a
+   thin mark on the page's ground: a darker #a8481a in light, the bright one
+   in dark.
+
+   Every text colour reads at WCAG AA (4.5:1) on each surface it's drawn
+   on, in both themes; test/contrast.test.ts lists those pairs and checks
+   them, so a new text colour or surface goes into its list too.
+
+   The band (--v-band) is the soft shade of the header and footer: a step
+   darker than the page in light, a step lighter in dark. --v-band-word is a
+   quiet tone of the page's ink for big decorative type on it, never for
+   text that has to be read. */
+
+:root {
+	/* Type */
+	--v-sans: "Geist Variable", system-ui, sans-serif;
+	--v-mono: "JetBrains Mono", ui-monospace, monospace;
+	/* The fontsource JetBrains Mono has no box-drawing glyphs, so the TUI's
+	   screen uses a system mono that does. */
+	--v-term: Menlo, "SF Mono", "DejaVu Sans Mono", Consolas, monospace;
+	--v-fs-display: clamp(40px, 5.6vw, 84px);
+	--v-fs-h2: clamp(32px, 3.8vw, 52px);
+	--v-fs-h3: 19px;
+	--v-fs-body: 17px;
+	--v-fs-small: 14px;
+	--v-fs-code: 12.5px;
+	--v-lh-display: 0.98;
+	--v-lh-body: 1.55;
+	--v-track-display: -0.045em;
+	--v-track-h2: -0.035em;
+	--v-weight-head: 600;
+
+	/* Space */
+	--v-max: 1320px;
+	--v-gutter: 24px;
+	--v-section: clamp(100px, 11vw, 150px);
+	--v-gap: 48px;
+	--v-radius: 4px;
+	--v-radius-lg: 8px;
+	--v-ease: cubic-bezier(0.23, 1, 0.32, 1);
+
+	/* Colour, light */
+	color-scheme: light;
+	--v-bg: #f2f1ee;
+	--v-raised: #e8e6e1;
+	--v-fg: #2b2a27;
+	--v-bright: #121212;
+	--v-grey: #63615c;
+	--v-line: #d6d3cc;
+	--v-line-strong: #9c9890;
+	--v-accent: #a8481a;
+	--v-accent-fill: #ff8a3d;
+	--v-accent-hover: #ff9d5c;
+	--v-on-accent: #121212;
+	--v-ok: #44703f;
+	--v-bad: #a83d34;
+	--v-row-hot: rgb(255 138 61 / 0.16);
+	--v-band: #e6e4de;
+	--v-band-word: #cbc7be;
+
+	/* The terminal is dark in both themes. */
+	--v-t-bg: #141414;
+	--v-t-raised: #1b1b1b;
+	--v-t-fg: #d6d6d6;
+	--v-t-bright: #f0f0f0;
+	--v-t-grey: #8a8a8a;
+	--v-t-ok: #8fae8b;
+	--v-t-bad: #e5736b;
+	--v-t-line: #2a2a2a;
+	--v-t-shadow:
+		0 30px 80px -30px rgb(20 18 14 / 0.45), 0 2px 6px rgb(20 18 14 / 0.08);
+}
+
+:root[data-theme="dark"] {
+	color-scheme: dark;
+	--v-bg: #0f0f0f;
+	--v-raised: #1b1b1b;
+	--v-fg: #d6d6d6;
+	--v-bright: #f0f0f0;
+	--v-grey: #8a8a8a;
+	--v-line: #2a2a2a;
+	--v-line-strong: #5c5c5c;
+	--v-accent: #ff8a3d;
+	--v-ok: #8fae8b;
+	--v-bad: #e5736b;
+	--v-row-hot: rgb(255 138 61 / 0.12);
+	--v-band: #181818;
+	--v-band-word: #303030;
+	--v-t-line: #262626;
+	--v-t-shadow:
+		0 40px 120px -40px rgb(0 0 0 / 0.9), 0 0 0 1px rgb(255 255 255 / 0.02);
+}
+
+@media (min-width: 1000px) {
+	:root {
+		--v-gutter: 40px;
+	}
+}
+
+@media (max-width: 640px) {
+	:root {
+		--v-gutter: 16px;
+		--v-gap: 28px;
+	}
+}

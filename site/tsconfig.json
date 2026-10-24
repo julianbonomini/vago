@@ -1,0 +1,10 @@
+{
+	"extends": "astro/tsconfigs/strict",
+	"compilerOptions": {
+		"noUncheckedIndexedAccess": true,
+		"allowImportingTsExtensions": true,
+		"types": ["bun"]
+	},
+	"include": [".astro/types.d.ts", "**/*"],
+	"exclude": ["dist"]
+}
