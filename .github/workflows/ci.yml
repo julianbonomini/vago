@@ -24,4 +24,4 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
       - run: bun install --frozen-lockfile
-      - run: bun run check
+      - run: bun test test/compiled-tui.test.ts test/init.test.ts

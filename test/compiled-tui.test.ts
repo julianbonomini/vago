@@ -272,6 +272,7 @@ test("a Ticket changed on disk shows in the next frame, redrawing only its row",
 	}
 	expect(tui.screen.scrolls()).toBe(0);
 	const redrawn = tui.screen.printed().slice(noted);
+	console.error("DEBUG-REDRAWN", JSON.stringify(redrawn));
 	expect(redrawn).not.toContain("alpha");
 	expect(redrawn).not.toContain("beta");
 	tui.kill("SIGKILL");
@@ -282,6 +283,7 @@ test("with nothing changing vago writes nothing, and a key lands at once", async
 	const drawn = tui.screen.printed().length;
 
 	await Bun.sleep(2500);
+	console.error("DEBUG-EXTRA", JSON.stringify(tui.screen.printed().slice(drawn)));
 	expect(tui.screen.printed().length).toBe(drawn);
 
 	tui.press("\x1b[B");
