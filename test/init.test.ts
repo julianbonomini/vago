@@ -387,8 +387,7 @@ test("deleting .vago/ and the skills and running init again keeps every Goal, an
 });
 
 test("init refuses a directory that isn't a git repo and changes nothing", async () => {
-	const root = await makeProject({});
-	await rm(join(root, ".git"), { recursive: true });
+	const root = await mkdtemp(join(tmpdir(), "vago-test-"));
 
 	const init = await runVago(root, ["init"], {}, "n\n");
 
