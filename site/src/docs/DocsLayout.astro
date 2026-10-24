@@ -22,14 +22,16 @@ const { page } = Astro.props;
 				<DocsSidebar label="Docs menu" />
 			</details>
 		</aside>
-		<article class="prose" data-pagefind-body>
-			<h1>{page.title}</h1>
-			<p class="lede">{page.description}</p>
-			<slot />
-			<p class="copy">
-				<a href={page.markdownPath} data-pagefind-ignore>This page as Markdown</a>
-			</p>
-		</article>
+		<div class="docs-main">
+			<article class="prose" data-pagefind-body>
+				<h1>{page.title}</h1>
+				<p class="lede">{page.description}</p>
+				<slot />
+				<p class="copy">
+					<a href={page.markdownPath} data-pagefind-ignore>This page as Markdown</a>
+				</p>
+			</article>
+		</div>
 	</div>
 </PageFrame>
 
@@ -81,9 +83,13 @@ const { page } = Astro.props;
 	}
 
 	/* The page's Markdown, rendered. Code blocks come from Shiki's css-variables theme, whose token colours
-	   are mapped here onto text tokens that tokens.css checks against --v-code. */
-	.prose {
+	   are mapped here onto text tokens that tokens.css checks against --v-code. Text keeps to a measure it
+	   reads well at; an element marked prose-wide, such as the live TUI, takes the column's whole width. */
+	.docs-main {
 		min-width: 0;
+		container-type: inline-size;
+	}
+	.prose {
 		max-width: 72ch;
 		--astro-code-foreground: var(--v-fg);
 		--astro-code-background: var(--v-code);
@@ -96,6 +102,9 @@ const { page } = Astro.props;
 		--astro-code-token-parameter: var(--v-fg);
 		--astro-code-token-punctuation: var(--v-fg);
 		--astro-code-token-link: var(--v-accent);
+	}
+	.prose > :global(.prose-wide) {
+		width: 100cqw;
 	}
 	.prose h1 {
 		margin: 0;

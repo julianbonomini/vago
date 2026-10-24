@@ -36,6 +36,16 @@ export function screenRows(frame: number, help?: TuiHelp): string[] {
 	});
 }
 
+/** The text of the frame at index `frame`, a line per row, with trailing blank rows cut: what a reader without
+ *  the page, such as an agent reading a Markdown copy, sees of the screen. */
+export function screenText(frame: number): string {
+	const rows = tuiFrames.frames[frame]?.rows ?? [];
+	return rows
+		.map((line) => tuiFrames.lines[line]?.text ?? "")
+		.join("\n")
+		.trimEnd();
+}
+
 const drawn = new Map<string, string>();
 
 // The cells from `from` to before `to` of the line at index `line`.

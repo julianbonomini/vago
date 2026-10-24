@@ -3,7 +3,7 @@
 // draws what changed; and gives the page the handle below. Hides the DOM it draws in, the clock, and
 // which keys are the page's.
 
-import type { TuiPaneName } from "./tui-frames.ts";
+import type { TuiPaneName, TuiView } from "./tui-frames.ts";
 import {
 	focusedPane,
 	isLastPhase,
@@ -22,8 +22,8 @@ import { screenRows } from "./tui-screen.ts";
 
 /** What the live TUI shows. */
 export type LiveTuiState = {
-	view: "project" | "goal";
-	/** The selected or open Goal's name. */
+	view: TuiView;
+	/** The selected or open Goal's or planning item's name. */
 	goal: string;
 	/** The open Goal's selected row of its Tickets pane, from 0. */
 	ticket: number;
@@ -201,7 +201,9 @@ function mount(root: HTMLElement): LiveTui {
 	document.addEventListener(
 		"keydown",
 		(event) => {
-			if (event.metaKey || event.ctrlKey || event.altKey) return;
+			if (event.metaKey || event.altKey) return;
+			// Ctrl-] is the one combination of Vago's, the planning view's.
+			if (event.ctrlKey && event.key !== "]") return;
 			const focused = document.activeElement === screen;
 			if (!focused && !hovered) return;
 			if (!focused && ["ArrowLeft", "ArrowRight", " "].includes(event.key))
@@ -213,7 +215,7 @@ function mount(root: HTMLElement): LiveTui {
 				target.closest("input, textarea, select, button, a, [contenteditable]")
 			)
 				return;
-			if (!press(event.key, event.shiftKey)) return;
+			if (!press(event.ctrlKey ? "Ctrl-]" : event.key, event.shiftKey)) return;
 			event.preventDefault();
 			event.stopPropagation();
 			takeover();

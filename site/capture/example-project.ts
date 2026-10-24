@@ -1,15 +1,17 @@
-// The example Project on disk: acme-shop's Goals, Tickets and Run logs written in the files Vago reads, its
-// Runs laid out in time before the capture's clock, and the replay, which rewrites the running Goal's
-// replayed Ticket as `vago run` would at each moment of its Steps. Owns the Ticket and Goal headers it
-// writes and the timeline; what the Runs did comes from example-run-logs.ts.
+// The example Project on disk: acme-shop's Goals, Tickets, Run logs and planning item written in the files
+// Vago reads, its Runs laid out in time before the capture's clock, and the replay, which rewrites the running
+// Goal's replayed Ticket as `vago run` would at each moment of its Steps. Owns the Ticket and Goal headers
+// it writes and the timeline; what the Runs did comes from example-run-logs.ts.
 
 import { cp, mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { stringify } from "smol-toml";
 import type { TicketStatus } from "../../src/tickets/tickets.ts";
 import {
 	type ExampleGoal,
 	type ExampleTicket,
 	exampleGoals,
+	examplePlanningItem,
 } from "./acme-shop.ts";
 import {
 	agentRunLog,
@@ -125,6 +127,7 @@ export async function writeExampleProject(
 		);
 	}
 	if (replay === undefined) throw new Error("acme-shop has no replayed Ticket");
+	await writePlanningItem(root, now.getTime(), random);
 	const goal = byAge.find((each) => each.state === "running")?.name ?? "";
 	// The lock's holder has to be a live process other than this one, which Vago reads as stale.
 	const holder = Bun.spawn(["sleep", "3600"]);
@@ -145,6 +148,44 @@ export async function writeExampleProject(
 		},
 		stop: () => holder.kill(),
 	};
+}
+
+// The planning item's chat, with its past sessions, and its Proposal, as `vago plan session` leaves them.
+async function writePlanningItem(
+	root: string,
+	now: number,
+	random: SeededRandom,
+): Promise<void> {
+	const item = examplePlanningItem;
+	const folder = join(root, ".vago-goals", item.name, "planning");
+	await mkdir(folder, { recursive: true });
+	const session = sessionId(random);
+	await Bun.write(
+		join(folder, "chat.toml"),
+		stringify({
+			harness: "claude-code",
+			session_id: session,
+			sessions: item.sessions.map(({ startedAgo, endedAgo, cost }) => ({
+				started: new Date(now - startedAgo * minute),
+				ended: new Date(now - endedAgo * minute),
+				session_id: session,
+				cost_usd: cost,
+			})),
+		}),
+	);
+	await Bun.write(
+		join(folder, "proposal.toml"),
+		stringify({
+			goal: item.goal,
+			workflow: item.workflow,
+			workflow_reason: item.workflowReason,
+			tickets: item.tickets.map(({ slug, blockedBy, body }) => ({
+				slug,
+				blocked_by: blockedBy,
+				body,
+			})),
+		}),
+	);
 }
 
 // The replayed Ticket and what its Runs will be.

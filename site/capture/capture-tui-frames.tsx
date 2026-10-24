@@ -1,8 +1,9 @@
 // Captures the site's TUI frames: renders Vago's real Project view headless over the invented example
 // Project, plays its running Goal's replayed Ticket through its Steps, and writes every screen a visitor can
-// reach, per replay moment, with per-cell colours and where its panes are, to the path it is given. Runs
-// with the product's dependencies from the repo root: `cd site && bun run capture`. Hides the fake clock,
-// the views and keys it drives, and how a frame is packed.
+// reach, per replay moment, and its planning item's view, with per-cell colours and where its panes are,
+// to the path it is given. Runs with the product's dependencies from the repo root:
+// `cd site && bun run capture`. Hides the fake clock, the views and keys it drives, and how a frame is
+// packed.
 
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -25,12 +26,14 @@ import type {
 	TuiGoal,
 	TuiLine,
 	TuiPaneName,
+	TuiPlanningScreen,
 	TuiRun,
 	TuiScreen,
 	TuiStyle,
+	TuiView,
 } from "../src/tui/tui-frames.ts";
 import { goalPaneCount, screenKey } from "../src/tui/tui-frames.ts";
-import { exampleProject } from "./acme-shop.ts";
+import { examplePlanningItem, exampleProject } from "./acme-shop.ts";
 import { writeExampleProject } from "./example-project.ts";
 import { installFakeClock, setFakeTime, tickIntervals } from "./fake-clock.ts";
 
@@ -39,6 +42,16 @@ const size = { width: 120, height: 34 };
 const start = new Date("2026-10-21T14:20:00Z");
 // The colour of an unfocused pane's title; the focused one's differs.
 const unfocused = hex(...parseColor(theme().color.bright).toInts().slice(0, 3));
+
+// The command that stands in for `vago` in the TUI. Its `vago plan session <item>` prints the planning
+// item's transcript and stays open, as a Harness's session would, until the TUI stops it; the arguments
+// `vago` gets follow the transcript as unread $1 and on.
+const sessionVago = [
+	"sh",
+	"-c",
+	'printf "%s" "$0"; exec sleep 3600',
+	examplePlanningItem.transcript.map((line) => `${line}\r\n`).join(""),
+];
 
 const out = process.argv[2];
 if (out === undefined)
@@ -73,7 +86,10 @@ async function capture(): Promise<TuiFrames> {
 	const screens: Record<string, number[]> = {};
 	const shot = (screen: TuiScreen, view: TestRendererSetup, goal: string) => {
 		const key = screenKey(screen);
-		screens[key] = [...(screens[key] ?? []), table.add(view, goal)];
+		screens[key] = [
+			...(screens[key] ?? []),
+			table.add(view, goal, screen.view),
+		];
 	};
 
 	// One view at a time, so each moment the files change is read once: the Goals list walked down, then
@@ -91,6 +107,15 @@ async function capture(): Promise<TuiFrames> {
 
 	const goals: TuiGoal[] = [];
 	for (const [goal, row] of rows.entries()) {
+		if (row.standing === "planning") {
+			goals.push({
+				name: row.goal,
+				tickets: 0,
+				openTicket: [0],
+				standing: row.standing,
+			});
+			continue;
+		}
 		const view = await openView();
 		for (let i = 0; i < goal; i++) view.mockInput.pressArrow("down");
 		await press(view, () => view.mockInput.pressEnter());
@@ -141,6 +166,43 @@ async function capture(): Promise<TuiFrames> {
 	const goalHelp = table.addHelp(helpView);
 	helpView.renderer.destroy();
 
+	// The planning item open, its session on the left with the focus, then the Preview with the focus, its
+	// Workflow picker, and its question before accepting. Its frames hold still while the replay plays.
+	const item = rows.findIndex((row) => row.goal === examplePlanningItem.name);
+	if (item < 0) throw new Error("acme-shop has no planning item");
+	const planning = await openView();
+	for (let i = 0; i < item; i++) planning.mockInput.pressArrow("down");
+	await press(planning, () => planning.mockInput.pressEnter());
+	const lastLine = examplePlanningItem.transcript.at(-1) ?? "";
+	await settleUntil(planning, `the session's transcript`, (frame) =>
+		frame.includes(lastLine),
+	);
+	const planningShot = (screen: TuiPlanningScreen) =>
+		shot(
+			{ view: "planning", goal: item, planning: screen },
+			planning,
+			examplePlanningItem.name,
+		);
+	planningShot("session");
+	await press(planning, () => planning.mockInput.pressKey("]", { ctrl: true }));
+	planningShot("preview");
+	await press(planning, () => planning.mockInput.pressKey("w"));
+	planningShot("workflow");
+	planning.mockInput.pressEscape();
+	// Esc alone is told from the start of a longer key's sequence only after a pause.
+	await settleUntil(
+		planning,
+		"the Workflow picker closed",
+		(frame) => !frame.includes("Choose the Workflow:"),
+	);
+	await press(planning, () => planning.mockInput.pressKey("a"));
+	planningShot("accept");
+	// Any key but y answers no.
+	await press(planning, () => planning.mockInput.pressKey("n"));
+	await press(planning, () => planning.mockInput.pressKey("?"));
+	const planningHelp = table.addHelp(planning);
+	planning.renderer.destroy();
+
 	return {
 		size,
 		project: exampleProject,
@@ -155,7 +217,7 @@ async function capture(): Promise<TuiFrames> {
 		lines: table.lines,
 		frames: table.frames,
 		screens,
-		help: { project: projectHelp, goal: goalHelp },
+		help: { project: projectHelp, goal: goalHelp, planning: planningHelp },
 	};
 }
 
@@ -163,7 +225,7 @@ async function capture(): Promise<TuiFrames> {
 async function openView(): Promise<TestRendererSetup> {
 	const view = await testRender(
 		() => (
-			<ProjectView root={root} vago={["false"]} harnesses={["claude-code"]} />
+			<ProjectView root={root} vago={sessionVago} harnesses={["claude-code"]} />
 		),
 		{ ...size, exitOnCtrlC: false },
 	);
@@ -212,6 +274,21 @@ async function settle(view: TestRendererSetup): Promise<void> {
 	throw new Error("The TUI kept changing after 20 rounds");
 }
 
+// Settles `view` until its screen passes `shown`, for what comes in real time: a planning session's
+// output, or a lone Esc. Fails naming `what` after five seconds.
+async function settleUntil(
+	view: TestRendererSetup,
+	what: string,
+	shown: (frame: string) => boolean,
+): Promise<void> {
+	for (let wait = 0; wait < 100; wait++) {
+		await settle(view);
+		if (shown(view.captureCharFrame())) return;
+		await Bun.sleep(50);
+	}
+	throw new Error(`The TUI never showed ${what}`);
+}
+
 // The tables a frame is packed into: every style, line and frame once, referred to by index.
 function frameTable() {
 	const styles: TuiStyle[] = [];
@@ -250,14 +327,18 @@ function frameTable() {
 			const chars = line.spans.map((span) => span.text).join("");
 			return intern(lines, "l", { text: chars.trimEnd(), runs });
 		});
-	// The screen `view` shows, which shows Goal `goal`.
-	const add = (view: TestRendererSetup, goal: string): number => {
+	// The screen `view` shows, which shows Goal `goal` in the view `shown`.
+	const add = (
+		view: TestRendererSetup,
+		goal: string,
+		shown: TuiView,
+	): number => {
 		const text = view.captureCharFrame().split("\n");
 		const spans = view.captureSpans().lines;
 		const panes = boxes(view)
 			.filter((box) => !box.help)
 			.map(({ box }) => ({
-				name: paneName(text, box, goal),
+				name: paneName(text, box, goal, shown),
 				box,
 				// An unfocused pane's title is bright; the focused one's isn't.
 				focused: letterColour(spans, box.row + 1, box.column + 1) !== unfocused,
@@ -320,16 +401,22 @@ function boxes(view: TestRendererSetup): { box: TuiBox; help: boolean }[] {
 }
 
 // A pane's name from its title, the first words of the row inside its top line. The Project view's
-// preview is titled with its Goal's name. A title it doesn't know fails the capture, so a pane the TUI
-// adds or renames gets a name here.
-function paneName(text: string[], box: TuiBox, goal: string): TuiPaneName {
+// preview is titled with its Goal's name, and so is a planning item's session in the planning view. A title
+// it doesn't know fails the capture, so a pane the TUI adds or renames gets a name here.
+function paneName(
+	text: string[],
+	box: TuiBox,
+	goal: string,
+	shown: TuiView,
+): TuiPaneName {
 	const title =
 		text[box.row + 1]
 			?.slice(box.column + 1, box.column + box.columns)
 			.trim()
 			.split(/\s{2,}/)[0] ?? "";
 	if (title === "Goals") return "Goals";
-	if (title === goal) return "Goal";
+	if (title === goal) return shown === "planning" ? "Session" : "Goal";
+	if (title === "Preview") return "Preview";
 	if (title === "Tickets") return "Tickets";
 	// Goal Steps show in the Ticket pane, as a Ticket of their own.
 	if (/^(Ticket|before_all|after_all)\b/.test(title)) return "Ticket";

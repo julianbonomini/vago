@@ -1,0 +1,92 @@
+---
+title: Planning a Goal in the TUI
+description: Plan a Goal with an agent in the TUI, read its Proposal in the Preview, choose the Workflow and accept it as a Goal with its Tickets.
+order: 7
+---
+
+Instead of writing a Goal and its Tickets by hand, you can plan them with an agent in the TUI. You talk it through in the agent's own session; the agent reads the Project and proposes a Goal, its Tickets and a Workflow; you accept the [Proposal](/docs/glossary/#proposal), and Vago writes the same files [`vago goal new`](/docs/cli-reference/#vago-goal-new) and [`vago ticket add`](/docs/cli-reference/#vago-ticket-add) would.
+
+The TUIs on this page replay acme-shop, an example Project invented for these docs, planning a Goal called `self-service-returns`. Click one and use its keys.
+
+## Start a planning item
+
+Press `n` in the Goals list for a New Goal. Type a preliminary name and press Enter. When both `claude` and `codex` are on your `PATH`, Tab picks the [Harness](/docs/glossary/#harness) the agent runs on, Claude Code unless you pick Codex.
+
+Vago makes a [planning item](/docs/glossary/#planning-item), a folder in `.vago-goals/` with no `goal.md`, and opens it in the planning view: the agent's session on the left, the Preview of its Proposal on the right.
+
+<DocsTui view="planning" goal="self-service-returns" planning="session" />
+
+## The planning session
+
+The left pane is the Harness's own interactive session, `claude` or `codex`, so you type, edit and use its commands as in any terminal. In the replay above it shows an invented conversation, not Claude Code's own screen.
+
+The agent starts from the instructions in `.vago/prompts/planning.md`, which you can edit like any prompt. It reads the Project, asks about the decisions still open, each with the answer it recommends, and writes a Proposal once they are settled. Each revision replaces the last. The session runs in a sandbox (`sandbox-exec` on macOS, `bwrap` on Linux) that refuses every write under the Project, so planning changes nothing until you accept.
+
+While the session has the focus it gets every key, `q`, Esc and Ctrl-C included. Ctrl-] moves the focus to the Preview, and Ctrl-] or Tab moves it back. Below 100 columns the focused pane fills the screen.
+
+The session's title row gives how long the item's sessions were open and what they cost. That [planning session](/docs/glossary/#planning-session) cost stays apart from the Goal: no Run, run time, Project spend or Goal report counts it.
+
+## The Proposal
+
+With the Preview focused:
+
+<DocsTui view="planning" goal="self-service-returns" planning="preview" />
+
+The Preview shows the latest Proposal: the Workflow the agent recommends and why, any problems that keep it from being accepted, the decisions you chose to leave open, the Goal, and its Tickets in order with their blockers. Its title row says whether it is ready to accept. A Proposal is ready when it has a Goal, at least one Ticket, valid slugs, blockers that name only earlier Tickets, and a Workflow that exists in `.vago/workflows/`.
+
+The agent writes each Proposal at the end of a message, as TOML between `<vago-plan>` tags; Vago saves the last one it wrote. The planning prompt gives the agent this format:
+
+```toml
+workflow = "small"
+workflow_reason = '''One module and its tests; no design Steps needed.'''
+open_decisions = ["Should ties break by name?"]
+goal = '''
+# Search ranks by relevance
+...
+'''
+
+[[tickets]]
+slug = "score-results"
+body = '''
+# Score each result
+...
+'''
+
+[[tickets]]
+slug = "rank-by-score"
+blocked_by = [1]
+body = '''
+# Rank results by score
+...
+'''
+```
+
+`↑` `↓`, PgUp and PgDn scroll the Preview, and `?` shows the planning keys.
+
+## Choose the Workflow
+
+`w` lists the Workflows in `.vago/workflows/`, the agent's recommendation marked and selected first:
+
+<DocsTui view="planning" goal="self-service-returns" planning="workflow" />
+
+`↑` `↓` select one, and Enter records it as your choice, which wins over any recommendation the agent makes later. Esc closes the list without choosing.
+
+## Accept the Proposal
+
+`a` asks, in the footer, whether to accept the Proposal as a ready Goal, naming its Workflow and how many Tickets it has. If the Proposal isn't ready, it says why instead.
+
+<DocsTui view="planning" goal="self-service-returns" planning="accept" />
+
+`y` accepts; any other key answers no. Accepting ends the session, then writes the Goal and its Tickets, all `ready`, at once. It starts nothing: select the Goal in the Goals list and press `s` when you want it to run. If the acceptance is refused, the footer says why and the session starts again where it was.
+
+## Leave and come back
+
+Esc from the Preview goes back to the Goals list and ends the session; so does quitting the TUI, or quitting the session itself, with `/exit` in Claude Code. A session that fails stays on screen, saying how it ended. Vago keeps the session's id, so Enter on the item later resumes the same conversation.
+
+In the Goals list a planning item shows as `planning`, with its run time and cost left blank and its [planning activity](/docs/glossary/#planning-activity) in the NOW column: `no session yet`, `session open`, `waiting for your reply` or `proposal ready`. `r` renames it, and `d` then `y` discards it with its chat, stopping its session if one is open.
+
+After acceptance, `p` in the Goal view opens the planning session again to read; nothing said there changes the Goal.
+
+## From a shell
+
+The `vago plan` commands do the same without the TUI: [`new`](/docs/cli-reference/#vago-plan-new), [`rename`](/docs/cli-reference/#vago-plan-rename), [`session`](/docs/cli-reference/#vago-plan-session), [`workflow`](/docs/cli-reference/#vago-plan-workflow), [`accept`](/docs/cli-reference/#vago-plan-accept) and [`discard`](/docs/cli-reference/#vago-plan-discard).

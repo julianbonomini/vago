@@ -11,15 +11,17 @@ export type TuiRun = { cells: number; style: number };
 /** One row of the screen: its text with trailing spaces cut, and the runs covering the row's whole width. */
 export type TuiLine = { text: string; runs: TuiRun[] };
 
-/** The panes the live TUI names: the Goals list and its preview of the selected Goal, and the open Goal's
- *  four panes. */
+/** The panes the live TUI names: the Goals list and its preview of the selected Goal, the open Goal's four
+ *  panes, and a planning item's session and the Preview of its Proposal. */
 export type TuiPaneName =
 	| "Goals"
 	| "Goal"
 	| "Tickets"
 	| "Ticket"
 	| "Runs"
-	| "Run activity";
+	| "Run activity"
+	| "Session"
+	| "Preview";
 
 /** A rectangle of the screen, in cells from its top left. */
 export type TuiBox = {
@@ -35,22 +37,31 @@ export type TuiPane = { name: TuiPaneName; box: TuiBox; focused: boolean };
 /** One captured screen: an index into `lines` per row, and its panes. */
 export type TuiFrame = { rows: number[]; panes: TuiPane[] };
 
-/** A Goal of the example Project as the Goals list orders them. */
+/** A Goal or planning item of the example Project as the Goals list orders them. */
 export type TuiGoal = {
 	name: string;
-	/** Rows of the Goal view's Tickets pane, its Goal Steps included. */
+	/** Rows of the Goal view's Tickets pane, its Goal Steps included; 0 for a planning item. */
 	tickets: number;
 	/** The Tickets pane's row the Goal view opens on, at each replay moment, or one row for all of them. */
 	openTicket: number[];
-	/** The word the Goals list shows for it, such as "running" or "stuck". */
+	/** The word the Goals list shows for it, such as "running" or "stuck"; "planning" for a planning item,
+	 *  which opens in the planning view. */
 	standing: string;
 };
 
-/** Which screen the TUI shows: the Goals list on a Goal, or a Goal open on a row of its Tickets pane with
- *  the focus on the pane that many Tabs reach. Every index counts from 0. */
+/** The TUI's views: the Goals list, a Goal open, and a planning item open. */
+export type TuiView = "project" | "goal" | "planning";
+
+/** What a planning item's view shows: the focus on its session or on the Preview, or the Preview with the
+ *  Workflow picker open, or asking whether to accept the Proposal. */
+export type TuiPlanningScreen = "session" | "preview" | "workflow" | "accept";
+
+/** Which screen the TUI shows: the Goals list on a Goal, a Goal open on a row of its Tickets pane with the
+ *  focus on the pane that many Tabs reach, or a planning item open. Every index counts from 0. */
 export type TuiScreen =
 	| { view: "project"; goal: number }
-	| { view: "goal"; goal: number; ticket: number; pane: number };
+	| { view: "goal"; goal: number; ticket: number; pane: number }
+	| { view: "planning"; goal: number; planning: TuiPlanningScreen };
 
 /** How many panes the Goal view has, which Tab goes round and 1-4 pick. */
 export const goalPaneCount = 4;
@@ -71,12 +82,13 @@ export type TuiFrames = {
 	frames: TuiFrame[];
 	/** Per `screenKey`, the frame at each replay phase, or one frame when the screen never changes. */
 	screens: Record<string, number[]>;
-	help: { project: TuiHelp; goal: TuiHelp };
+	help: { project: TuiHelp; goal: TuiHelp; planning: TuiHelp };
 };
 
 /** The key `screens` files `screen` under. */
 export function screenKey(screen: TuiScreen): string {
-	return screen.view === "project"
-		? `project/${screen.goal}`
-		: `goal/${screen.goal}/${screen.ticket}/${screen.pane}`;
+	if (screen.view === "project") return `project/${screen.goal}`;
+	if (screen.view === "planning")
+		return `planning/${screen.goal}/${screen.planning}`;
+	return `goal/${screen.goal}/${screen.ticket}/${screen.pane}`;
 }

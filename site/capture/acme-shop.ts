@@ -542,3 +542,76 @@ export const exampleGoals: ExampleGoal[] = [
 		],
 	},
 ];
+
+/** acme-shop's planning item: a Goal still being planned in the TUI, its agent's Proposal ready to accept. */
+export type ExamplePlanningItem = {
+	name: string;
+	/** The proposed `goal.md` and Tickets, as the agent's proposal block writes them. */
+	goal: string;
+	tickets: { slug: string; blockedBy: number[]; body: string }[];
+	workflow: string;
+	workflowReason: string;
+	/** The planning session's past runs: how many minutes before the capture each began and ended, and what
+	 *  its Harness session had cost by then. */
+	sessions: { startedAgo: number; endedAgo: number; cost: number }[];
+	/** What the planning session shows in its pane, line by line: the human's messages and the agent's. */
+	transcript: string[];
+};
+
+export const examplePlanningItem: ExamplePlanningItem = {
+	name: "self-service-returns",
+	goal: `# Customers start a return themselves
+
+## Problem Statement
+
+Customers email support to return an item, and staff copy each email into the admin by hand.
+
+## Solution
+
+An order's page gets a Return button. The customer picks the items and a reason, staff approve the return in the admin, and the refund goes through \`refundOrder\` as it does today.
+
+## Out of Scope
+
+Shipping labels and exchanges.
+`,
+	tickets: [
+		{
+			slug: "return-requests",
+			blockedBy: [],
+			body: "# A customer requests a return\n\nThe order page's Return button opens a form of the order's items and a reason.\n",
+		},
+		{
+			slug: "staff-approval",
+			blockedBy: [1],
+			body: "# Staff approve or decline a return\n\nThe admin lists open returns; approving one refunds its items.\n",
+		},
+		{
+			slug: "return-emails",
+			blockedBy: [2],
+			body: "# The customer hears back by email\n\nAn email when the return is approved or declined.\n",
+		},
+	],
+	workflow: "small",
+	workflowReason:
+		"Three small Tickets on code that has tests; refunds already go through one function.",
+	sessions: [{ startedAgo: 50, endedAgo: 8, cost: 0.64 }],
+	transcript: [
+		"> Customers email us to return things, and staff type",
+		"  each one into the admin. I want customers to start a",
+		"  return from their order page.",
+		"",
+		"● I read src/orders/ and src/admin/refunds.ts. Refunds",
+		"  already go through refundOrder(), so an approved",
+		"  return can end there. Two decisions are still open:",
+		"",
+		"  1. Does staff approve each return before its refund?",
+		"  2. Can a customer return some of an order's items?",
+		"",
+		"> Staff approve every return. Yes, per item.",
+		"",
+		"● Then the Goal is three Tickets: the request, staff",
+		"  approval, and the emails, on the small Workflow. The",
+		"  Proposal is in the Preview; accept it there when it",
+		"  reads right.",
+	],
+};

@@ -1,7 +1,7 @@
 // The replay of the example Project as a state the keys move: which screen shows, at which moment of the
-// replayed Ticket, and what each of Vago's keys does to it, the way the real TUI's Project and Goal views
-// handle them. Keys the captured frames can't follow leave the state and say so. Owns the captured frames;
-// nothing here touches the page.
+// replayed Ticket, and what each of Vago's keys does to it, the way the real TUI's Project, Goal and
+// planning views handle them. Keys the captured frames can't follow leave the state and say so. Owns the
+// captured frames; nothing here touches the page.
 
 import data from "./tui-frames.json";
 import {
@@ -10,18 +10,23 @@ import {
 	type TuiFrames,
 	type TuiHelp,
 	type TuiPaneName,
+	type TuiPlanningScreen,
+	type TuiScreen,
+	type TuiView,
 } from "./tui-frames.ts";
 
 /** The captured frames, as `bun run capture` wrote them. */
 export const tuiFrames = data as TuiFrames;
 
 /** What the replay shows: the Goals list on its `goal`th Goal, or that Goal open on its `ticket`th row with
- *  the focus on the pane `pane` Tabs reach, the help laid over either, at moment `phase` of the replay. */
+ *  the focus on the pane `pane` Tabs reach, or that planning item open at its `planning` screen, the help
+ *  laid over any of them, at moment `phase` of the replay. */
 export type ReplayState = {
-	view: "project" | "goal";
+	view: TuiView;
 	goal: number;
 	ticket: number;
 	pane: number;
+	planning: TuiPlanningScreen;
 	help: boolean;
 	phase: number;
 };
@@ -29,14 +34,16 @@ export type ReplayState = {
 /** Where a page sends the replay. Each field left out keeps what shows, except that a new `goal` opens on
  *  the row it opens on. */
 export type ReplayPlace = {
-	/** "project" for the Goals list, "goal" for the Goal open. */
-	view?: "project" | "goal";
-	/** A Goal of the example Project by name, such as "order-export". */
+	/** "project" for the Goals list, "goal" for the Goal open, "planning" for the planning item open. */
+	view?: TuiView;
+	/** A Goal or planning item of the example Project by name, such as "order-export". */
 	goal?: string;
 	/** A row of the open Goal's Tickets pane, from 0. */
 	ticket?: number;
 	/** The pane the open Goal's focus is on. */
 	pane?: TuiPaneName;
+	/** What the open planning item shows. */
+	planning?: TuiPlanningScreen;
 	help?: boolean;
 	/** How far through the replay, from 0, its first moment, to 1, its last. */
 	time?: number;
@@ -63,6 +70,7 @@ export const restingState: ReplayState = {
 	goal: running,
 	ticket: 0,
 	pane: 0,
+	planning: "session",
 	help: false,
 	phase: Math.max(0, tuiFrames.replay.phases.indexOf("Build") + 3),
 };
@@ -83,8 +91,16 @@ export function placeReplay(
 		next = openGoal({ ...next, goal }, goal);
 	}
 	if (place.view === "project") next.view = "project";
-	if (place.view === "goal" && next.view === "project")
-		next = { ...openGoal(next, next.goal), view: "goal" };
+	if (place.view !== undefined && place.view !== "project") {
+		const name = tuiFrames.goals[next.goal]?.name;
+		if (isPlanningItem(next.goal) !== (place.view === "planning"))
+			throw new Error(
+				`${name} opens in the ${isPlanningItem(next.goal) ? "planning" : "Goal"} view`,
+			);
+		if (next.view === "project") next = openGoal(next, next.goal);
+		next.view = place.view;
+	}
+	if (place.planning !== undefined) next.planning = place.planning;
 	if (place.ticket !== undefined)
 		next.ticket = clamp(place.ticket, ticketCount(next.goal));
 	if (place.pane !== undefined) {
@@ -104,6 +120,7 @@ function openGoal(state: ReplayState, goal: number): ReplayState {
 		goal,
 		ticket: openTicket(goal, state.phase),
 		pane: 0,
+		planning: "session",
 	};
 }
 
@@ -143,19 +160,7 @@ export function replayFrame(state: ReplayState): {
 	frame: number;
 	help?: TuiHelp;
 } {
-	const phases =
-		tuiFrames.screens[
-			screenKey(
-				state.view === "project"
-					? { view: "project", goal: state.goal }
-					: {
-							view: "goal",
-							goal: state.goal,
-							ticket: state.ticket,
-							pane: state.pane,
-						},
-			)
-		] ?? [];
+	const phases = tuiFrames.screens[screenKey(screenOf(state))] ?? [];
 	const frame = phases[Math.min(state.phase, phases.length - 1)] ?? 0;
 	return state.help ? { frame, help: tuiFrames.help[state.view] } : { frame };
 }
@@ -180,6 +185,8 @@ const quit = "q quits the TUI. Here there's nothing to quit.";
 const projectNotices: Record<string, string> = {
 	s: start,
 	n: "n plans a new Goal with an agent. Not in the replay.",
+	r: "r renames a planning item. Not in the replay.",
+	d: "d discards a planning item. Not in the replay.",
 	q: quit,
 	PageUp: paging,
 	PageDown: paging,
@@ -203,16 +210,28 @@ const goalNotices: Record<string, string> = {
 	" ": paging,
 };
 
+const sessionKeys =
+	"In the session every key is the agent's. Ctrl-] moves the focus to the Preview.";
+const planningNotices: Record<string, string> = {
+	q: quit,
+	ArrowUp: "↑↓ scroll the Preview. Not in the replay.",
+	ArrowDown: "↑↓ scroll the Preview. Not in the replay.",
+	PageUp: paging,
+	PageDown: paging,
+	" ": paging,
+};
+
 /**
- * `key`, a `KeyboardEvent.key` such as "ArrowDown" or "?", pressed on `state`, as the real TUI's view on
- * screen handles it, Tab going back a pane with `shift`. A key that view doesn't use isn't taken, so Tab
- * on the Goals list is the page's and leaves the replay.
+ * `key`, a `KeyboardEvent.key` such as "ArrowDown" or "?", or "Ctrl-]", pressed on `state`, as the real
+ * TUI's view on screen handles it, Tab going back a pane with `shift`. A key that view doesn't use isn't
+ * taken, so Tab on the Goals list is the page's and leaves the replay.
  */
 export function pressReplayKey(
 	state: ReplayState,
 	key: string,
 	shift: boolean,
 ): ReplayKeyResult {
+	if (state.view === "planning") return pressPlanningKey(state, key);
 	const done = (next: ReplayState): ReplayKeyResult => ({
 		state: next,
 		taken: true,
@@ -236,7 +255,10 @@ export function pressReplayKey(
 			return done({ ...state, goal: tuiFrames.goals.length - 1 });
 		if (key === "Escape") return done(state);
 		if (key === "Enter" && !state.help)
-			return done({ ...openGoal(state, state.goal), view: "goal" });
+			return done({
+				...openGoal(state, state.goal),
+				view: isPlanningItem(state.goal) ? "planning" : "goal",
+			});
 		if (key === "Enter" || (notice !== undefined && state.help))
 			return done(state);
 		return notice === undefined
@@ -258,11 +280,13 @@ export function pressReplayKey(
 		});
 	if (/^[1-4]$/.test(key)) return done({ ...state, pane: Number(key) - 1 });
 	if (key === "[" || key === "]") {
-		const goal = clamp(
-			state.goal + (key === "[" ? -1 : 1),
-			tuiFrames.goals.length,
+		// The Goal view passes over planning items; past either end the open Goal stays.
+		const step = key === "[" ? -1 : 1;
+		let goal = state.goal + step;
+		while (isPlanningItem(goal)) goal += step;
+		return done(
+			tuiFrames.goals[goal] === undefined ? state : openGoal(state, goal),
 		);
-		return done(goal === state.goal ? state : openGoal(state, goal));
 	}
 	if (moves && state.pane !== 0)
 		return {
@@ -280,6 +304,74 @@ export function pressReplayKey(
 	return notice === undefined
 		? { state, taken: false }
 		: { state, notice, taken: true };
+}
+
+// `key` on the planning view `state` shows. While the session has the focus every key is the session's, so
+// the replay says so; Tab moves to the Preview too, so the key row reaches it.
+function pressPlanningKey(state: ReplayState, key: string): ReplayKeyResult {
+	const done = (next: ReplayState, notice?: string): ReplayKeyResult => ({
+		state: next,
+		notice,
+		taken: true,
+	});
+	const preview = { ...state, planning: "preview" as const };
+	if (state.planning === "session") {
+		if (key === "Ctrl-]") return done(preview);
+		if (key === "Tab")
+			return done(
+				preview,
+				"In the session Tab is the agent's. Ctrl-] moves the focus to the Preview.",
+			);
+		return key.length === 1 || /^(Arrow|Escape|Enter|Backspace)/.test(key)
+			? done(state, sessionKeys)
+			: { state, taken: false };
+	}
+	// The help takes every key, and `?` or Esc closes it.
+	if (state.help)
+		return done(
+			key === "?" || key === "Escape" ? { ...state, help: false } : state,
+		);
+	if (state.planning === "accept")
+		return key === "y"
+			? done(
+					preview,
+					"y accepts the Proposal as a ready Goal. The replay doesn't accept anything.",
+				)
+			: done(preview);
+	if (state.planning === "workflow") {
+		if (key === "Escape") return done(preview);
+		return done(
+			state,
+			"↑↓ and Enter pick the Goal's Workflow. Not in the replay; Esc closes the list.",
+		);
+	}
+	if (key === "Ctrl-]" || key === "Tab")
+		return done({ ...state, planning: "session" });
+	if (key === "Escape") return done({ ...state, view: "project" });
+	if (key === "?") return done({ ...state, help: true });
+	if (key === "a") return done({ ...state, planning: "accept" });
+	if (key === "w") return done({ ...state, planning: "workflow" });
+	const notice = planningNotices[key];
+	return notice === undefined ? { state, taken: false } : done(state, notice);
+}
+
+// The captured screen `state` shows, help aside.
+function screenOf(state: ReplayState): TuiScreen {
+	if (state.view === "goal")
+		return {
+			view: "goal",
+			goal: state.goal,
+			ticket: state.ticket,
+			pane: state.pane,
+		};
+	if (state.view === "planning")
+		return { view: "planning", goal: state.goal, planning: state.planning };
+	return { view: "project", goal: state.goal };
+}
+
+// Whether the example Project's `goal`th row is a planning item, which opens in the planning view.
+function isPlanningItem(goal: number): boolean {
+	return tuiFrames.goals[goal]?.standing === "planning";
 }
 
 // The row the Goal view opens Goal `goal` on at moment `phase`.
