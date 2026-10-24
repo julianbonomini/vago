@@ -62,8 +62,9 @@ type PlanningViewPane = "session" | "preview";
  * show. A session that ends on its own with exit 0, as when the human quits
  * the Harness, calls `onClose` with no notice; any other exit stays, saying
  * how it ended. Once the item was accepted its session still opens, to read, but
- * there is no `a` or `w`. Esc from the Preview calls `onClose` with no
- * notice. Reads the chat and the Proposal itself, and again every second.
+ * there is no `a` or `w`. Esc from the Preview ends the session, then calls
+ * `onClose` with no notice. Reads the chat and the Proposal itself, and again
+ * every second.
  */
 export function PlanningView(props: {
 	root: string;
@@ -131,6 +132,12 @@ export function PlanningView(props: {
 			`Accepted ${props.name} as a ready Goal with ${tickets}; s starts it.`,
 		);
 	};
+	// Waits for the session to let go of the item, so opening it again at
+	// once finds it free.
+	const back = async () => {
+		await endSession?.();
+		props.onClose();
+	};
 	useKeyboard((key) => {
 		// The handlers of the focused session run after this one, and skip a
 		// key whose default is prevented.
@@ -153,7 +160,7 @@ export function PlanningView(props: {
 			return;
 		}
 		if (key.name === "escape" && picking()) setPicking(false);
-		else if (key.name === "escape") props.onClose();
+		else if (key.name === "escape") back();
 		// The picker has the arrows and Enter until it closes.
 		else if (picking()) return;
 		else if (switching || key.name === "tab") {

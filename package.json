@@ -1,8 +1,10 @@
 {
 	"name": "vago",
+	"version": "0.1.0",
 	"type": "module",
 	"license": "MIT",
 	"private": true,
+	"packageManager": "bun@1.4.2",
 	"bin": {
 		"vago": "src/cli.ts"
 	},

@@ -54,6 +54,9 @@ function openVago(cwd: string, env: Record<string, string> = {}): TerminalVago {
 			...process.env,
 			VAGO_HOME: vagoHome,
 			TERM: "xterm-256color",
+			// Without it OpenTUI asks a 256-colour terminal for its palette, and
+			// this pseudo-terminal never answers, so it repaints once it gives up.
+			COLORTERM: "truecolor",
 			...env,
 		},
 		terminal: {
