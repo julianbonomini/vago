@@ -2,6 +2,7 @@
 // site path such as `/docs/install/` maps to a file under dist/; every test that reads the build asks it.
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { siteUrl } from "../src/site.ts";
 
 const dist = join(import.meta.dir, "..", "dist");
 
@@ -29,6 +30,13 @@ export function servedAt(path: string): string | undefined {
 		return readFileSync(file, "utf8");
 	const index = join(file, "index.html");
 	return existsSync(index) ? readFileSync(index, "utf8") : undefined;
+}
+
+/** The site path of each absolute link to the site in `text`, such as a README or a snippet, in its order. */
+export function siteLinksIn(text: string): string[] {
+	return [...text.matchAll(new RegExp(`${siteUrl}(/[^\\s)<>]*)`, "g"))].map(
+		([, path = ""]) => path,
+	);
 }
 
 // The part of Pagefind's search API searchBuiltSite uses.

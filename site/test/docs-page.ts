@@ -1,4 +1,4 @@
-// What the docs page tests read off a built page: its sidebar's order, the live TUIs it embeds, the
+// What the docs page tests read off a built page: its sidebar's links, the live TUIs it embeds, the
 // `vago run` output its Markdown copy shows, and whether that output's numbers are the frames'.
 import { type ReplayPlace, tuiFrames } from "../src/tui/tui-replay.ts";
 
@@ -12,11 +12,17 @@ function decodeEntities(html: string): string {
 		.replaceAll("&amp;", "&");
 }
 
-/** The site path of every docs page `html`'s sidebar links to, in its order. */
-export function docsInSidebar(html: string): string[] {
-	return [...html.matchAll(/href="(\/docs\/[^"#]+)"/g)].map(
-		([, path = ""]) => path,
-	);
+/** The HTML of `html`'s sidebar, the one beside the page rather than the phone's menu. */
+export function sidebarOf(html: string): string {
+	return html.match(/<nav[^>]*aria-label="Docs"[\s\S]*?<\/nav>/)?.[0] ?? "";
+}
+
+/** The site path of every page under `section` (`/docs/`, `/agents/`) that `html`'s sidebar links to, in its
+ *  order. */
+export function sidebarLinks(html: string, section: string): string[] {
+	return [...sidebarOf(html).matchAll(/href="([^"#]+)"/g)]
+		.map(([, path = ""]) => path)
+		.filter((path) => path.startsWith(section));
 }
 
 /** Each live TUI on `html`: where it starts, and the text of the first screen drawn into the page. */

@@ -13,9 +13,9 @@ import {
 } from "../src/tui/tui-replay.ts";
 import { servedAt } from "./built-site.ts";
 import {
-	docsInSidebar,
 	liveTuis,
 	numbersNotInFrames,
+	sidebarLinks,
 	vagoRunOutput,
 } from "./docs-page.ts";
 
@@ -23,7 +23,7 @@ const running = servedAt("/docs/running-and-watching/") ?? "";
 const planning = servedAt("/docs/planning-a-goal/") ?? "";
 
 test("the two pages follow Workflows in the sidebar", () => {
-	const docs = docsInSidebar(running);
+	const docs = sidebarLinks(running, "/docs/");
 	const workflows = docs.indexOf("/docs/workflows/");
 	expect(docs.slice(workflows + 1, workflows + 3)).toEqual([
 		"/docs/running-and-watching/",

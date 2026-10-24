@@ -49,12 +49,12 @@ vago run search
 
 With `small`, each Ticket goes through these Steps:
 
-1. New branch cuts `search/01-index` from `vago/search`.
+1. New branch cuts `search/01-index` from `vago/search`. It fails if the worktree has uncommitted changes, unless the worktree is already on the Ticket's branch, where it leaves the work as it is.
 2. Build: an agent builds the Ticket and commits.
 3. Checks runs `bun run check`. When it fails, the Ticket goes on, and Review reads the failure.
 4. Review: a fresh agent reviews the work and fixes what it finds.
-5. Goal review runs on the last Ticket only, reading the whole Goal's diff, and may add Tickets for problems too big to fix there.
-6. Squash merge squashes the Ticket's branch into `vago/search` as one commit, pushes `vago/search`, and opens or updates its PR.
+5. Goal review runs on the last Ticket only, reading the whole Goal's diff for what no single Ticket shows. It fixes the small problems on the branch and adds Tickets for the bigger ones, which `vago run` takes next. Only the first Goal review adds Tickets; the ones after it fix or report.
+6. Squash merge commits whatever the Steps left uncommitted, squashes the Ticket's branch into `vago/search` as one commit, deletes the Ticket's branch, pushes `vago/search`, and opens or updates its PR. A push or `gh` call that fails on the network or with a 5xx from GitHub is tried again a few times. When it fails anyway, its log's last line says why, and running the Ticket again finishes the job without squashing it twice.
 
 `vago run` prints the worktree's path, then a line when each Step starts and when it ends, with how long it took and what an agent Step cost, and a summary when it stops. Once the Goal is done and its branch pushed, it removes the worktree:
 

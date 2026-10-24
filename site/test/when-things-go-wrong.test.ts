@@ -10,9 +10,9 @@ import {
 } from "../src/tui/tui-replay.ts";
 import { servedAt } from "./built-site.ts";
 import {
-	docsInSidebar,
 	liveTuis,
 	numbersNotInFrames,
+	sidebarLinks,
 	vagoRunOutput,
 } from "./docs-page.ts";
 
@@ -20,7 +20,7 @@ const page = servedAt("/docs/when-things-go-wrong/") ?? "";
 const copy = servedAt("/docs/when-things-go-wrong.md") ?? "";
 
 test("the page follows Planning a Goal in the sidebar", () => {
-	const docs = docsInSidebar(page);
+	const docs = sidebarLinks(page, "/docs/");
 	expect(docs[docs.indexOf("/docs/planning-a-goal/") + 1]).toBe(
 		"/docs/when-things-go-wrong/",
 	);

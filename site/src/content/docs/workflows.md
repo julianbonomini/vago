@@ -33,12 +33,7 @@ Vago decides how a Workflow runs: one Ticket at a time, each Step in order, a fa
 
 ## Where Workflows come from
 
-[`vago init`](/docs/cli-reference/#vago-init) copies two starter Workflows into `.vago/workflows/`, with their prompts in `.vago/prompts/` and their scripts in `.vago/scripts/`:
-
-| Workflow | Steps of each Ticket | Pick it when |
-|---|---|---|
-| `small` | New branch, Build, Checks, Review, Goal review, Squash merge | The Tickets are small and already clear. One agent builds each Ticket and a fresh one reviews it. |
-| `try-hard` | New branch, Design, Product, Architecture, Design choices, Build, Checks, Review, Goal review, Squash merge | A Ticket leaves design questions open. Three agents design it before one builds it, which takes four more agent Runs per Ticket than `small`. |
+[`vago init`](/docs/cli-reference/#vago-init) copies two starter Workflows into `.vago/workflows/`, `small` and `try-hard`, with their prompts in `.vago/prompts/` and their scripts in `.vago/scripts/`. [Pick a Workflow](/docs/set-up-a-project/#pick-a-workflow) lists each one's Steps and when to pick it.
 
 Both run Claude Code with `claude-opus-5-5`, both run Goal review only on the Goal's last Ticket, and both end the Goal with two [`after_all`](/docs/glossary/#after_all) Steps: PR description and Ready for review. The files are yours to change, and a Workflow you add next to them, such as `.vago/workflows/docs.toml`, is the Workflow `docs`. [`vago update`](/docs/cli-reference/#vago-update) overwrites the starter files that differ from Vago's and leaves files you added alone, so give a Workflow you have changed a new name if you want to keep your version through updates.
 

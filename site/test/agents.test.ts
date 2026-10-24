@@ -1,8 +1,8 @@
 // The agents section: its six pages, the snippet its index shows for a Project's own AGENTS.md, which links
 // only pages the site serves, and the header link to it on every page.
 import { expect, test } from "bun:test";
-import { siteUrl } from "../src/site.ts";
-import { builtDocuments, servedAt } from "./built-site.ts";
+import { builtDocuments, servedAt, siteLinksIn } from "./built-site.ts";
+import { sidebarLinks } from "./docs-page.ts";
 
 const index = servedAt("/agents/") ?? "";
 const copy = servedAt("/agents.md") ?? "";
@@ -16,21 +16,14 @@ const agentsPages = [
 	"/agents/limits/",
 ];
 
-// The site paths of the absolute links in the snippet `text` holds, in its order.
+// The site paths the snippet in `text` links, in its order.
 function snippetLinks(text: string): string[] {
 	const snippet = text.match(/## Vago\n[\s\S]*?(?=```|<\/code>)/)?.[0] ?? "";
-	return [...snippet.matchAll(new RegExp(`${siteUrl}(/[^\\s)<>]*)`, "g"))].map(
-		([, path = ""]) => path,
-	);
+	return siteLinksIn(snippet);
 }
 
 test("the agents section has its six pages, after its index in the sidebar", () => {
-	const sidebar =
-		index.match(/<nav[^>]*aria-label="Docs"[\s\S]*?<\/nav>/)?.[0] ?? "";
-	const inSidebar = [...sidebar.matchAll(/href="(\/agents\/[^"]*)"/g)].map(
-		([, path]) => path,
-	);
-	expect(inSidebar).toEqual(["/agents/", ...agentsPages]);
+	expect(sidebarLinks(index, "/agents/")).toEqual(["/agents/", ...agentsPages]);
 });
 
 test("the agents index shows the snippet with a copy button, and so does its Markdown copy", () => {

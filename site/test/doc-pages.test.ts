@@ -4,14 +4,14 @@ import { expect, test } from "bun:test";
 import { join } from "node:path";
 import { siteUrl } from "../src/site.ts";
 import { builtDocuments, searchBuiltSite, servedAt } from "./built-site.ts";
+import { sidebarLinks, sidebarOf } from "./docs-page.ts";
 
 const docPages = builtDocuments().filter(({ path }) =>
 	/^\/(docs|cookbook|agents)(\/|$)/.test(path),
 );
 const llms = servedAt("/llms.txt") ?? "";
 const install = servedAt("/docs/install/") ?? "";
-const sidebar =
-	install.match(/<nav[^>]*aria-label="Docs"[\s\S]*?<\/nav>/)?.[0] ?? "";
+const sidebar = sidebarOf(install);
 
 test("the docs start with Install, written from the README", () => {
 	expect(install).toContain("<h1");
@@ -49,9 +49,7 @@ test("search finds a page by a word on it, and leaves the landing page out", asy
 });
 
 test("the first-Project pages follow Install, linking commands to the CLI reference and terms to the glossary", () => {
-	const docsPaths = [...sidebar.matchAll(/href="(\/docs\/[^"]+)"/g)].map(
-		([, path]) => path,
-	);
+	const docsPaths = sidebarLinks(install, "/docs/");
 	const firstProject = [
 		"/docs/set-up-a-project/",
 		"/docs/your-first-goal/",
@@ -66,9 +64,7 @@ test("the first-Project pages follow Install, linking commands to the CLI refere
 });
 
 test("the Workflows page follows Goals and Tickets and shows every Workflow key in a TOML example", async () => {
-	const docsPaths = [...sidebar.matchAll(/href="(\/docs\/[^"]+)"/g)].map(
-		([, path]) => path,
-	);
+	const docsPaths = sidebarLinks(install, "/docs/");
 	expect(docsPaths[4]).toBe("/docs/workflows/");
 	// Every key src/workflow.ts takes, at the top of the file and on a Step.
 	const keys = [
