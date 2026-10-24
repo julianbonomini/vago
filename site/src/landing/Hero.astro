@@ -1,46 +1,13 @@
 ---
-// The landing hero: the headline and its one line over the live TUI, which fills the first screen and is
-// already running. On a wide, tall screen without reduced motion the stage pins while scrolling pulls the
-// view back and a spotlight walks the TUI's panes, the column beside it naming each; hero.ts moves it.
-// Otherwise the hero sits in its settled layout and picking a pane's name lights that pane.
+// The landing hero: the headline and its one line over the page's live TUI, which fills the first screen
+// and is already running. The TUI itself lives in the story's dock; the slot here keeps its place, and
+// tour.ts carries it up into the slot. On a wide, tall screen without reduced motion the stage pins while
+// scrolling pulls the view back and a spotlight walks the TUI's panes, the column beside it naming each.
+// Otherwise the hero sits in its settled layout and picking a pane's name lights that pane. On a phone the
+// hero is its copy, and the pane walk is the story's first beats.
 import { repoUrl } from "../site.ts";
-import LiveTui from "../tui/LiveTui.astro";
 import LiveTuiKeys from "../tui/LiveTuiKeys.astro";
-import type { TuiPaneName } from "../tui/tui-frames.ts";
-import type { ReplayPlace } from "../tui/tui-replay.ts";
-import { tuiFrames } from "../tui/tui-replay.ts";
-
-const goal = tuiFrames.replay.goal;
-const ticket = tuiFrames.replay.ticket;
-
-// The panes in the order the spotlight walks them, each with the screen that shows it.
-const panes: { name: TuiPaneName; place: ReplayPlace; text: string }[] = [
-	{
-		name: "Goals",
-		place: { view: "project", goal },
-		text: "Every Goal in the Project with its progress and cost, and what it's doing right now.",
-	},
-	{
-		name: "Tickets",
-		place: { view: "goal", goal, pane: "Tickets" },
-		text: `Open a Goal and its Tickets run top to bottom, one at a time. Here ${ticket} is the one running.`,
-	},
-	{
-		name: "Ticket",
-		place: { view: "goal", goal, pane: "Ticket" },
-		text: "What the running Ticket asks for, and the Steps your Workflow takes it through.",
-	},
-	{
-		name: "Runs",
-		place: { view: "goal", goal, pane: "Runs" },
-		text: "Every time a Step runs is a Run, with its time and cost. A retry is one more Run.",
-	},
-	{
-		name: "Run activity",
-		place: { view: "goal", goal, pane: "Run activity" },
-		text: "The live Run as it happens. You see each file the agent writes and each test it runs.",
-	},
-];
+import { paneStops, replayNote } from "./tour-stops.ts";
 ---
 <section class="hero" data-hero aria-labelledby="hero-title">
 	<div class="hero-pin" data-hero-pin>
@@ -52,20 +19,13 @@ const panes: { name: TuiPaneName; place: ReplayPlace; text: string }[] = [
 			</div>
 		</div>
 
-		<div class="hero-slot" data-hero-slot>
-			<div class="hero-fly" data-hero-fly>
-				<LiveTui id="hero-tui" keys={false} controls={false} caption={false} />
-			</div>
-		</div>
+		<div class="hero-slot" data-hero-slot aria-hidden="true"></div>
 
 		<div class="hero-side" data-hero-side>
 			<h2>One screen for every Goal</h2>
-			<p class="hero-note">
-				A replay of Vago's TUI on {tuiFrames.project}, an example Project made up for this page. Nothing here
-				is running.
-			</p>
+			<p class="hero-note">{replayNote}</p>
 			<ul class="hero-panes" data-hero-panes>
-				{panes.map(({ name, place, text }) => (
+				{paneStops.map(({ name, place, text }) => (
 					<li>
 						<button type="button" class="hero-pane" data-pane={name} data-place={JSON.stringify(place)} aria-pressed="false">
 							<span class="hero-pane-name">{name}</span>
@@ -76,17 +36,11 @@ const panes: { name: TuiPaneName; place: ReplayPlace; text: string }[] = [
 			</ul>
 			<div class="hero-keys">
 				<p>Or drive it yourself: click the screen and use its keys, or tap these.</p>
-				<LiveTuiKeys for="hero-tui" />
+				<LiveTuiKeys for="landing-tui" />
 			</div>
 		</div>
 	</div>
 </section>
-
-<script>
-	import { mountHero } from "./hero.ts";
-
-	for (const stage of document.querySelectorAll<HTMLElement>("[data-hero]")) mountHero(stage);
-</script>
 
 <style>
 	.hero-pin {
@@ -138,20 +92,11 @@ const panes: { name: TuiPaneName; place: ReplayPlace; text: string }[] = [
 		transform: scale(0.97);
 	}
 
-	/* Settled, the TUI stays in view while the pane list scrolls under it, so a pane picked from the list
-	   lights where the visitor can see it. */
+	/* As tall as the TUI at its width, which tour.ts sets once it has measured the TUI. */
 	.hero-slot {
 		grid-area: slot;
-		position: sticky;
-		top: 0;
-		z-index: 1;
 		align-self: start;
 		min-width: 0;
-		padding: 12px 0;
-		background: var(--v-bg);
-	}
-	.hero-fly {
-		transform-origin: 100% 0;
 	}
 	.hero-side {
 		grid-area: side;
@@ -254,12 +199,12 @@ const panes: { name: TuiPaneName; place: ReplayPlace; text: string }[] = [
 		}
 	}
 
-	/* Pinned: the stage holds the screen while scrolling pulls the view back and walks the panes. hero.ts
+	/* Pinned: the stage holds the screen while scrolling pulls the view back and walks the panes. tour.ts
 	   tells it apart by the sticky position, sets the stage's height and the side's box, and moves the TUI.
 	   Without a script there is nothing to drive it, so the hero stays settled. */
 	@media (min-width: 1000px) and (min-height: 640px) and (prefers-reduced-motion: no-preference) and (scripting: enabled) {
 		.hero {
-			/* hero.ts's height before it measures: the screen, the pull-back and the walk. */
+			/* tour.ts's height before it measures: the screen, the pull-back and the walk. */
 			height: var(--hero-height, 420vh);
 		}
 		.hero-pin {
@@ -269,10 +214,6 @@ const panes: { name: TuiPaneName; place: ReplayPlace; text: string }[] = [
 			height: 100vh;
 			padding-top: 28px;
 			overflow: hidden;
-		}
-		.hero-slot {
-			position: static;
-			padding: 0;
 		}
 		.hero-side {
 			--pulled: 0;
@@ -306,6 +247,15 @@ const panes: { name: TuiPaneName; place: ReplayPlace; text: string }[] = [
 			grid-template-rows: 1fr;
 			margin-top: 4px;
 			opacity: 1;
+		}
+	}
+
+	/* On a phone, and without a script to bring the TUI up, the hero is its copy: the TUI stays in the
+	   story's dock, which also walks the panes on a phone. */
+	@media (max-width: 999px), (scripting: none) {
+		.hero-slot,
+		.hero-side {
+			display: none;
 		}
 	}
 

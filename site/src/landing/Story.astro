@@ -1,0 +1,409 @@
+---
+// The landing's story: "Stop babysitting your agents", then gift-cards from the Goal written to its PR, a
+// beat at a time, each with its artifact, beside the dock where the page's one live TUI settles. The TUI
+// lives in the dock; tour.ts carries it up into the hero until the visitor scrolls here, sends it to each
+// beat's screen, and lights the chapter strip. On a phone the dock is a strip stuck over the beats, and the
+// hero's pane walk comes first as beats of its own.
+import LiveTui from "../tui/LiveTui.astro";
+import LiveTuiKeys from "../tui/LiveTuiKeys.astro";
+import { tuiFrames } from "../tui/tui-replay.ts";
+import { paneStops, replayNote, storyBeats, storyChapters, storyOpening } from "./tour-stops.ts";
+
+// The chapter each beat lights in the strip; a beat with none comes after every chapter.
+const chapterOf = (chapter: string | undefined) =>
+	chapter === undefined ? storyChapters.length : storyChapters.indexOf(chapter);
+---
+<section class="story" id="how-it-works" aria-labelledby="story-title">
+	<div class="story-beats">
+		<header class="story-phone-head">
+			<h2>One screen for every Goal</h2>
+			<p>{replayNote} Scroll, and it shows you each part.</p>
+		</header>
+		{paneStops.map(({ name, place, text }) => (
+			<div class="beat beat-pane" data-beat data-place={JSON.stringify(place)} data-spotlight={name}>
+				<h3>{name}</h3>
+				<p>{text}</p>
+			</div>
+		))}
+
+		<header class="beat story-head" data-beat data-place={JSON.stringify(storyOpening)}>
+			<h2 id="story-title">Stop babysitting your agents</h2>
+			<p class="story-statement">
+				You already know how agents should work on your code. You've got the skills, the prompts and the checks.
+				What's left is the sitting: correcting a session, rebriefing the next one when the context fills up,
+				fixing small things by hand.
+			</p>
+			<p class="story-proof">Vago builds itself. Most of its own repo came out of Goals run through it.</p>
+			<p class="story-cue">
+				Here's {tuiFrames.replay.goal}, one Goal in {tuiFrames.project}, from the file you write to the PR you
+				merge. Scroll, and the TUI follows along.
+			</p>
+		</header>
+
+		{storyBeats.map(({ id, title, body, limit, chapter, place, scrub, artifact }) => (
+			<article
+				class="beat"
+				id={id}
+				data-beat
+				data-chapter-of={chapterOf(chapter)}
+				data-place={JSON.stringify(place)}
+				data-scrub={scrub && JSON.stringify(scrub)}
+			>
+				<h3>{title}</h3>
+				<p>{body}</p>
+				{limit && <p class="beat-limit">{limit}</p>}
+				<figure class="story-art">
+					<figcaption>{artifact.caption}</figcaption>
+					<pre>{artifact.lines.map((pieces, index) => (
+						<span class="art-line" style={`--line:${index}`}>{pieces.map(({ text, tone }) => <span class={`art-${tone}`}>{text}</span>)}</span>
+					))}</pre>
+				</figure>
+			</article>
+		))}
+	</div>
+
+	<div class="story-dock-col" data-dock-col>
+		<div class="story-dock" data-dock>
+			<ol class="story-chapters" aria-label="Where the story is">
+				{storyChapters.map((name, index) => (
+					<li><button type="button" data-chapter={index}>{name}</button></li>
+				))}
+			</ol>
+			<div data-anchor>
+				<div class="story-fly" data-fly>
+					<LiveTui id="landing-tui" keys={false} controls={false} caption={false} />
+				</div>
+			</div>
+			<div class="story-dock-bar">
+				<p data-drive aria-live="polite">Scrolling drives it. Click it to take over.</p>
+				<LiveTuiKeys for="landing-tui" />
+			</div>
+		</div>
+	</div>
+</section>
+
+<style>
+	.story {
+		/* Over the hero, so the TUI it carries up there shows above the hero's copy. */
+		position: relative;
+		z-index: 1;
+		display: grid;
+		grid-template-columns: minmax(0, 4fr) minmax(0, 7fr);
+		column-gap: 56px;
+		padding-top: 120px;
+	}
+	.story-beats {
+		align-self: start;
+	}
+	h2 {
+		margin: 0;
+		font-size: var(--v-fs-h2);
+		line-height: 1.04;
+		letter-spacing: var(--v-track-h2);
+		font-weight: var(--v-weight-head);
+		color: var(--v-bright);
+	}
+	h3 {
+		margin: 0;
+		font-size: clamp(24px, 2.3vw, 32px);
+		line-height: 1.1;
+		letter-spacing: -0.025em;
+		font-weight: var(--v-weight-head);
+		color: var(--v-bright);
+	}
+
+	.story-phone-head,
+	.beat-pane {
+		display: none;
+	}
+	.story-statement {
+		max-width: 34ch;
+		margin: 24px 0 0;
+		font-size: clamp(19px, 1.55vw, 23px);
+		line-height: 1.45;
+		letter-spacing: -0.01em;
+	}
+	.story-proof {
+		max-width: 44ch;
+		margin: 20px 0 0;
+		font-size: 15.5px;
+		color: var(--v-grey);
+	}
+	.story-cue {
+		position: relative;
+		max-width: 40ch;
+		margin: 28px 0 0;
+		padding-left: 16px;
+	}
+	.story-cue::before {
+		content: "";
+		position: absolute;
+		left: 0;
+		top: 0.35em;
+		bottom: 0.35em;
+		width: 3px;
+		border-radius: 2px;
+		background: var(--v-accent-fill);
+	}
+
+	/* A beat is tall enough that the reading line rests on it a while; its text starts at its top, so the
+	   first beat follows the statement without a gap. */
+	.beat {
+		min-height: 78vh;
+		padding: 0 0 12vh;
+		transition: opacity 0.4s var(--v-ease);
+	}
+	.beat:last-child {
+		min-height: 60vh;
+	}
+	.story-head {
+		min-height: 0;
+		padding-bottom: 14vh;
+	}
+	/* Once the tour runs, the beats it isn't on fade back. */
+	:global([data-tour]) .beat:not(.is-active) {
+		opacity: 0.32;
+	}
+	.beat > p {
+		max-width: 42ch;
+		margin: 14px 0 0;
+	}
+	.beat > .beat-limit {
+		max-width: 44ch;
+		margin-top: 12px;
+		font-size: var(--v-fs-small);
+		color: var(--v-grey);
+	}
+	.beat-limit::before {
+		content: "Alpha: ";
+		color: var(--v-accent);
+	}
+
+	.story-art {
+		margin: 26px 0 0;
+		padding: 14px 18px 16px;
+		background: var(--v-code);
+		border: 1px solid var(--v-code-line);
+		border-radius: var(--v-radius-lg);
+	}
+	.story-art figcaption {
+		margin-bottom: 10px;
+		font-family: var(--v-mono);
+		font-size: 12px;
+		color: var(--v-grey);
+	}
+	.story-art pre {
+		margin: 0;
+		font-family: var(--v-mono);
+		font-size: 11.5px;
+		line-height: 1.65;
+		color: var(--v-fg);
+		/* The real file's lines, wrapped to the column rather than scrolled sideways. */
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
+	}
+	.art-line {
+		display: block;
+		min-height: 1.65em;
+	}
+	.art-dim {
+		color: var(--v-grey);
+	}
+	.art-bright {
+		color: var(--v-bright);
+	}
+	.art-accent {
+		color: var(--v-accent);
+	}
+	.art-ok {
+		color: var(--v-ok);
+	}
+	.art-bad {
+		color: var(--v-bad);
+	}
+	/* A beat's artifact writes itself in, line by line, the first time the tour reaches it. */
+	@media (prefers-reduced-motion: no-preference) {
+		:global([data-tour]) .beat:not(.is-seen) .art-line {
+			opacity: 0;
+			transform: translateY(6px);
+		}
+		:global([data-tour]) .beat.is-seen .art-line {
+			animation: art-line 0.5s var(--v-ease) both;
+			animation-delay: calc(var(--line) * 40ms + 120ms);
+		}
+	}
+	@keyframes art-line {
+		from {
+			opacity: 0;
+			transform: translateY(6px);
+		}
+	}
+
+	.story-dock-col {
+		min-width: 0;
+	}
+	.story-dock {
+		position: sticky;
+		top: max(28px, calc(50vh - 300px));
+	}
+	/* tour.ts fades the strip and the bar in as the TUI lands in the dock. */
+	.story-chapters,
+	.story-dock-bar {
+		opacity: var(--docked, 1);
+		transition: opacity 0.25s;
+	}
+	.story-chapters {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px;
+		margin: 0 0 14px;
+		padding: 0;
+		list-style: none;
+	}
+	.story-chapters button {
+		all: unset;
+		cursor: pointer;
+		padding: 6px 12px;
+		border-radius: var(--v-radius);
+		font-size: 14px;
+		color: var(--v-grey);
+		transition:
+			color 0.2s,
+			background 0.2s;
+	}
+	.story-chapters button:hover {
+		color: var(--v-bright);
+	}
+	.story-chapters button:focus-visible {
+		outline: 2px solid var(--v-accent);
+		outline-offset: 2px;
+	}
+	.story-chapters button:global(.is-past) {
+		color: var(--v-fg);
+	}
+	.story-chapters button:global(.is-past)::before {
+		content: "✓ ";
+		color: var(--v-ok);
+	}
+	.story-chapters button:global(.is-on) {
+		background: var(--v-accent-fill);
+		color: var(--v-on-accent);
+		font-weight: 600;
+	}
+	.story-fly {
+		transform-origin: 100% 0;
+	}
+	.story-dock-bar {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 16px;
+		margin-top: 14px;
+	}
+	.story-dock-bar p {
+		margin: 0;
+		font-size: var(--v-fs-small);
+		color: var(--v-grey);
+		transition: color 0.2s;
+	}
+	:global([data-driving]) .story-dock-bar p {
+		color: var(--v-accent);
+	}
+
+	/* Narrow: the dock is a strip stuck over the beats, and the beats run under it in one column. */
+	@media (max-width: 999px) {
+		.story {
+			display: flex;
+			flex-direction: column;
+			padding-top: 0;
+		}
+		.story-beats {
+			display: contents;
+		}
+		.story-dock-col {
+			order: -1;
+			box-sizing: border-box;
+			position: sticky;
+			top: 0;
+			z-index: 2;
+			margin: 0 calc(var(--v-gutter) * -1);
+			padding: 10px var(--v-gutter) 10px;
+			background: var(--v-bg);
+			border-bottom: 1px solid var(--v-line);
+		}
+		.story-dock {
+			position: static;
+		}
+		.story-phone-head {
+			display: block;
+			padding-top: 40px;
+		}
+		.story-phone-head p {
+			max-width: 44ch;
+			margin: 10px 0 0;
+			font-size: 15px;
+			color: var(--v-grey);
+		}
+		.beat {
+			min-height: 64vh;
+			padding: 28px 0 8vh;
+		}
+		.beat-pane {
+			display: block;
+			min-height: 30vh;
+		}
+		.beat-pane h3 {
+			font-size: 22px;
+		}
+		.story-head {
+			min-height: 0;
+			padding-top: 64px;
+		}
+	}
+	@media (max-width: 640px) {
+		.story-chapters {
+			flex-wrap: nowrap;
+			gap: 2px;
+			margin-bottom: 8px;
+		}
+		.story-chapters button {
+			padding: 4px 7px;
+			font-size: 12px;
+		}
+		.story-chapters button:global(.is-past)::before {
+			content: "";
+		}
+		.story-dock-bar {
+			flex-direction: column-reverse;
+			align-items: stretch;
+			gap: 6px;
+			margin-top: 8px;
+		}
+		.story-dock-bar p {
+			font-size: 12px;
+		}
+		/* One row of keys, so the strip stays short. */
+		.story-dock-bar :global(.vtui-keys) {
+			grid-template-columns: repeat(8, minmax(0, 1fr));
+			gap: 4px;
+		}
+		.story-dock-bar :global(.vtui-key) {
+			min-height: 40px;
+			padding: 8px 0;
+			font-size: 13px;
+		}
+		.story-art {
+			padding: 12px 14px;
+		}
+		.story-art pre {
+			font-size: 10.5px;
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.beat,
+		.story-chapters,
+		.story-dock-bar {
+			transition: none;
+		}
+	}
+</style>

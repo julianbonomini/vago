@@ -15,7 +15,12 @@
    The band (--v-band) is the soft shade of the header and footer: a step
    darker than the page in light, a step lighter in dark. --v-band-word is a
    quiet tone of the page's ink for big decorative type on it, never for
-   text that has to be read. */
+   text that has to be read.
+
+   A file or a command's output shown on the page sits on --v-code inside a
+   --v-code-line border, a step off the page in both themes so it reads as
+   a thing of its own, also in dark, where --v-raised barely parts from the
+   page. */
 
 :root {
 	/* Type */
@@ -63,6 +68,8 @@
 	--v-row-hot: rgb(255 138 61 / 0.16);
 	--v-band: #e6e4de;
 	--v-band-word: #cbc7be;
+	--v-code: #e8e6e1;
+	--v-code-line: #d6d3cc;
 
 	/* The terminal is dark in both themes. */
 	--v-t-bg: #141414;
@@ -92,6 +99,8 @@
 	--v-row-hot: rgb(255 138 61 / 0.12);
 	--v-band: #181818;
 	--v-band-word: #303030;
+	--v-code: #1e1e1e;
+	--v-code-line: #3a3a3a;
 	--v-t-line: #262626;
 	--v-t-shadow:
 		0 40px 120px -40px rgb(0 0 0 / 0.9), 0 0 0 1px rgb(255 255 255 / 0.02);

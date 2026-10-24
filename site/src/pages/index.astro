@@ -1,8 +1,18 @@
 ---
-// The landing page.
+// The landing page: the hero, then the story, with the one live TUI tour.ts carries through both.
 import PageFrame from "../components/PageFrame.astro";
 import Hero from "../landing/Hero.astro";
+import Story from "../landing/Story.astro";
 ---
 <PageFrame>
-	<Hero />
+	<div data-landing>
+		<Hero />
+		<Story />
+	</div>
 </PageFrame>
+
+<script>
+	import { mountTour } from "../landing/tour.ts";
+
+	for (const page of document.querySelectorAll<HTMLElement>("[data-landing]")) mountTour(page);
+</script>

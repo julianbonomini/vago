@@ -37,7 +37,7 @@ function contrast(a: string, b: string): number {
 const pairs = [
 	{
 		texts: ["fg", "bright", "grey", "accent", "ok", "bad"],
-		surfaces: ["bg", "raised", "band"],
+		surfaces: ["bg", "raised", "band", "code"],
 	},
 	{ texts: ["bg"], surfaces: ["bright"] },
 	{ texts: ["on-accent"], surfaces: ["accent-fill", "accent-hover"] },
