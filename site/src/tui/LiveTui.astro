@@ -5,6 +5,9 @@
 // through liveTui(element) from live-tui.ts, the element being the one with data-live-tui, sending it to a
 // ReplayPlace from tui-replay.ts.
 //
+// A page that scales or moves the TUI turns off its key row and replay controls, which would shrink with it,
+// and puts a LiveTuiKeys where it likes.
+//
 // With reduced motion the replay doesn't play by itself: it rests on one moment, and every key still works.
 import type { ReplayPlace } from "./tui-replay.ts";
 import { placeReplay, replayFrame, replayLabel, restingState, tuiFrames } from "./tui-replay.ts";
@@ -20,12 +23,22 @@ type Props = {
 	autoplay?: boolean;
 	/** Whether its key row shows under the window; false when the page puts a LiveTuiKeys elsewhere. */
 	keys?: boolean;
+	/** Whether the replay's moment and its Play button show under the window. */
+	controls?: boolean;
 	/** Whether the line saying it's a replay shows under it; false only where the page says so itself. */
 	caption?: boolean;
 	class?: string;
 };
 
-const { id, place = {}, autoplay = true, keys = true, caption = true, class: className = "" } = Astro.props;
+const {
+	id,
+	place = {},
+	autoplay = true,
+	keys = true,
+	controls = true,
+	caption = true,
+	class: className = "",
+} = Astro.props;
 const start = placeReplay(restingState, place);
 const { frame, help } = replayFrame(start);
 const rows = screenRows(frame, help);
@@ -55,18 +68,23 @@ const { width, height } = tuiFrames.size;
 				style={`--cols:${width};--rows:${height}`}
 			>
 				{rows.map((row) => <div class="row" data-row set:html={row} />)}
+				<i class="vtui-spot" data-spot aria-hidden="true"></i>
 			</div>
 		</div>
 		<p class="vtui-toast" data-toast role="status" aria-live="polite"></p>
 	</div>
-	<div class="vtui-under">
-		{keys && <LiveTuiKeys />}
-		<div class="vtui-replay">
-			<span class="vtui-meter" data-meter aria-hidden="true"></span>
-			<span data-status>{replayLabel(start)}</span>
-			<button type="button" class="vtui-play" data-play aria-pressed="false">Play</button>
+	{(keys || controls) && (
+		<div class="vtui-under">
+			{keys && <LiveTuiKeys />}
+			{controls && (
+				<div class="vtui-replay">
+					<span class="vtui-meter" data-meter aria-hidden="true"></span>
+					<span data-status>{replayLabel(start)}</span>
+					<button type="button" class="vtui-play" data-play aria-pressed="false">Play</button>
+				</div>
+			)}
 		</div>
-	</div>
+	)}
 	{caption && (
 		<p class="vtui-caption">
 			A replay of Vago's TUI on an example Project. The TUI drew every frame itself, from {tuiFrames.project},
@@ -131,6 +149,8 @@ const { width, height } = tuiFrames.size;
 		width: max-content;
 		font-family: var(--v-term);
 		font-size: clamp(3px, calc(100cqw / (var(--cols) * 0.602)), 17px);
+		/* One row's height, which the rows, the box lines and the spotlight all take. */
+		--row-height: 1.17em;
 		line-height: 1.17;
 		color: var(--v-t-fg);
 		font-variant-ligatures: none;
@@ -142,7 +162,7 @@ const { width, height } = tuiFrames.size;
 		outline-offset: 4px;
 	}
 	.vtui-screen .row {
-		height: 1.17em;
+		height: var(--row-height);
 		white-space: pre;
 	}
 	.vtui-screen i {
@@ -159,7 +179,7 @@ const { width, height } = tuiFrames.size;
 	.vtui-screen .b {
 		position: relative;
 		display: inline-block;
-		height: 1.17em;
+		height: var(--row-height);
 		vertical-align: top;
 	}
 	.vtui-screen .b {
@@ -217,6 +237,29 @@ const { width, height } = tuiFrames.size;
 	.vtui-screen .b.full::after,
 	.vtui-screen .b.top::after {
 		display: none;
+	}
+	/* The spotlight, laid in the screen's own cells so it follows any scale; the shadow dims the rest. */
+	.vtui-spot {
+		position: absolute;
+		top: calc(var(--spot-row, 0) * var(--row-height) - 0.2em);
+		left: calc(var(--spot-column, 0) * 1ch - 0.3ch);
+		width: calc(var(--spot-columns, 0) * 1ch + 0.6ch);
+		height: calc(var(--spot-rows, 0) * var(--row-height) + 0.4em);
+		border-radius: var(--v-radius);
+		box-shadow:
+			0 0 0 2px var(--v-accent-fill),
+			0 0 0 300em rgb(8 8 8 / 0.62);
+		pointer-events: none;
+		opacity: 0;
+		transition:
+			opacity 0.35s var(--v-ease),
+			top 0.55s var(--v-ease),
+			left 0.55s var(--v-ease),
+			width 0.55s var(--v-ease),
+			height 0.55s var(--v-ease);
+	}
+	.vtui-spot.is-on {
+		opacity: 1;
 	}
 	.vtui-toast {
 		position: absolute;

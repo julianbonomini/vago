@@ -44,9 +44,9 @@ export type LiveTui = {
 	play(): void;
 	pause(): void;
 	state(): LiveTuiState;
-	/** Where the pane named `name` is drawn now, in viewport pixels, or undefined when the screen shows no
-	 *  such pane. Follows any transform on the TUI. */
-	paneRect(name: TuiPaneName): DOMRect | undefined;
+	/** Lights the pane named `name` and dims the rest of the screen, following the pane while the screen
+	 *  changes and going dark while it shows no such pane. Undefined puts the spotlight out. */
+	spotlight(name: TuiPaneName | undefined): void;
 	/** Calls `listener` after every change of what shows, the clock's included. */
 	onChange(listener: (state: LiveTuiState) => void): void;
 	/** Calls `listener` when the visitor takes the TUI over: presses one of its keys, taps a key of a key
@@ -80,6 +80,7 @@ function mount(root: HTMLElement): LiveTui {
 	const status = root.querySelector<HTMLElement>("[data-status]");
 	const meter = root.querySelector<HTMLElement>("[data-meter]");
 	const playButton = root.querySelector<HTMLButtonElement>("[data-play]");
+	const spot = root.querySelector<HTMLElement>("[data-spot]");
 	const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 	const rows = [...screen.querySelectorAll<HTMLElement>("[data-row]")];
 	const shown = rows.map((row) => row.innerHTML);
@@ -87,6 +88,7 @@ function mount(root: HTMLElement): LiveTui {
 	let state = placeReplay(restingState, JSON.parse(root.dataset.place ?? "{}"));
 	let playing = false;
 	let visible = false;
+	let spotlit: TuiPaneName | undefined;
 	const changeListeners: ((state: LiveTuiState) => void)[] = [];
 	const takeoverListeners: (() => void)[] = [];
 
@@ -108,6 +110,16 @@ function mount(root: HTMLElement): LiveTui {
 			shown[index] = html;
 			const row = rows[index];
 			if (row !== undefined) row.innerHTML = html;
+		}
+		const pane = tuiFrames.frames[frame]?.panes.find(
+			({ name }) => name === spotlit,
+		);
+		spot?.classList.toggle("is-on", pane !== undefined);
+		if (spot !== null && pane !== undefined) {
+			spot.style.setProperty("--spot-row", String(pane.box.row));
+			spot.style.setProperty("--spot-column", String(pane.box.column));
+			spot.style.setProperty("--spot-rows", String(pane.box.rows));
+			spot.style.setProperty("--spot-columns", String(pane.box.columns));
 		}
 		if (status !== null) status.textContent = replayLabel(state);
 		meter?.style.setProperty("--time", String(replayTime(state)));
@@ -241,21 +253,9 @@ function mount(root: HTMLElement): LiveTui {
 		play: () => setPlaying(true),
 		pause: () => setPlaying(false),
 		state: snapshot,
-		paneRect: (name) => {
-			const { frame } = replayFrame(state);
-			const pane = tuiFrames.frames[frame]?.panes.find(
-				(each) => each.name === name,
-			);
-			if (pane === undefined) return undefined;
-			const area = screen.getBoundingClientRect();
-			const cellWidth = area.width / tuiFrames.size.width;
-			const cellHeight = area.height / tuiFrames.size.height;
-			return new DOMRect(
-				area.left + pane.box.column * cellWidth,
-				area.top + pane.box.row * cellHeight,
-				pane.box.columns * cellWidth,
-				pane.box.rows * cellHeight,
-			);
+		spotlight: (name) => {
+			spotlit = name;
+			draw();
 		},
 		onChange: (listener) => {
 			changeListeners.push(listener);
