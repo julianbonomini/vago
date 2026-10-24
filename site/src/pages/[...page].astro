@@ -1,0 +1,16 @@
+---
+// Every docs, cookbook and agents page, rendered from its Markdown in src/content/ inside the docs layout.
+import { render } from "astro:content";
+import DocsLayout from "../docs/DocsLayout.astro";
+import { type DocPage, docPageRoutes } from "../docs/doc-pages.ts";
+
+export const getStaticPaths = docPageRoutes;
+
+type Props = { page: DocPage };
+
+const { page } = Astro.props;
+const { Content } = await render(page.entry);
+---
+<DocsLayout page={page}>
+	<Content />
+</DocsLayout>

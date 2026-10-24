@@ -1,0 +1,125 @@
+---
+// Search over the docs, cookbook and agents pages, from the Pagefind index the build writes to /pagefind/.
+// Only pages that mark their content data-pagefind-body are indexed, so the landing page stays out.
+---
+<div class="search" role="search">
+	<label class="search-label" for="docs-search">Search the docs</label>
+	<input id="docs-search" type="search" placeholder="Search" autocomplete="off" spellcheck="false" data-docs-search />
+	<ol class="results" aria-live="polite" data-docs-results></ol>
+</div>
+
+<script>
+	// The part of Pagefind's browser API this search uses.
+	type PagefindResult = {
+		data: () => Promise<{ url: string; meta: { title?: string }; excerpt: string }>;
+	};
+	type Pagefind = {
+		debouncedSearch: (term: string) => Promise<{ results: PagefindResult[] } | null>;
+	};
+
+	const input = document.querySelector<HTMLInputElement>("[data-docs-search]");
+	const list = document.querySelector<HTMLOListElement>("[data-docs-results]");
+	let pagefind: Promise<Pagefind> | undefined;
+
+	input?.addEventListener("input", async () => {
+		if (!list) return;
+		const term = input.value.trim();
+		// The index exists only in a build, so it loads on first use; the URL is a variable so Vite leaves it be.
+		const url = "/pagefind/pagefind.js";
+		pagefind ??= import(/* @vite-ignore */ url);
+		const search = await (await pagefind).debouncedSearch(term);
+		// null: a later keystroke replaced this search.
+		if (search === null) return;
+		const results = await Promise.all(search.results.slice(0, 8).map((result) => result.data()));
+		list.replaceChildren(
+			...results.map(({ url, meta, excerpt }) => {
+				const item = document.createElement("li");
+				const link = document.createElement("a");
+				link.href = url;
+				const title = document.createElement("span");
+				title.className = "result-title";
+				title.textContent = meta.title ?? url;
+				// Pagefind's excerpt is page text it escaped, with the matches in <mark>.
+				const text = document.createElement("span");
+				text.className = "result-excerpt";
+				text.innerHTML = excerpt;
+				link.append(title, text);
+				item.append(link);
+				return item;
+			}),
+		);
+		if (term && results.length === 0) {
+			const item = document.createElement("li");
+			item.className = "result-none";
+			item.textContent = "Nothing matches.";
+			list.replaceChildren(item);
+		}
+	});
+</script>
+
+<style>
+	.search-label {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+	}
+	input {
+		width: 100%;
+		padding: 9px 12px;
+		background: var(--v-raised);
+		border: 1px solid var(--v-line);
+		border-radius: var(--v-radius);
+		color: var(--v-bright);
+		font: inherit;
+		font-size: 15px;
+	}
+	input::placeholder {
+		color: var(--v-grey);
+	}
+	input:focus-visible {
+		outline: 2px solid var(--v-accent);
+		outline-offset: 1px;
+	}
+	.results {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+	.results:not(:empty) {
+		margin-top: 10px;
+		border: 1px solid var(--v-line);
+		border-radius: var(--v-radius);
+	}
+	.results :global(li + li) {
+		border-top: 1px solid var(--v-line);
+	}
+	.results :global(a) {
+		display: block;
+		padding: 10px 12px;
+		text-decoration: none;
+	}
+	.results :global(a:hover) {
+		background: var(--v-raised);
+	}
+	.results :global(.result-title) {
+		display: block;
+		font-weight: 600;
+		color: var(--v-bright);
+	}
+	.results :global(.result-excerpt) {
+		display: block;
+		font-size: var(--v-fs-small);
+		color: var(--v-fg);
+	}
+	.results :global(mark) {
+		background: var(--v-row-hot);
+		color: var(--v-bright);
+	}
+	.results :global(.result-none) {
+		padding: 10px 12px;
+		font-size: var(--v-fs-small);
+		color: var(--v-grey);
+	}
+</style>

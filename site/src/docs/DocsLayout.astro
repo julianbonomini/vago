@@ -1,0 +1,201 @@
+---
+// A docs, cookbook or agents page inside the page frame: search and the sidebar beside the page (above it,
+// behind a Menu, on a phone), then the page's article, the only part search indexes.
+import PageFrame from "../components/PageFrame.astro";
+import type { DocPage } from "./doc-pages.ts";
+import DocsSearch from "./DocsSearch.astro";
+import DocsSidebar from "./DocsSidebar.astro";
+
+type Props = { page: DocPage };
+
+const { page } = Astro.props;
+---
+<PageFrame title={page.title} description={page.description} markdownPath={page.markdownPath}>
+	<div class="docs">
+		<aside class="docs-side">
+			<DocsSearch />
+			<div class="nav-wide">
+				<DocsSidebar label="Docs" />
+			</div>
+			<details class="nav-narrow">
+				<summary>Menu</summary>
+				<DocsSidebar label="Docs menu" />
+			</details>
+		</aside>
+		<article class="prose" data-pagefind-body>
+			<h1>{page.title}</h1>
+			<p class="lede">{page.description}</p>
+			<slot />
+			<p class="copy">
+				<a href={page.markdownPath} data-pagefind-ignore>This page as Markdown</a>
+			</p>
+		</article>
+	</div>
+</PageFrame>
+
+<style>
+	.docs {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		gap: 28px;
+		padding-top: 40px;
+	}
+	.nav-wide {
+		display: none;
+	}
+	.nav-narrow {
+		margin-top: 12px;
+	}
+	.nav-narrow summary {
+		padding: 9px 12px;
+		border: 1px solid var(--v-line);
+		border-radius: var(--v-radius);
+		font-family: var(--v-mono);
+		font-size: 13px;
+		cursor: pointer;
+	}
+	.nav-narrow[open] summary {
+		margin-bottom: 20px;
+	}
+	@media (min-width: 900px) {
+		.docs {
+			grid-template-columns: 240px minmax(0, 1fr);
+			gap: 64px;
+			padding-top: 56px;
+		}
+		.docs-side {
+			position: sticky;
+			top: 24px;
+			align-self: start;
+			max-height: calc(100vh - 48px);
+			overflow-y: auto;
+			padding-bottom: 24px;
+		}
+		.nav-wide {
+			display: block;
+			margin-top: 28px;
+		}
+		.nav-narrow {
+			display: none;
+		}
+	}
+
+	/* The page's Markdown, rendered. Code blocks come from Shiki's css-variables theme, whose token colours
+	   are mapped here onto text tokens that tokens.css checks against --v-code. */
+	.prose {
+		min-width: 0;
+		max-width: 72ch;
+		--astro-code-foreground: var(--v-fg);
+		--astro-code-background: var(--v-code);
+		--astro-code-token-keyword: var(--v-accent);
+		--astro-code-token-string: var(--v-ok);
+		--astro-code-token-string-expression: var(--v-ok);
+		--astro-code-token-comment: var(--v-grey);
+		--astro-code-token-constant: var(--v-bright);
+		--astro-code-token-function: var(--v-bright);
+		--astro-code-token-parameter: var(--v-fg);
+		--astro-code-token-punctuation: var(--v-fg);
+		--astro-code-token-link: var(--v-accent);
+	}
+	.prose h1 {
+		margin: 0;
+		font-size: var(--v-fs-h2);
+		line-height: 1.04;
+		letter-spacing: var(--v-track-h2);
+		font-weight: var(--v-weight-head);
+		color: var(--v-bright);
+	}
+	.lede {
+		margin: 16px 0 0;
+		font-size: 19px;
+		color: var(--v-grey);
+	}
+	.prose :global(h2) {
+		margin: 56px 0 0;
+		font-size: 26px;
+		line-height: 1.2;
+		letter-spacing: -0.02em;
+		font-weight: var(--v-weight-head);
+		color: var(--v-bright);
+	}
+	.prose :global(h3) {
+		margin: 36px 0 0;
+		font-size: var(--v-fs-h3);
+		font-weight: var(--v-weight-head);
+		color: var(--v-bright);
+	}
+	.prose :global(p),
+	.prose :global(ul),
+	.prose :global(ol),
+	.prose :global(table) {
+		margin: 18px 0 0;
+	}
+	.prose :global(li + li) {
+		margin-top: 6px;
+	}
+	.prose :global(a) {
+		color: var(--v-accent);
+		text-underline-offset: 3px;
+	}
+	.prose :global(strong) {
+		color: var(--v-bright);
+	}
+	.prose :global(code) {
+		font-family: var(--v-mono);
+		font-size: 0.88em;
+	}
+	.prose :global(:not(pre) > code) {
+		padding: 1px 5px;
+		background: var(--v-code);
+		border-radius: 3px;
+		color: var(--v-bright);
+		overflow-wrap: anywhere;
+	}
+	.prose :global(pre) {
+		margin: 20px 0 0;
+		padding: 18px 22px;
+		overflow-x: auto;
+		border: 1px solid var(--v-code-line);
+		border-radius: var(--v-radius-lg);
+		font-size: 13.5px;
+		line-height: 1.7;
+	}
+	.prose :global(pre code) {
+		font-size: inherit;
+	}
+	.prose :global(table) {
+		display: block;
+		overflow-x: auto;
+		border-collapse: collapse;
+		font-size: 15px;
+	}
+	.prose :global(th),
+	.prose :global(td) {
+		padding: 8px 12px;
+		border-bottom: 1px solid var(--v-line);
+		text-align: left;
+		vertical-align: top;
+	}
+	.prose :global(th) {
+		color: var(--v-bright);
+	}
+	.copy {
+		margin-top: 56px;
+		padding-top: 20px;
+		border-top: 1px solid var(--v-line);
+		font-family: var(--v-mono);
+		font-size: 13px;
+	}
+	.copy a {
+		color: var(--v-grey);
+	}
+	.copy a:hover {
+		color: var(--v-accent);
+	}
+	@media (max-width: 640px) {
+		.prose :global(pre) {
+			padding: 14px 16px;
+			font-size: 12px;
+		}
+	}
+</style>

@@ -30,3 +30,24 @@ export function servedAt(path: string): string | undefined {
 	const index = join(file, "index.html");
 	return existsSync(index) ? readFileSync(index, "utf8") : undefined;
 }
+
+// The part of Pagefind's search API searchBuiltSite uses.
+type Pagefind = {
+	options: (options: { basePath: string; baseUrl: string }) => Promise<void>;
+	search: (
+		term: string,
+	) => Promise<{ results: { data: () => Promise<{ url: string }> }[] }>;
+};
+
+/** The site path of every page the build's search index returns for `term`, best match first. */
+export async function searchBuiltSite(term: string): Promise<string[]> {
+	const pagefind: Pagefind = await import(
+		join(dist, "pagefind", "pagefind.js")
+	);
+	await pagefind.options({
+		basePath: `file://${join(dist, "pagefind")}/`,
+		baseUrl: "/",
+	});
+	const { results } = await pagefind.search(term);
+	return Promise.all(results.map(async (result) => (await result.data()).url));
+}

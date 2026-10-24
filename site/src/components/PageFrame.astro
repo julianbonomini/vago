@@ -4,8 +4,9 @@
 import "@fontsource-variable/geist";
 import "@fontsource/jetbrains-mono/400.css";
 import "@fontsource/jetbrains-mono/700.css";
+import { docPages } from "../docs/doc-pages.ts";
 import "../styles/tokens.css";
-import { repoUrl, siteUrl } from "../site.ts";
+import { repoUrl, siteDescription, siteUrl } from "../site.ts";
 import { themeStorageKey } from "../theme.ts";
 import ThemeToggle from "./ThemeToggle.astro";
 
@@ -13,14 +14,19 @@ type Props = {
 	/** The page's name, shown before "· Vago" in the tab; the landing page leaves it out. */
 	title?: string;
 	description?: string;
+	/** The site path of the page's Markdown copy, linked from the head for agents. Docs pages have one. */
+	markdownPath?: string;
 };
 
 const {
 	title,
-	description = "Vago runs your Workflow on a Goal in your repo, one Ticket at a time, and leaves you a PR.",
+	description = siteDescription,
+	markdownPath,
 } = Astro.props;
 const pageTitle = title ? `${title} · Vago` : "Vago";
 const pageUrl = new URL(Astro.url.pathname, siteUrl);
+// The header's Docs link opens the first docs page, Install.
+const [firstDocPage] = await docPages();
 ---
 <!doctype html>
 <html lang="en">
@@ -30,6 +36,7 @@ const pageUrl = new URL(Astro.url.pathname, siteUrl);
 		<title>{pageTitle}</title>
 		<meta name="description" content={description} />
 		<link rel="canonical" href={pageUrl} />
+		{markdownPath && <link rel="alternate" type="text/markdown" href={markdownPath} />}
 		{/* The link preview a chat or social post shows: the wordmark on the band, 1200 by 630. */}
 		<meta property="og:type" content="website" />
 		<meta property="og:site_name" content="Vago" />
@@ -63,6 +70,7 @@ const pageUrl = new URL(Astro.url.pathname, siteUrl);
 			<div class="v-top-in">
 				<a class="v-word" href="/" aria-label="Vago, home">vago</a>
 				<nav aria-label="Main">
+					{firstDocPage && <a href={firstDocPage.path}>Docs</a>}
 					<a href={repoUrl}>GitHub</a>
 					<ThemeToggle />
 				</nav>
