@@ -6,50 +6,24 @@ import {
 	focusedPane,
 	placeReplay,
 	pressReplayKey,
-	type ReplayPlace,
 	type ReplayState,
 	replayFrame,
 	restingState,
 	tuiFrames,
 } from "../src/tui/tui-replay.ts";
 import { servedAt } from "./built-site.ts";
+import {
+	docsInSidebar,
+	liveTuis,
+	numbersNotInFrames,
+	vagoRunOutput,
+} from "./docs-page.ts";
 
 const running = servedAt("/docs/running-and-watching/") ?? "";
 const planning = servedAt("/docs/planning-a-goal/") ?? "";
 
-function decodeEntities(html: string): string {
-	return html
-		.replaceAll("&#34;", '"')
-		.replaceAll("&quot;", '"')
-		.replaceAll("&#39;", "'")
-		.replaceAll("&lt;", "<")
-		.replaceAll("&gt;", ">")
-		.replaceAll("&amp;", "&");
-}
-
-// Each live TUI on `html`: where it starts, and the text of the first screen drawn into the page.
-function liveTuis(html: string): { place: ReplayPlace; text: string }[] {
-	return html
-		.split("data-live-tui")
-		.slice(1)
-		.map((tui) => ({
-			place: JSON.parse(
-				decodeEntities(tui.match(/data-place="([^"]*)"/)?.[1] ?? "{}"),
-			),
-			text: decodeEntities(
-				[...tui.matchAll(/<div class="row" data-row>(.*?)<\/div>/g)]
-					.map(([, row = ""]) => row.replace(/<[^>]+>/g, ""))
-					.join("\n"),
-			),
-		}));
-}
-
-const frameText = tuiFrames.lines.map(({ text }) => text).join("\n");
-
 test("the two pages follow Workflows in the sidebar", () => {
-	const docs = [...running.matchAll(/href="(\/docs\/[^"#]+)"/g)].map(
-		([, path]) => path,
-	);
+	const docs = docsInSidebar(running);
 	const workflows = docs.indexOf("/docs/workflows/");
 	expect(docs.slice(workflows + 1, workflows + 3)).toEqual([
 		"/docs/running-and-watching/",
@@ -82,8 +56,7 @@ test("Planning a Goal embeds the TUI on the planning view, its session and Previ
 
 test("the vago run output on Running and watching is in vago run's format, with the frames' numbers", () => {
 	const copy = servedAt("/docs/running-and-watching.md") ?? "";
-	const output =
-		copy.match(/```text\n(Worktree [\s\S]*?)```/)?.[1]?.split("\n") ?? [];
+	const output = vagoRunOutput(copy);
 	// As progress.ts prints them: the time in UTC, what it took and cost right-aligned, the Step, the outcome.
 	const stepLines = output.filter((line) => line.startsWith("  20"));
 	expect(stepLines.length).toBeGreaterThan(5);
@@ -91,17 +64,10 @@ test("the vago run output on Running and watching is in vago run's format, with 
 		expect(line).toMatch(
 			/^ {2}\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ {2}[ \dhms.]{6} {2}[ $\d.]{6} {2}\S.* (started|ok|skipped)$/,
 		);
-	// Each Ticket's time and cost in the summary, as its Ticket pane gives them. `vago run` writes 3m34s
-	// where the TUI writes 3m 34s.
+	// Each Ticket's time and cost in the summary, as its Ticket pane gives them.
 	const summary = output.filter((line) => /^\d\d-\S+ +done /.test(line));
 	expect(summary.length).toBeGreaterThan(1);
-	const numbers = summary.flatMap((line) => [
-		...[...line.matchAll(/\b(\d+)m(\d\d)s\b/g)].map(
-			([, minutes, seconds]) => `${minutes}m ${Number(seconds)}s`,
-		),
-		...(line.match(/\$\d+\.\d\d/g) ?? []),
-	]);
-	expect(numbers.filter((text) => !frameText.includes(text))).toEqual([]);
+	expect(numbersNotInFrames(summary)).toEqual([]);
 });
 
 test("each page's Markdown copy shows its TUI's screens as text", () => {

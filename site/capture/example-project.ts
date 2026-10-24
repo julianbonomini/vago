@@ -438,6 +438,9 @@ function runEntry(run: ExampleRun, started: number, ended?: number): string {
 	return lines.join("\n");
 }
 
+// The minutes `vago run` waits before each retry of a failed agent Step, as pass-runner.ts has them.
+const retryWaitMinutes = [1, 1, 5];
+
 // `runs` end to end from `start`, a failed Run followed by the wait before its retry. Returns their
 // entries and when the last one ended.
 function layRuns(
@@ -446,12 +449,15 @@ function layRuns(
 ): { toml: string; end: number } {
 	let at = start;
 	let toml = "";
+	// How many times the Step of the Run before has been retried so far.
+	let retries = 0;
 	for (const run of runs) {
 		const end = at + run.seconds * 1000;
 		toml += `\n${runEntry(run, at, end)}`;
-		const wait =
-			run.outcome === "exit 1" ? (run.resumed ? 5 : 1) * minute : 400;
-		at = end + wait;
+		const retryWait =
+			run.outcome === "exit 1" ? retryWaitMinutes[retries] : undefined;
+		retries = retryWait === undefined ? 0 : retries + 1;
+		at = end + (retryWait === undefined ? 400 : retryWait * minute);
 	}
 	return { toml, end: at };
 }
