@@ -7,7 +7,7 @@
 		"build": "ASTRO_TELEMETRY_DISABLED=1 astro build && pagefind --site dist",
 		"preview": "ASTRO_TELEMETRY_DISABLED=1 astro preview",
 		"check": "ASTRO_TELEMETRY_DISABLED=1 astro check && bun run build && bun test",
-		"capture": "cd .. && bun site/capture/capture-tui-frames.tsx site/src/tui/tui-frames.json"
+		"capture": "cd .. && bun site/capture/capture-tui-frames.tsx site/src/tui/tui-frames.json && bun site/capture/capture-reference-pages.ts site/src/content/docs"
 	},
 	"dependencies": {
 		"@fontsource-variable/geist": "^5.3.0",
