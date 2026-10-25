@@ -28,6 +28,6 @@ Vago is in its Alpha. Don't write a Goal, Ticket, Workflow or prompt that counts
 - **A git repo** with a default branch. Vago cuts `vago/<goal>` from it without fetching first, so a Goal starts from the checkout's default branch as it was last pulled. It does no git work beyond that branch and its worktree; the Workflow does the rest.
 - **The starter Workflows assume `bun run check`, `origin` and `gh`.** In a Project without them, the human changes the Workflow before the first Goal.
 - **No notifications from Vago itself.** The starter's `ready.sh` mentions the human on the PR; anything else is a Step the Workflow adds.
-- **No release binaries.** `vago` is built from its repo with Bun. See [Install](/docs/install/).
+- **macOS and Linux only.** Release binaries are built for arm64 and x64 on each. See [Install](/docs/install/).
 
 Vago is MIT licensed.
