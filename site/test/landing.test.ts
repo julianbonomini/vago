@@ -102,7 +102,7 @@ test("install shows its commands, a first Goal's and the limits", () => {
 		landing.match(/id="install"[\s\S]*?<\/section>/)?.[0] ?? "",
 	);
 	for (const command of [
-		"bun run reinstall",
+		"brew install julianbonomini/tap/vago",
 		"vago init",
 		"vago goal new",
 		"vago ticket add",
@@ -110,6 +110,7 @@ test("install shows its commands, a first Goal's and the limits", () => {
 	])
 		expect(install).toContain(command);
 	expect(install).toContain("Alpha");
+	expect(install).toContain("latest release");
 	expect(install).toContain("gh");
 });
 

@@ -15,6 +15,7 @@ const sidebar = sidebarOf(install);
 
 test("the docs start with Install, written from the README", () => {
 	expect(install).toContain("<h1");
+	expect(install).toContain("julianbonomini/tap/vago");
 	expect(install).toContain("bun run reinstall");
 	expect(install).toContain("vago --help");
 });

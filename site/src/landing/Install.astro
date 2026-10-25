@@ -1,10 +1,9 @@
 ---
-// Install and the honest limits: the commands that build and set up Vago, a first Goal's commands, and
+// Install and the honest limits: the commands that install and set up Vago, a first Goal's commands, and
 // what it needs and doesn't do yet, beside them.
 import { repoUrl } from "../site.ts";
 
-const clone = `git clone ${repoUrl.replace("https://github.com/", "git@github.com:")}.git`;
-const install = [clone, "cd vago && bun install && bun run reinstall", "cd ~/code/your-project && vago init"];
+const install = ["brew install julianbonomini/tap/vago", "cd ~/code/your-project && vago init"];
 const firstGoal = [
 	"vago goal new search --workflow small --body-file goal.md",
 	"vago ticket add search index --body-file index.md",
@@ -24,9 +23,9 @@ const firstGoal = [
 			<h3>Install</h3>
 			<pre class="commands">{install.map((command) => <span class="command"><span class="prompt">$ </span>{command}</span>)}</pre>
 			<p class="note">
-				<code>reinstall</code> builds <code>vago</code> into <code>~/.local/bin</code>, which has to be on your
-				<code>PATH</code>. <code>init</code> copies the starter Workflows, prompts and scripts into
-				<code>.vago/</code>.
+				Without Homebrew, download the binary for your machine from the
+				<a href={`${repoUrl}/releases/latest`}>latest release</a>. <code>init</code> copies the starter
+				Workflows, prompts and scripts into <code>.vago/</code>.
 			</p>
 		</div>
 		<div>
@@ -37,7 +36,7 @@ const firstGoal = [
 	</div>
 	<ul class="limits">
 		<li>It's an Alpha. When the retries run out, it's your turn.</li>
-		<li>You need Bun to build it, Claude Code or Codex for agent Steps, and <code>gh</code> for the PR.</li>
+		<li>You need Claude Code or Codex for agent Steps, and <code>gh</code> for the PR. macOS and Linux only.</li>
 		<li>The starter Workflows are the ones I use. Change them, or write your own. MIT licensed.</li>
 	</ul>
 </section>
