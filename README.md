@@ -6,29 +6,14 @@ The docs are at [vago.buenomini.com](https://vago.buenomini.com).
 
 ## Install
 
-You need:
-
-- [Bun](https://bun.sh), to build `vago`.
-- [Claude Code](https://claude.com/claude-code), logged in, with `claude` on your `PATH`.
-- [Codex](https://developers.openai.com/codex/cli), only for Steps you run on it: logged in, with `codex` on your `PATH`, at a version whose `codex exec` has `--approve-for-me` (0.160.0 has it).
-- [`gh`](https://cli.github.com), logged in with `gh auth login`. The starter Workflows push the Goal's branch and open its PR with it.
-
-Build the binary from a clone of this repo:
-
 ```sh
-git clone git@github.com:julianbonomini/vago.git
-cd vago
-bun install
-bun run reinstall
+brew install julianbonomini/tap/vago
 ```
 
-`bun run reinstall` compiles `vago` to `~/.local/bin/vago`. Put that directory on your `PATH`, for example in `~/.zshrc`:
+Or download the binary for your machine from the [latest release](https://github.com/julianbonomini/vago/releases/latest).
 
-```sh
-export PATH="$HOME/.local/bin:$PATH"
-```
+Vago drives tools you already have, so you also need:
 
-Then run `vago init` at the root of the repo you want Vago to work on. `vago --help` lists the commands.
 
 ## Docs
 
@@ -43,3 +28,20 @@ Then run `vago init` at the root of the repo you want Vago to work on. `vago --h
 ## Working on Vago
 
 The words Vago uses are defined in [`CONTEXT.md`](CONTEXT.md), and how it is built is in [`docs/architecture.md`](docs/architecture.md). The site's source is in [`site/`](site/).
+
+## Build from source
+
+You need [Bun](https://bun.sh).
+
+```sh
+git clone git@github.com:julianbonomini/vago.git
+cd vago
+bun install
+bun run reinstall
+```
+
+`bun run reinstall` compiles `vago` to `~/.local/bin/vago`, so put that directory on your `PATH`. How Vago is built is in [`docs/architecture.md`](docs/architecture.md).
+
+## Release
+
+Bump `version` in `package.json` and merge to `main`. The release workflow checks the code, builds the binary for macOS and Linux on arm64 and x64, publishes a GitHub release tagged with the version, and updates the formula in [julianbonomini/homebrew-tap](https://github.com/julianbonomini/homebrew-tap).
