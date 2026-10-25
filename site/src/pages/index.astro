@@ -1,0 +1,29 @@
+---
+// The landing page: the hero, then the story, with the one live TUI tour.ts carries through both; then the
+// pipeline, the Workflow file beside a second live TUI, and install.
+import PageFrame from "../components/PageFrame.astro";
+import Hero from "../landing/Hero.astro";
+import Install from "../landing/Install.astro";
+import Pipeline from "../landing/Pipeline.astro";
+import Story from "../landing/Story.astro";
+import WorkflowFiles from "../landing/WorkflowFiles.astro";
+---
+<PageFrame>
+	<div data-landing>
+		<Hero />
+		<Story />
+	</div>
+	<Pipeline />
+	<WorkflowFiles />
+	<Install />
+</PageFrame>
+
+<script>
+	import { mountPipeline } from "../landing/pipeline.ts";
+	import { mountTour } from "../landing/tour.ts";
+	import { mountWorkflowFiles } from "../landing/workflow-files.ts";
+
+	for (const page of document.querySelectorAll<HTMLElement>("[data-landing]")) mountTour(page);
+	for (const pipeline of document.querySelectorAll<HTMLElement>("[data-pipeline]")) mountPipeline(pipeline);
+	for (const section of document.querySelectorAll<HTMLElement>("[data-workflow-files]")) mountWorkflowFiles(section);
+</script>

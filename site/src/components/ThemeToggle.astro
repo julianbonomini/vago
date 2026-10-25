@@ -1,0 +1,52 @@
+---
+// The Light/Dark switch. It flips the <html> element's data-theme and saves the pick, so the page frame
+// applies it again on the next page or reload.
+---
+<button type="button" class="v-theme" data-theme-toggle aria-label="Switch colour theme">
+	<span class="v-theme-opt" data-opt="light">Light</span><span class="v-theme-opt" data-opt="dark">Dark</span>
+</button>
+
+<script>
+	import { themeStorageKey } from "../theme.ts";
+
+	const root = document.documentElement;
+	for (const toggle of document.querySelectorAll("[data-theme-toggle]")) {
+		toggle.addEventListener("click", () => {
+			const theme = root.dataset.theme === "dark" ? "light" : "dark";
+			root.dataset.theme = theme;
+			// Storage can be blocked; then the pick lasts only until the page closes.
+			try {
+				localStorage.setItem(themeStorageKey, theme);
+			} catch {}
+		});
+	}
+</script>
+
+<style>
+	.v-theme {
+		all: unset;
+		cursor: pointer;
+		display: inline-flex;
+		border: 1px solid var(--v-line-strong);
+		border-radius: var(--v-radius);
+		padding: 2px;
+		font-family: var(--v-mono);
+		font-size: 12px;
+		line-height: 1.4;
+	}
+	.v-theme-opt {
+		padding: 3px 8px;
+		border-radius: 2px;
+		color: var(--v-grey);
+		transition: background 0.2s, color 0.2s;
+	}
+	:root:not([data-theme="dark"]) .v-theme-opt[data-opt="light"],
+	:root[data-theme="dark"] .v-theme-opt[data-opt="dark"] {
+		background: var(--v-bright);
+		color: var(--v-bg);
+	}
+	.v-theme:focus-visible {
+		outline: 2px solid var(--v-accent);
+		outline-offset: 2px;
+	}
+</style>

@@ -1,0 +1,310 @@
+---
+// "What happens after you leave": the whole of gift-cards on one line, Goal to PR, with the replayed
+// Ticket going through as the visitor scrolls. The page is drawn finished, Ticket merged and PR updated;
+// pipeline.ts winds it back and lights it stage by stage while it crosses the screen, unless motion is
+// reduced. The times and costs are the captured frames', which test/landing.test.ts checks.
+import { exampleGoals } from "../../capture/acme-shop.ts";
+import { tuiFrames } from "../tui/tui-replay.ts";
+import { goalCommits, replayedSteps } from "./tour-stops.ts";
+
+const { goal, ticket } = tuiFrames.replay;
+const giftCards = exampleGoals.find(({ name }) => name === goal);
+if (giftCards === undefined) throw new Error(`capture/acme-shop.ts has no Goal ${goal}`);
+
+// Goal review is skipped on this Ticket, so it isn't shown.
+const steps = replayedSteps.filter(({ skipped }) => !skipped);
+const [landed, ...commits] = goalCommits;
+const ticketCount = giftCards.tickets.length;
+---
+<section class="pipeline" id="pipeline" aria-labelledby="pipeline-title">
+	<div class="pipeline-head">
+		<h2 id="pipeline-title">What happens after you leave</h2>
+		<p>
+			All of {goal} on one line. You write the Goal and its Tickets, Vago runs the rest, and you come back to a
+			PR. Scroll, and Ticket {ticket} goes through.
+		</p>
+	</div>
+
+	<ol class="pipe" data-pipeline>
+		<li class="stage" data-stage>
+			<h3>Goal</h3>
+			<p>You write it.</p>
+			<pre class="wraps"><span class="row dim">goal.md</span><span class="row bright"># {giftCards.title}</span></pre>
+		</li>
+		<li class="stage" data-stage>
+			<h3>Tickets</h3>
+			<p>You split it, or plan them with an agent.</p>
+			<pre>{giftCards.tickets.map(({ slug, state }) => (
+				state === "replay" ? (
+					<span class="row" data-replayed-ticket data-state="done"><span class="mark"><span class="m-pend">○</span><span class="m-cur">●</span><span class="m-done">✓</span></span> <span class="bright">{slug}</span></span>
+				) : (
+					<span class="row"><span class={state === "done" ? "mark ok" : "mark dim"}>{state === "done" ? "✓" : "○"}</span> {slug}</span>
+				)
+			))}</pre>
+		</li>
+		<li class="stage stage-wide" data-stage>
+			<h3>Steps</h3>
+			<p>Your Workflow, on the Ticket's own branch.</p>
+			<pre>{steps.map(({ name, type, took, cost }) => (
+				<span class="row" data-step data-state="done"><span class="mark"><span class="m-pend">·</span><span class="m-cur">●</span><span class="m-done">✓</span></span> {name.padEnd(13)}<span class="dim">{type.padEnd(6)}</span><span class="meta dim">{took.padStart(6)} {cost.padStart(5)}</span></span>
+			))}</pre>
+		</li>
+		<li class="stage" data-stage>
+			<h3>Commits</h3>
+			<p>One per Ticket, on <code>vago/{goal}</code>.</p>
+			<pre><span class="row landed" data-landed data-state="done"><span class="accent">{landed?.hash}</span> {landed?.message}</span>{commits.map(({ hash, message }) => (
+				<span class="row"><span class="dim">{hash}</span> {message}</span>
+			))}</pre>
+		</li>
+		<li class="stage" data-stage>
+			<h3>PR</h3>
+			<p>Yours to review and merge.</p>
+			<pre data-pr data-state="done"><span class="row bright">vago/{goal}</span><span class="row dim">Workflow small</span><span class="row"><span class="swap"><span class="v-old">2 of {ticketCount} Tickets</span><span class="v-new">3 of {ticketCount} Tickets</span></span></span><span class="row"><span class="swap"><span class="v-old">27m 34s, $2.01</span><span class="v-new">42m 5s, $3.18</span></span></span></pre>
+		</li>
+	</ol>
+	<p class="pipeline-limit">
+		One Ticket at a time, for now. Goals can run side by side; the Tickets of one Goal can't.
+	</p>
+</section>
+
+<style>
+	.pipeline {
+		padding-top: var(--v-section);
+	}
+	.pipeline-head {
+		display: grid;
+		grid-template-columns: minmax(0, 6fr) minmax(0, 5fr);
+		gap: 72px;
+		align-items: end;
+	}
+	h2 {
+		margin: 0;
+		font-size: var(--v-fs-h2);
+		line-height: 1.04;
+		letter-spacing: var(--v-track-h2);
+		font-weight: var(--v-weight-head);
+		color: var(--v-bright);
+	}
+	.pipeline-head p {
+		margin: 0;
+		max-width: 52ch;
+	}
+
+	/* The rail across the top fills as the stages light; --fill is pipeline.ts's, 1 when nothing moves. */
+	.pipe {
+		--fill: 1;
+		position: relative;
+		display: grid;
+		grid-template-columns: 0.95fr 1.15fr 1.45fr 1.15fr 0.95fr;
+		margin: 72px 0 0;
+		padding: 0;
+		list-style: none;
+	}
+	.pipe::before,
+	.pipe::after {
+		content: "";
+		position: absolute;
+		left: 0;
+		right: 0;
+		top: 0;
+		height: 2px;
+		border-radius: 2px;
+		background: var(--v-line);
+	}
+	.pipe::after {
+		background: var(--v-accent-fill);
+		transform-origin: left;
+		transform: scaleX(var(--fill));
+	}
+	.stage {
+		position: relative;
+		min-width: 0;
+		padding: 32px 22px 0 0;
+	}
+	.stage::before {
+		content: "";
+		position: absolute;
+		z-index: 1;
+		top: -5px;
+		left: 0;
+		width: 12px;
+		height: 12px;
+		border-radius: 50%;
+		background: var(--v-line);
+		transition:
+			background 0.3s,
+			transform 0.3s var(--v-ease);
+	}
+	.stage:not(.is-dark)::before {
+		background: var(--v-accent-fill);
+		transform: scale(1.15);
+	}
+	.stage > * {
+		transition: opacity 0.4s var(--v-ease);
+	}
+	.stage.is-dark > * {
+		opacity: 0.4;
+	}
+	h3 {
+		margin: 0;
+		font-size: var(--v-fs-h3);
+		font-weight: var(--v-weight-head);
+		color: var(--v-bright);
+	}
+	.stage p {
+		max-width: 30ch;
+		margin: 6px 0 18px;
+		font-size: 15px;
+		line-height: 1.5;
+	}
+	code {
+		font-family: var(--v-mono);
+		font-size: 0.88em;
+		white-space: nowrap;
+	}
+	pre {
+		margin: 0;
+		overflow-x: auto;
+		font-family: var(--v-mono);
+		font-size: var(--v-fs-code);
+		line-height: 1.6;
+		color: var(--v-fg);
+		white-space: pre;
+	}
+	/* The Goal's title wraps to its column, as an editor would show it. */
+	.wraps {
+		white-space: pre-wrap;
+	}
+	.row {
+		display: block;
+		margin-left: -4px;
+		padding-left: 4px;
+		border-radius: 2px;
+		transition: background 0.3s;
+	}
+	.row[data-state="cur"] {
+		background: var(--v-row-hot);
+	}
+	.dim {
+		color: var(--v-grey);
+	}
+	.bright {
+		color: var(--v-bright);
+	}
+	.accent {
+		color: var(--v-accent);
+	}
+	.ok {
+		color: var(--v-ok);
+	}
+
+	/* A mark, or a figure that changes, stacks its states in one cell and shows the one data-state names. */
+	.mark,
+	.swap {
+		display: inline-grid;
+		justify-items: start;
+	}
+	.mark {
+		width: 1ch;
+		justify-items: center;
+		font-family: var(--v-term);
+	}
+	.mark > *,
+	.swap > * {
+		grid-area: 1 / 1;
+		opacity: 0;
+		transition: opacity 0.2s;
+	}
+	.m-pend {
+		color: var(--v-grey);
+	}
+	.m-cur {
+		color: var(--v-accent);
+	}
+	.m-done {
+		color: var(--v-ok);
+	}
+	.meta {
+		opacity: 0;
+		transition: opacity 0.2s;
+	}
+	[data-state="pend"] > .mark > .m-pend,
+	[data-state="cur"] > .mark > .m-cur,
+	[data-state="done"] > .mark > .m-done,
+	[data-state="done"] > .meta,
+	[data-pr][data-state="pend"] .v-old,
+	[data-pr][data-state="done"] .v-new {
+		opacity: 1;
+	}
+	.landed {
+		transition:
+			opacity 0.4s,
+			transform 0.4s var(--v-ease);
+	}
+	.landed[data-state="pend"] {
+		opacity: 0;
+		transform: translateY(-6px);
+	}
+
+	.pipeline-limit {
+		margin: 56px 0 0;
+		font-size: 15px;
+		color: var(--v-grey);
+	}
+	.pipeline-limit::before {
+		content: "Alpha: ";
+		color: var(--v-accent);
+	}
+
+	/* Narrow: the stages run down a rail on the left. */
+	@media (max-width: 1023px) {
+		.pipeline-head {
+			grid-template-columns: minmax(0, 1fr);
+			gap: 24px;
+		}
+		.pipe {
+			grid-template-columns: minmax(0, 1fr);
+			margin-top: 48px;
+		}
+		.pipe::before,
+		.pipe::after {
+			right: auto;
+			bottom: 0;
+			width: 2px;
+			height: auto;
+		}
+		.pipe::after {
+			transform-origin: top;
+			transform: scaleY(var(--fill));
+		}
+		.stage {
+			padding: 0 0 40px 32px;
+		}
+		.stage:last-child {
+			padding-bottom: 0;
+		}
+		.stage::before {
+			top: 6px;
+			left: -5px;
+		}
+		.stage p {
+			max-width: 46ch;
+		}
+	}
+	@media (max-width: 640px) {
+		pre {
+			font-size: 11.5px;
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.stage::before,
+		.stage > *,
+		.row,
+		.mark > *,
+		.swap > *,
+		.meta,
+		.landed {
+			transition: none;
+		}
+	}
+</style>

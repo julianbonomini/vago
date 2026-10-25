@@ -1,0 +1,100 @@
+---
+// A row of the live TUI's keys to tap or click, for a visitor without a keyboard. LiveTui draws one under
+// its window; a page that wants the row apart, outside a TUI it scales or moves, sets keys={false} on the
+// LiveTui and puts this where it likes, with `for` naming the LiveTui's id.
+
+type Props = {
+	/** The id of the LiveTui these keys press, when the row is apart from it. */
+	for?: string;
+	class?: string;
+};
+
+const { for: tuiId, class: className = "" } = Astro.props;
+
+// KeyboardEvent.key names, and how each key is written on its cap.
+const keys = [
+	{ key: "ArrowUp", cap: "↑", name: "Up" },
+	{ key: "ArrowDown", cap: "↓", name: "Down" },
+	{ key: "Enter", cap: "Enter", name: "Enter" },
+	{ key: "Escape", cap: "Esc", name: "Escape" },
+	{ key: "[", cap: "[", name: "Previous Goal" },
+	{ key: "]", cap: "]", name: "Next Goal" },
+	{ key: "Tab", cap: "Tab", name: "Tab" },
+	{ key: "?", cap: "?", name: "Help" },
+];
+---
+<div class={`vtui-keys ${className}`} data-tui-keys data-for={tuiId} role="group" aria-label="Keys for the TUI">
+	{keys.map(({ key, cap, name }) => (
+		<button type="button" class="vtui-key" data-key={key} aria-label={name}>{cap}</button>
+	))}
+</div>
+
+<style>
+	.vtui-keys {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+	.vtui-key {
+		all: unset;
+		box-sizing: border-box;
+		cursor: pointer;
+		min-width: 36px;
+		padding: 5px 10px;
+		text-align: center;
+		font-family: var(--v-mono);
+		font-size: 13px;
+		line-height: 1.5;
+		color: var(--v-fg);
+		background: var(--v-bg);
+		border: 1px solid var(--v-line);
+		border-bottom-width: 2px;
+		border-radius: var(--v-radius);
+		touch-action: manipulation;
+		transition:
+			transform 0.1s var(--v-ease),
+			border-color 0.15s;
+	}
+	.vtui-key:hover {
+		border-color: var(--v-line-strong);
+	}
+	.vtui-key:active {
+		transform: translateY(1px);
+	}
+	.vtui-key:focus-visible {
+		outline: 2px solid var(--v-accent);
+		outline-offset: 2px;
+	}
+	/* The live TUI adds is-pressed on a tap, so the key flashes the orange fill. */
+	.vtui-key:global(.is-pressed) {
+		animation: vtui-press 0.45s var(--v-ease);
+	}
+	@keyframes vtui-press {
+		0% {
+			background: var(--v-accent-fill);
+			border-color: var(--v-accent-fill);
+			color: var(--v-on-accent);
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.vtui-key {
+			transition: none;
+		}
+		.vtui-key:global(.is-pressed) {
+			animation: none;
+		}
+	}
+	/* On a phone the keys are a grid of thumb-sized caps. */
+	@media (max-width: 640px) {
+		.vtui-keys {
+			display: grid;
+			grid-template-columns: repeat(4, 1fr);
+			gap: 8px;
+		}
+		.vtui-key {
+			min-height: 44px;
+			padding: 10px 0;
+			font-size: 15px;
+		}
+	}
+</style>

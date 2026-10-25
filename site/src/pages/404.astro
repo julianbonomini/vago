@@ -1,0 +1,37 @@
+---
+import PageFrame from "../components/PageFrame.astro";
+---
+<PageFrame title="Page not found" description="There's no page at this address.">
+	<section class="missing">
+		<p class="code">404</p>
+		<h1>This page doesn't exist.</h1>
+		<p>The link may be old or mistyped.</p>
+		<a href="/">Back to the start</a>
+	</section>
+</PageFrame>
+
+<style>
+	.missing {
+		padding: var(--v-section) 0 0;
+	}
+	.code {
+		margin: 0 0 12px;
+		font-family: var(--v-mono);
+		font-size: var(--v-fs-small);
+		color: var(--v-accent);
+	}
+	h1 {
+		margin: 0;
+		font-size: var(--v-fs-h2);
+		letter-spacing: var(--v-track-h2);
+		line-height: 1.04;
+		font-weight: var(--v-weight-head);
+		color: var(--v-bright);
+	}
+	p {
+		margin: 20px 0;
+	}
+	a {
+		color: var(--v-accent);
+	}
+</style>

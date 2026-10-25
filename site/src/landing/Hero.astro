@@ -1,0 +1,287 @@
+---
+// The landing hero: the headline and its one line over the page's live TUI, which fills the first screen
+// and is already running. The TUI itself lives in the story's dock; the slot here keeps its place, and
+// tour.ts carries it up into the slot. On a wide, tall screen without reduced motion the stage pins while
+// scrolling pulls the view back and a spotlight walks the TUI's panes, the column beside it naming each.
+// Otherwise the hero sits in its settled layout and picking a pane's name lights that pane. On a phone the
+// hero is its copy, and the pane walk is the story's first beats.
+import { repoUrl } from "../site.ts";
+import LiveTuiKeys from "../tui/LiveTuiKeys.astro";
+import { paneStops, replayNote } from "./tour-stops.ts";
+---
+<section class="hero" data-hero aria-labelledby="hero-title">
+	<div class="hero-pin" data-hero-pin>
+		<div class="hero-copy">
+			<h1 id="hero-title">Set the Goal.<br />Go do something else.</h1>
+			<div class="hero-copy-side">
+				<p>Vago runs your Workflow on a Goal in your repo, one Ticket at a time, and leaves you a PR.</p>
+				<div class="hero-links">
+					<a class="button" href="#install">Install</a>
+					<a class="text-link" href={repoUrl}>Read it on GitHub</a>
+				</div>
+			</div>
+		</div>
+
+		<div class="hero-slot" data-hero-slot aria-hidden="true"></div>
+
+		<div class="hero-side" data-hero-side>
+			<h2>One screen for every Goal</h2>
+			<p class="hero-note">{replayNote}</p>
+			<ul class="hero-panes" data-hero-panes>
+				{paneStops.map(({ name, place, text }) => (
+					<li>
+						<button type="button" class="hero-pane" data-pane={name} data-place={JSON.stringify(place)} aria-pressed="false">
+							<span class="hero-pane-name">{name}</span>
+							<span class="hero-pane-text"><span>{text}</span></span>
+						</button>
+					</li>
+				))}
+			</ul>
+			<div class="hero-keys">
+				<p>Or drive it yourself: click the screen and use its keys, or tap these.</p>
+				<LiveTuiKeys for="landing-tui" />
+			</div>
+		</div>
+	</div>
+</section>
+
+<style>
+	.hero-pin {
+		/* Between the pane list and the TUI, settled or pulled back. */
+		--hero-gap: 56px;
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		grid-template-areas: "copy" "slot" "side";
+		padding-top: 36px;
+	}
+	.hero-copy {
+		grid-area: copy;
+		display: grid;
+		grid-template-columns: minmax(0, 7fr) minmax(0, 4fr);
+		gap: var(--v-gap);
+		align-items: end;
+		padding-bottom: 36px;
+	}
+	h1 {
+		margin: 0;
+		font-size: var(--v-fs-display);
+		line-height: var(--v-lh-display);
+		letter-spacing: var(--v-track-display);
+		font-weight: var(--v-weight-head);
+		color: var(--v-bright);
+	}
+	.hero-copy-side p {
+		margin: 0 0 22px;
+		max-width: 34ch;
+		font-size: clamp(17px, 1.4vw, 20px);
+		line-height: 1.45;
+	}
+	.button {
+		display: inline-block;
+		padding: 11px 22px;
+		border-radius: var(--v-radius);
+		background: var(--v-accent-fill);
+		color: var(--v-on-accent);
+		font-weight: 600;
+		text-decoration: none;
+		transition:
+			background 0.15s,
+			transform 0.15s var(--v-ease);
+	}
+	.button:hover {
+		background: var(--v-accent-hover);
+	}
+	.button:active {
+		transform: scale(0.97);
+	}
+	.hero-links {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 12px 24px;
+	}
+	.text-link {
+		padding-bottom: 1px;
+		border-bottom: 1px solid var(--v-accent);
+		color: var(--v-bright);
+		text-decoration: none;
+		transition: color 0.15s;
+	}
+	.text-link:hover {
+		color: var(--v-accent);
+	}
+
+	/* As tall as the TUI at its width, which tour.ts sets once it has measured the TUI. */
+	.hero-slot {
+		grid-area: slot;
+		align-self: start;
+		min-width: 0;
+	}
+	.hero-side {
+		grid-area: side;
+		display: flex;
+		flex-direction: column;
+		padding-top: 40px;
+	}
+	h2 {
+		margin: 0;
+		font-size: clamp(26px, 2.4vw, 34px);
+		line-height: 1.04;
+		letter-spacing: var(--v-track-h2);
+		font-weight: var(--v-weight-head);
+		color: var(--v-bright);
+	}
+	.hero-note {
+		max-width: 44ch;
+		margin: 10px 0 0;
+		font-size: var(--v-fs-small);
+		color: var(--v-grey);
+	}
+
+	.hero-panes {
+		display: grid;
+		gap: 2px;
+		margin: 22px 0 0;
+		padding: 0;
+		list-style: none;
+	}
+	.hero-pane {
+		all: unset;
+		box-sizing: border-box;
+		position: relative;
+		display: block;
+		width: 100%;
+		padding: 10px 14px 10px 16px;
+		border-radius: var(--v-radius);
+		cursor: pointer;
+		transition: background 0.25s var(--v-ease);
+	}
+	.hero-pane::before {
+		content: "";
+		position: absolute;
+		left: 0;
+		top: 12px;
+		bottom: 12px;
+		width: 3px;
+		border-radius: 2px;
+		background: var(--v-accent-fill);
+		transform: scaleY(0);
+		transition: transform 0.35s var(--v-ease);
+	}
+	.hero-pane:hover,
+	.hero-pane[aria-pressed="true"] {
+		background: var(--v-raised);
+	}
+	.hero-pane:focus-visible {
+		outline: 2px solid var(--v-accent);
+		outline-offset: 2px;
+	}
+	.hero-pane[aria-pressed="true"]::before {
+		transform: scaleY(1);
+	}
+	.hero-pane-name {
+		display: block;
+		font-size: 17px;
+		font-weight: 600;
+		color: var(--v-bright);
+	}
+	.hero-pane-text {
+		display: grid;
+		grid-template-rows: 1fr;
+		margin-top: 4px;
+		font-size: 15px;
+		line-height: 1.45;
+	}
+	.hero-pane-text > span {
+		min-height: 0;
+		overflow: hidden;
+	}
+
+	.hero-keys {
+		margin-top: 24px;
+	}
+	.hero-keys p {
+		margin: 0 0 10px;
+		font-size: var(--v-fs-small);
+		color: var(--v-grey);
+	}
+
+	/* Settled: the pane list beside the TUI. */
+	@media (min-width: 1000px) {
+		.hero-pin {
+			grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
+			grid-template-areas: "copy copy" "side slot";
+			column-gap: var(--hero-gap);
+		}
+		.hero-side {
+			padding-top: 0;
+		}
+	}
+
+	/* Pinned: the stage holds the screen while scrolling pulls the view back and walks the panes. tour.ts
+	   tells it apart by the sticky position, sets the stage's height and the side's box, and moves the TUI.
+	   Without a script there is nothing to drive it, so the hero stays settled. */
+	@media (min-width: 1000px) and (min-height: 640px) and (prefers-reduced-motion: no-preference) and (scripting: enabled) {
+		.hero {
+			/* tour.ts's height before it measures: the screen, the pull-back and the walk. */
+			height: var(--hero-height, 420vh);
+		}
+		.hero-pin {
+			position: sticky;
+			top: 0;
+			display: block;
+			height: 100vh;
+			padding-top: 28px;
+			overflow: hidden;
+		}
+		.hero-side {
+			--pulled: 0;
+			position: absolute;
+			left: 0;
+			top: var(--side-top);
+			width: calc(var(--side-width) - var(--hero-gap));
+			height: var(--side-height);
+			justify-content: center;
+			opacity: var(--pulled);
+			transform: translate3d(calc((1 - var(--pulled)) * -40px), 0, 0);
+		}
+		.hero-pane-name {
+			color: var(--v-grey);
+			transition: color 0.2s;
+		}
+		.hero-pane[aria-pressed="true"] .hero-pane-name {
+			color: var(--v-bright);
+		}
+		/* Only the lit pane says what it is. */
+		.hero-pane-text {
+			grid-template-rows: 0fr;
+			margin-top: 0;
+			opacity: 0;
+			transition:
+				grid-template-rows 0.4s var(--v-ease),
+				opacity 0.3s,
+				margin 0.4s var(--v-ease);
+		}
+		.hero-pane[aria-pressed="true"] .hero-pane-text {
+			grid-template-rows: 1fr;
+			margin-top: 4px;
+			opacity: 1;
+		}
+	}
+
+	/* On a phone, and without a script to bring the TUI up, the hero is its copy: the TUI stays in the
+	   story's dock, which also walks the panes on a phone. */
+	@media (max-width: 999px), (scripting: none) {
+		.hero-slot,
+		.hero-side {
+			display: none;
+		}
+	}
+
+	@media (max-width: 860px) {
+		.hero-copy {
+			grid-template-columns: minmax(0, 1fr);
+			gap: 20px;
+		}
+	}
+</style>

@@ -1,0 +1,26 @@
+---
+title: For agents
+description: Pages for a coding agent working in a repo that uses Vago, and a snippet for that repo's AGENTS.md that points the agent to them.
+order: 0
+---
+
+These pages are for a coding agent working in a Project that uses Vago: what Vago does, how to write a Goal, its Tickets and a Workflow, which `vago` commands to run, and what Vago can't do yet. Each is a list of rules, checked against Vago's code and its [glossary](/docs/glossary/).
+
+## The AGENTS.md snippet
+
+Paste this into the `AGENTS.md` of your Project, or its `CLAUDE.md`. It tells your agent the Project uses Vago, and links the Markdown copy of each page below, so the agent reads them before it writes a Goal, a Ticket or a Workflow.
+
+<AgentSnippet />
+
+## The pages
+
+- [What Vago is and isn't](/agents/what-vago-is/): what Vago does, what it leaves to the Workflow and the human, and its words.
+- [Writing a Goal](/agents/writing-a-goal/): the spec every agent Step reads.
+- [Splitting a Goal into Tickets](/agents/splitting-into-tickets/): vertical slices, blockers, and adding them.
+- [Writing a Workflow and its prompts](/agents/writing-a-workflow/): Steps that are safe to run twice, and prompts that say what done means.
+- [Commands to run and to leave](/agents/commands/): which `vago` commands an agent runs, and which are the human's.
+- [Limits](/agents/limits/): what Vago Alpha doesn't do.
+
+## Markdown copies
+
+Every docs, cookbook and agents page has a Markdown copy: add `.md` to its path, as in [/agents/limits.md](/agents/limits.md). [`/llms.txt`](/llms.txt) lists them all, and each page's head links its copy with `<link rel="alternate" type="text/markdown">`.

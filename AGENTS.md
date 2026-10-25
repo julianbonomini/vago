@@ -6,14 +6,22 @@
 
 `bun run check` passes before every commit.
 
-## Product and workshop
+## Product, workshop and site
 
-Vago builds itself, so this repo holds two things:
+Vago builds itself, so this repo holds three things:
 
 - **The product** is what `vago` ships to every project: `src/` and `starter/`.
 - **The workshop** is how the human builds Vago on this machine: this file, `.claude/skills/`, the human's user-level skills (`~/.claude/skills/`), and this repo's own `.vago/`, which is the installed product running on itself.
+- **The site** is `site/`: Vago's website at `https://vago.buenomini.com`, a static Astro build. It reads the product to describe it and never changes it.
 
-Everything belongs to the workshop unless the human says it ships. A skill, prompt or tool named in a conversation, Goal or Ticket is something to build with. When a change belongs in the product, the human says so, and it lands in `src/` or `starter/`. When unsure, ask which side it's on.
+Everything belongs to the workshop unless the human says it ships. A skill, prompt or tool named in a conversation, Goal or Ticket is something to build with. When a change belongs in the product, the human says so, and it lands in `src/` or `starter/`. When unsure, ask which side it's on. Site work stays in `site/`; it never lands in `src/` or `starter/`.
+
+## The site
+
+- `site/` has its own `package.json` and `bun.lock`. Its allowed dependencies are `astro`, `@astrojs/mdx`, `@astrojs/sitemap`, `pagefind`, `@fontsource-variable/geist` and `@fontsource/jetbrains-mono`, and dev-only `@astrojs/check`, `typescript` and `@types/bun`. Anything else needs the human's OK. The product's dependencies don't go in `site/`, nor the site's in the root.
+- The TypeScript rules below apply to `site/`. Astro's own conventions win where they conflict: `.astro` components and default-exported pages. Biome lints `site/`'s `.ts` files; `astro check` covers the `.astro` ones.
+- `cd site && bun run check` runs `astro check`, builds the site and tests the build with `bun:test`. The root `bun run check` installs the site's dependencies and runs it after the product's own checks.
+- The brief for the site's design and voice is `brand-identity/landing-brief.md`. It is local and uncommitted; read it before designing or writing a page.
 
 ## TypeScript
 

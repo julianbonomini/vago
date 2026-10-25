@@ -1,0 +1,154 @@
+---
+title: Running and watching
+description: Run a Goal with vago run, read what it prints, follow every Goal in the TUI, and read the Goal report its PR carries.
+order: 6
+---
+
+[`vago run`](/docs/cli-reference/#vago-run) takes one Goal's Tickets through its Workflow and prints a line for each [Step](/docs/glossary/#step) as it starts and ends. The TUI, `vago` with no command, shows every Goal of the Project while they run, from any terminal. Neither needs the other: start a Goal from the TUI and watch it there, or run it in a terminal and never open the TUI.
+
+The TUIs on this page replay acme-shop, an example Project invented for these docs. Click one and use its keys.
+
+## Run a Goal
+
+```sh
+vago run low-stock-email
+```
+
+It runs in the Goal's own [worktree](/docs/glossary/#worktree) on the branch `vago/low-stock-email`, outside your checkout, and takes the lowest-numbered Ticket that is `ready` or `stuck` and has every blocker `done`. It goes on Ticket by Ticket until none is left or one goes stuck, then runs the Workflow's `after_all` Steps once every Ticket is done. Here is acme-shop's `low-stock-email` on the `small` Workflow, its first two Tickets cut short:
+
+```text
+Worktree /home/dev/.vago/worktrees/acme-shop-5c1e7a20/low-stock-email
+01-threshold-setting
+  ...
+02-daily-check
+  ...
+03-email-template
+  2026-10-15T08:45:57Z                  New branch started
+  2026-10-15T08:45:57Z    0.1s          New branch ok
+  2026-10-15T08:45:57Z                  Build started
+  2026-10-15T08:52:34Z   6m36s   $0.92  Build ok
+  2026-10-15T08:52:34Z                  Checks started
+  2026-10-15T08:54:16Z   1m42s          Checks ok
+  2026-10-15T08:54:17Z                  Review started
+  2026-10-15T08:57:11Z   2m54s   $0.23  Review ok
+  2026-10-15T08:57:11Z                  Goal review started
+  2026-10-15T08:58:45Z   1m33s   $0.24  Goal review ok
+  2026-10-15T08:58:45Z                  Squash merge started
+  2026-10-15T08:58:50Z    4.8s          Squash merge ok
+after_all
+  2026-10-15T08:58:52Z                  PR description started
+  2026-10-15T08:59:37Z   45.3s   $0.14  PR description ok
+  2026-10-15T08:59:38Z                  Ready for review started
+  2026-10-15T08:59:39Z    1.4s          Ready for review ok
+
+low-stock-email: 3 of 3 Tickets done
+Ticket                Status  Runs    Took   Cost
+01-threshold-setting  done       5  11m58s  $1.00
+02-daily-check        done       5  16m04s  $0.75
+03-email-template     done       6  12m51s  $1.40
+Total                           16  40m54s  $3.15
+Removed worktree /home/dev/.vago/worktrees/acme-shop-5c1e7a20/low-stock-email; branch vago/low-stock-email is kept
+```
+
+Line by line:
+
+- `Worktree` names the folder the Steps run in.
+- Each Ticket's name, or `before_all` and `after_all` for the [Goal Steps](/docs/glossary/#goal-step), starts its [pass](/docs/glossary/#pass). A Ticket picked up after it went stuck says so: `02-daily-check, picked up at Review`.
+- Under it, each Step gets a line when it starts and one when it ends: the time in UTC, how long it took, what an agent Step cost, then the Step's `name` from the Workflow (its `id` when it has none) and how it ended. A Step whose `when` doesn't hold for this Ticket prints `skipped`; on the first two Tickets above, Goal review did.
+- A Step that fails and will be retried prints `retries in 1m00s` under it.
+- When the run ends, a blank line and the summary: each Ticket's status, [Runs](/docs/glossary/#run), time and cost, and the total. A Run still going counts toward neither.
+- Last, what became of the worktree: removed once the Goal is done, with its branch kept, or kept and why, such as uncommitted changes.
+
+A Step ends `ok`, `exit <code>` for a shell Step or a Harness that exited non-zero, `idle-timeout` when the Harness printed nothing for the Workflow's `idle_timeout`, `interrupted` when you pressed Ctrl-C, `permission-denied` when the Harness refused a tool call or command, or `permission-mode <mode>` when a Claude Code session ran in another mode than the one asked for. When a Ticket goes stuck, `vago run` stops and prints its log, the command that resumes the agent's session, the `vago run` that picks it up again and the `vago ticket reset` that starts it over.
+
+On a terminal the outcomes and statuses are coloured; set `NO_COLOR` to turn that off. `vago run` exits 0 only when every Ticket is done and `after_all` has gone through, and refuses a Goal another `vago run` is running.
+
+## Watch every Goal
+
+Run `vago` with no command in the Project, on a terminal. It opens the Goals list, here with acme-shop's `gift-cards` running:
+
+<DocsTui view="project" goal="gift-cards" />
+
+The top line counts the Project's Goals by state and adds up what their Runs cost. Each row is a Goal: its state, a bar of its Tickets done of the total, its run time (how long its Runs ran, pauses left out), its cost, what it is doing or waiting for now, and its title. The states sort in this order:
+
+- `running`: a `vago run` has it.
+- `lost`: a Ticket says `running` but no live `vago run` has the Goal, say after a crash. The next `vago run` picks it up at the Step it was on.
+- `stuck`: a Ticket or Goal Step failed and waits for you.
+- `planning`: a planning item, a Goal still being [planned with an agent](/docs/planning-a-goal/).
+- `ready`: nothing has stopped it, and it has Tickets left to run.
+- `done`: every Ticket is done.
+
+Below the list, the selected Goal's Runs per Step and its text. The TUI reads `.vago-goals/` again every second, so you can leave it open while Goals run in other terminals. Run from inside a Goal's worktree, it shows the main checkout's Project. Without a terminal, `vago` prints the usage and exits 1.
+
+The keys:
+
+- `↑` `↓` or `j` `k` select a Goal; `g` and `G` jump to the first and the last.
+- Enter opens the selected Goal in the Goal view, or a planning item in the planning view.
+- `s` starts the selected Goal when it is ready, stuck or lost, in a `vago run` of its own that keeps running after you quit the TUI.
+- `n` plans a new Goal. `r` renames and `d` discards the selected planning item.
+- `?` shows every key, and `q` quits.
+
+The TUI never stops a Goal or changes its Tickets. Set `NO_COLOR` to drop the colours, and `VAGO_ASCII=1` for a terminal without the box and symbol glyphs.
+
+## The Goal view
+
+Enter on a Goal opens it. This is `gift-cards` while its third Ticket's Build Run is live:
+
+<DocsTui view="goal" goal="gift-cards" ticket={2} pane="Run activity" />
+
+The rows at the top give the Goal's state, run time, tokens, cost, Workflow, and its place in the list. Under them are four panes:
+
+1. Tickets: each Ticket with its mark and, for a running one, the Step it is on. A Workflow's `before_all` and `after_all` show as rows of their own, before and after the Tickets.
+2. Runs: every Run of the selected Ticket, its Step, outcome, time and cost, marked when it resumed a session.
+3. Ticket: its number, blockers, the Workflow's Steps marked by how far its latest pass got, and its text.
+4. Run: the selected Run. For an agent Run, its activity: what the agent said, the tools it called, the files it edited, a failed call indented further. For a shell Run, its log. A live Run is followed as it writes; scrolling up stops that, and `G` follows again.
+
+The keys:
+
+- `Tab` and Shift-Tab move the focus between panes, and `1` to `4` jump to one.
+- `↑` `↓` move in the focused pane, and `←` `→` select the Run before or after.
+- `[` and `]` open the Goal before or after in the list.
+- `t` and `r` show the Ticket or the Run on the whole screen.
+- `e` and `E` select the Run's edits, and `d` shows the selected edit's diff.
+- `s` starts this Goal, as in the Goals list.
+- Esc closes the diff or the full screen, then goes back to the Goals.
+
+## The Goal report
+
+[`vago goal report`](/docs/cli-reference/#vago-goal-report) prints a Goal as Markdown: its text, each paragraph on one line, then the output of each Step that sets `goal_report = true`, collapsed under its Ticket, then a table of each Ticket's Runs, time and cost, with every Run in a collapsed table below it. The starter Workflows' merge Step makes it the description of the Goal's PR and rewrites it after every Ticket, and their `after_all` rewrites it once more when the Goal is done.
+
+```sh
+vago goal report low-stock-email
+```
+
+After the Goal's text, it prints:
+
+```markdown
+## Runs
+
+Workflow: small
+
+| Ticket | Runs | Took | Cost |
+|---|---:|---:|---:|
+| 01-threshold-setting | 5 | 11m58s | $1.00 |
+| 02-daily-check | 5 | 16m04s | $0.75 |
+| 03-email-template | 6 | 12m51s | $1.40 |
+| after_all | 2 | 46.7s | $0.14 |
+| **Total** | **18** | **41m41s** | **$3.30** |
+
+<details>
+<summary>Every Run</summary>
+
+| Ticket | Step | Outcome | Took | Cost |
+|---|---|---|---:|---:|
+| 01-threshold-setting | branch | ok | 0.1s |  |
+| 01-threshold-setting | implement | ok | 6m01s | $0.61 |
+...
+| after_all | ready | ok | 1.4s |  |
+
+</details>
+```
+
+Unlike the summary `vago run` prints, it counts the Goal Steps' Runs too. The Goal view shows the same Runs; here the finished Goal's `after_all`:
+
+<DocsTui view="goal" goal="low-stock-email" ticket={3} pane="Runs" />

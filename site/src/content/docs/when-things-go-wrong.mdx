@@ -1,0 +1,121 @@
+---
+title: When things go wrong
+description: What Vago does when a Step fails or vago run dies, what you see in vago run and the TUI, and how to pick a Ticket up, start it over or read its logs.
+order: 8
+---
+
+A failed agent Step is [retried](/docs/glossary/#retry) three times. When the retries fail too, or a shell Step fails, the Ticket goes stuck and [`vago run`](/docs/cli-reference/#vago-run) stops the Goal. The next `vago run` picks the Ticket up at the Step it stopped on. A `vago run` that dies leaves its Run [lost](/docs/glossary/#lost), and the next `vago run` picks that up the same way. Vago never starts a Ticket over unless you reset it.
+
+The examples on this page come from acme-shop, an example Project invented for these docs. Its Goal `order-export` is stuck on Ticket 02, whose Build failed four times on API errors.
+
+## An agent Step fails
+
+When an agent Step's Run fails, whatever its outcome, `vago run` waits 1 minute and [resumes](/docs/glossary/#resume) the agent's Harness session in a new Run, with a fixed message telling the agent it was interrupted and to continue where it stopped, after checking the working tree. If that Run fails, it waits 1 more minute and resumes again, and then 5 more minutes for the third and last retry. Each wait prints a `retries in` line under the Step:
+
+```text
+Worktree /home/dev/.vago/worktrees/acme-shop-5c1e7a20/order-export
+02-date-range-filter
+  2026-10-19T09:28:26Z                  New branch started
+  2026-10-19T09:28:26Z    0.0s          New branch ok
+  2026-10-19T09:28:27Z                  Build started
+  2026-10-19T09:31:03Z   2m35s   $0.24  Build exit 1
+  2026-10-19T09:31:03Z                  Build retries in 1m00s
+  2026-10-19T09:32:03Z                  Build started
+  2026-10-19T09:34:32Z   2m29s   $0.11  Build exit 1
+  2026-10-19T09:34:32Z                  Build retries in 1m00s
+  2026-10-19T09:35:32Z                  Build started
+  2026-10-19T09:38:43Z   3m10s   $0.16  Build exit 1
+  2026-10-19T09:38:43Z                  Build retries in 5m00s
+  2026-10-19T09:43:43Z                  Build started
+  2026-10-19T09:45:52Z   2m09s   $0.21  Build exit 1
+02-date-range-filter is stuck after Build: exit 1
+  log:    .vago-goals/order-export/logs/02-implement-5.jsonl
+  resume: claude --resume 301ac8cf-242c-4e19-af6b-23a7a0402f76
+  again:  vago run order-export
+  reset:  vago ticket reset order-export 02
+
+order-export: 1 of 3 Tickets done
+Ticket                Status  Runs    Took   Cost
+01-export-button      done       5  11m47s  $1.32
+02-date-range-filter  stuck      5  10m25s  $0.72
+03-currency-columns   ready      0    0.0s
+Total                           10  22m12s  $2.04
+```
+
+While `vago run` waits, the TUI's Goals list shows the time left in the Goal's NOW column, like `02 Build retries in 42s`, and the Goal stays `running`. Each retry is a Run of its own, with its own log, time and cost.
+
+Shell Steps are never retried: a shell Step that exits non-zero makes the Ticket stuck at once, unless the Step has `on_fail = "continue"`, as the starter Workflows' Checks does so that Review can read the failure and fix it. Pressing Ctrl-C, or sending `vago run` SIGTERM, ends the Run `interrupted` with no retry, and during a wait it ends the wait; either way the Ticket goes stuck.
+
+## A Ticket goes stuck
+
+A stuck Ticket stops the Goal: `vago run` runs no other Ticket, prints the block above and the Goal summary, keeps the Goal's [worktree](/docs/glossary/#worktree), and exits 1. The block gives you:
+
+- `log`: the failed Run's log, relative to the Project.
+- `resume`: the command that opens the agent's session in its Harness, `claude --resume` or `codex resume`, to ask it what happened. A shell Step has none.
+- `again`: the `vago run` that picks the Ticket up.
+- `reset`: the [`vago ticket reset`](/docs/cli-reference/#vago-ticket-reset) that starts it over.
+
+In the TUI, the Goals list shows the Goal as `stuck`, with the Ticket and the Step it failed on:
+
+<DocsTui view="project" goal="order-export" />
+
+Enter opens it. The Tickets pane marks Ticket 02 stuck, the Ticket pane marks the Step it failed on `✗`, and the Runs pane lists its Runs, a `↻` on each that resumed a session:
+
+<DocsTui view="goal" goal="order-export" ticket={1} pane="Runs" />
+
+To recover:
+
+1. Read why it failed: the Run's activity in the TUI, or its log (see [Read a Run's log](#read-a-runs-log)).
+2. Fix the cause, if it needs fixing. Say the Ticket asked for something the code can't do: edit its text below the header. Say the agent left the code in a bad state: fix it in the Goal's worktree, the path on the `Worktree` line. A failure outside the Project, like the API errors above, needs nothing fixed.
+3. Run `vago run order-export` again, or press `s` on the Goal in the TUI.
+
+## Pick a Ticket up
+
+`vago run` takes the lowest-numbered Ticket that is `ready` or `stuck` with every blocker done, so a stuck Ticket runs again before any Ticket numbered after it. It continues at the Step its last Run was on, and doesn't run the Steps before it again:
+
+```text
+02-date-range-filter, picked up at Build
+```
+
+That Step runs again on top of whatever its last Run left in the worktree. An agent Step resumes the last Run's Harness session with the same continue message, and the Run is marked resumed. When the last Run had no session, or the resume fails to start, it runs its prompt in a fresh session, and the Run is marked as having fallen back, `↯` in the TUI. A shell Step runs its command from the start; the starter's New branch and Squash merge are safe to run twice.
+
+The Steps after it still get the earlier Steps' outputs in `{{steps.<id>.output}}`, rebuilt from the Ticket's Runs and their logs. When one can't be rebuilt, `vago run` names the Step, leaves the Ticket file as it was and stops:
+
+```text
+02-date-range-filter can't be picked up: implement has no log left to rebuild its output from
+  reset:  vago ticket reset order-export 02
+```
+
+It refuses the same way when an earlier Step's Run is missing or ended in a way the Ticket didn't go on from, or when the Step it stopped on is no longer in the Ticket's Workflow because you edited it. Reset the Ticket to start it over.
+
+## A vago run dies
+
+A `vago run` that crashes, is killed with SIGKILL, or loses its terminal leaves its Ticket `running` with a Run that never ended. The TUI shows the Goal as `lost`, with what it was doing and `no vago run process runs it`. In the Goal view, the Ticket, its Step and its open Run are marked `?`.
+
+The next `vago run` of the Goal ends that Run with the outcome `lost`, marks the Ticket stuck and picks it up at that Run's Step, so nothing is printed for the lost Run itself; you see the `picked up at` line. An agent Run's session id is recorded as soon as its Harness reports it, so a lost agent Run's session can still be resumed.
+
+A `before_all` or `after_all` Run left open is ended `lost` the same way, and its pass picked up at that Step.
+
+## Start a Ticket over
+
+To throw away the Ticket's progress instead of picking it up, reset it and run the Goal:
+
+```sh
+vago ticket reset order-export 02
+vago run order-export
+```
+
+The Ticket goes back to `ready` and starts a new [pass](/docs/glossary/#pass) at its first Step. Its earlier Runs stay in its header and still count toward its time and cost. Only a stuck Ticket can be reset. Stop a running one with Ctrl-C first. A lost one says `running` until the next `vago run` of its Goal, which picks it up.
+
+The reset doesn't touch git. The starter's New branch leaves a worktree that is still on the Ticket's branch, `order-export/02-date-range-filter`, where it is, with its commits and uncommitted changes. To drop that work too, switch the Goal's worktree back to the Goal's branch, `vago/order-export`, first; New branch then cuts the Ticket's branch again from it, and fails if the worktree has uncommitted changes. Tickets already merged into `vago/order-export` keep their work.
+
+A Goal Step that fails leaves the Goal stuck the same way, and the block names the Goal in place of a Ticket, with no `reset` line. The next `vago run` picks it up at that Step. A Goal Step has no reset: to run a `before_all` from its first Step again, delete its `[[runs]]` tables from the header of `goal.md`.
+
+## Read a Run's log
+
+Every Run has a log under `.vago-goals/<goal>/logs/`, named for the Ticket's number, the Step's `id` and the Run's position in the Ticket's Runs: `02-implement-5.jsonl` is Ticket 02's fifth Run, of the Step `implement`, which the small Workflow names Build. A Goal Step's log is named for its group, like `after_all-ready-2.log`.
+
+- A shell Step's `.log` holds everything its command wrote to stdout and stderr, in order.
+- An agent Step's `.jsonl` holds the Harness's raw stream, one JSON object per line.
+
+The `.jsonl` is hard to read by hand. The TUI reads it for you: in the Goal view, select the Run in the Runs pane, and the Run pane shows what the agent said, the tools it called and the files it edited, with a failed call indented further. Press `r` for the Run on the whole screen. For more than the log holds, open the session with the `resume` command and ask the agent.
